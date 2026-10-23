@@ -5,7 +5,9 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { boundContextSummary, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { finalAssistantOutput } from '@deepseek-ai/dsh-subagent'
+import { randomUUID } from 'node:crypto'
 import type { ThreadAgent, ThreadHost } from './manager.ts'
+import type { ProjectHost, WorkspaceInfo } from './projects.ts'
 import { textOf } from './report.ts'
 import { optional } from './services.ts'
 import { SOURCE_KIND } from './source.ts'
@@ -37,8 +39,16 @@ export function wrapAgent(agent: Agent): ThreadAgent {
   }
 }
 
-export function createHost(ctx: Context): ThreadHost {
+export function createHost(ctx: Context): ThreadHost & ProjectHost {
   const live = (sessionId: string): Agent | undefined => ctx.agents.get(sessionId as SessionId)
+
+  const workspaceInfo = (workspace: { id: string; path: string } | undefined): WorkspaceInfo | undefined =>
+    workspace === undefined ? undefined : { id: workspace.id, path: workspace.path }
+
+  const rename = (sessionId: string, title: string) => {
+    const agent = live(sessionId)
+    if (agent !== undefined) optional<SessionTitleLike>(ctx, 'sessionTitle')?.rename(agent.session, title)
+  }
 
   const resolveAgent = async (sessionId: string): Promise<Agent | undefined> => {
     const current = live(sessionId)
@@ -69,9 +79,22 @@ export function createHost(ctx: Context): ThreadHost {
       return agent === undefined ? undefined : wrapAgent(agent)
     },
 
-    rename(sessionId, title) {
-      const agent = live(sessionId)
-      if (agent !== undefined) optional<SessionTitleLike>(ctx, 'sessionTitle')?.rename(agent.session, title)
+    rename,
+
+    async createMainSession(workspaceId, title) {
+      const sessionId = `session-${randomUUID()}`
+      const created = await ctx.sessionController.create({ workspaceId: workspaceId as never, sessionId: sessionId as SessionId })
+      // A blank session has no live title yet until its agent is resolved.
+      if (await resolveAgent(created.sessionId) !== undefined) rename(created.sessionId, title)
+      return created.sessionId
+    },
+
+    workspace(workspaceId) {
+      return workspaceInfo(ctx.workspaceRegistry.list().find((candidate) => candidate.id === workspaceId))
+    },
+
+    workspaceOf(sessionId) {
+      return workspaceInfo(ctx.workspaceRegistry.list().find((candidate) => candidate.sessionIds.includes(sessionId as SessionId)))
     },
 
     inheritPermission(mainSessionId, threadId) {

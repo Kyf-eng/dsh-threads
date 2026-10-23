@@ -407,20 +407,63 @@ dsh-thread/                    # 本地目录名不变；GitHub 仓库叫 dsh-th
 
 审批继承要在隔离的官方 DSH 上验收（第六节第 8 条），这次还没做。
 
-### M2 面板、追加、提议、恢复
-- 加 `thread_reply` 和 `proposal` 流程（`/thread start`、提议过期）。
-- 写 `rpc.ts`。
-- 写 `ThreadsTab.tsx`：
-  - 显示序号、标题、状态点、最新摘要、token，点击跳到讨论串；
-  - 提议显示"开始 / 忽略"按钮；
-  - 当前会话本身是讨论串时，显示"回到主对话"。
-- 用户自己在讨论串里聊出来的结果：不唤醒主对话，只进上下文。
-- 重启恢复：启动时扫描 `threads` 表，用 `resolveAgent` 补上状态监听；停在 `running` 的讨论串重新判断一次是否已完成。
+### M2（2026-10-23 重排）：Claude 式「项目」界面
 
-**完成标准**：
-- 侧栏能看到所有讨论串和状态；
-- `thread_reply` 可用；
-- 重启 DSH 后列表还在，能继续追加。
+原来的 M2（侧栏列表 + 追加 + 提议 + 恢复）按用户要求改成和 Claude 原版一致的项目体验，拆成三个 PR。
+
+**项目是什么（已确认）**
+- **一个项目 = 一个本地文件夹（DSH 工作区）+ 一个常驻主对话**，有名字、置顶、项目说明。点项目直接进它的主对话。
+- 讨论串只属于项目：
+  - 只有项目主对话会装 `thread_open` / `thread_reply` / `thread_status` 和调度员提示，普通会话什么都不装；
+  - 项目说明作为系统提示段，加给主对话和它所有的讨论串。
+
+**界面扩展点**（`R` = `app/dsh/node_modules/@deepseek-ai`；所有插槽的类型、作用域和属性见 `R/dsh-cordis-client-runner/lib/client.js:2434` 的 `CLIENT_SLOT_API`）
+
+| 需求 | 做法 | 参照 |
+| --- | --- | --- |
+| 左侧"项目"入口和项目页 | 侧栏入口插槽 `sidebar.panellist`（order 20）+ 整页面板插槽 `main`；进主对话用 `ctx.uiWorkspace.openSession`，回项目页用 `ctx.layout.selectPanel` | `R/dsh-client-ui-schedule/lib/client.js:7473-7490` |
+| 置顶 | 项目记录存在插件表里，置顶时同时 `ctx.workspaces.pinSession(main)` | ui-workspace-controller 381-437 |
+| 右侧讨论串面板（M2b） | 注册自己的资源协议 `dsh-threads` 和标签页；正文是 `SessionProvider` 包住 `renderFactorySlot('conversation.content', { variant: 'embedded', phase: 'active' })`。**不复用 `subagentchat`** | `R/dsh-client-ui-subagent/lib/client.js:699-839` |
+| 回报渲染成讨论串卡片（M2c） | `ctx.uiConversation.events.register` 注册独占的事件解释器，把我们的消息变成自己的节点类型，再用 `conversation.chat.node` 渲染 | `R/dsh-client-ui-user-questions/lib/client.js:1349-1402` |
+| "N 条回复"（M2c） | 按轮建事件解释器，节点设 `groupTree: 'turn'`、`anchorSeq = 用户消息 seq + 0.5` | schedule 2301-2358 |
+| 提议卡片（M2c） | 输入框上方的 `conversation.input.dock` | goal 604-651 |
+| 已解决后锁输入框（M2b） | `conversation.composer` 插槽链里加一个条目 | user-questions 1905-1925 |
+| 左侧会话列表 | 不能把讨论串折叠或隐藏到主对话下；只能加小标记（`sidebar.session.row.leading`）、悬停卡片（`row.hover`）、菜单项（`session.menu.item`） | ui-workspace 964-974、2254-2368 |
+
+**排期**
+- **M2a（PR `feat/projects`）**：项目骨架、`thread_reply`、重启恢复、左侧"项目"入口和项目页、"设为项目"菜单。
+- **M2b**：右侧讨论串面板（内嵌对话 + 输入框）、"标记已解决 / 重新打开"、主对话标题栏"讨论串 · N"。
+- **M2c**：回报卡片、"N 条回复"、`thread_propose` + 提议卡片（超过上限的排队，空出名额时自动开始）、左侧标记。
+
+#### M2a 落地情况（2026-10-23）
+
+宿主端：
+- 新增 `projects.ts`（新建、改名、置顶、移除、列表统计）和 `projects` 表；新字段都带默认值，M1 的旧记录照常能读。
+- `install.ts` 按角色挂载（`roles.ts`）：项目主对话 = dispatcher，讨论串 = thread，其他 = none；项目变动后，正在运行的会话会重新计算角色。
+- 新增 `thread_reply`：讨论串空闲时开新一轮；正在跑时排到下一轮，结果按唤醒规则回报。
+- 新增 `recover()`：启动时把 `starting` 的讨论串标记为 failed；`running` 的用 `resolveAgent` 拿回 Agent，空闲就结算；待发的便条重新投递。
+- `api.ts` 提供 `projects.*`、`sessions.role`、`threads.list`。
+
+浏览器端：
+- 左侧"项目"入口；
+- 项目页：卡片、搜索、排序、置顶、移除确认；
+- 新建项目对话框：名字、选工作区、项目说明；
+- 会话菜单里的"设为项目"；
+- 文案走 `ctx.locale`，样式用 `--dsw-alias-*` 主题变量；
+- 公共组件用宿主共享的 `@deepseek-ai/dsh-client-ui-primitives`（`Button`、`Modal`、`MenuItemButton`）。
+
+实机测试（桌面版，标准模式）全部通过：
+- 左侧出现"项目"，项目页和空状态正常。
+- 新建项目后直接打开它的主对话。主对话发出第一条消息后，标题变成项目名。
+- 项目主对话里开讨论串（编号按项目从 #1 开始），做完唤醒主对话。
+- 普通会话里 `/thread` 被拦下，并提示"先设为项目"。
+- `thread_reply` 把追加任务发给了原来的 #1：开了新一轮、交了回报、主对话被唤醒。
+- 重启恢复：在讨论串运行 `sleep 40` 时退出 DSH，再打开后，恢复逻辑结算了被中断的那一轮（无回报，用兜底），主对话被唤醒并自己重派了任务。
+- 置顶后，卡片出现图钉，左侧列表里主对话移到最前。
+- "设为项目"会把已有会话（连同它在 M1 开过的 3 个讨论串）变成项目；移除项目后会话仍保留。
+- 没有新的崩溃日志。
+
+注意：退出 DSH 时如果有任务在跑，会弹"当前正在运行的任务将会中断"的确认框；脚本里的 `quit` 会被它拦住。
 
 ### M3 并行与隔离；M4 发布
 - 按 Plan.md 原样，补充以下细节：

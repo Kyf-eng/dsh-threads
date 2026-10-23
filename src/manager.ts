@@ -39,6 +39,8 @@ export class ThreadError extends Error {}
 
 const TITLE_MAX = 30
 
+export const NOT_A_PROJECT = '只有项目的主对话能开讨论串。先在左侧"项目"里新建项目，或在会话菜单里选"设为项目"。'
+
 export function titleFrom(task: string): string {
   return truncate(task.trim().split('\n', 1)[0]?.trim() ?? '', TITLE_MAX)
 }
@@ -54,6 +56,17 @@ export function briefText(thread: Pick<ThreadRecord, 'n' | 'title'>, task: strin
   ].join('\n')
 }
 
+/** A follow-up instruction from the main conversation (thread_reply). */
+export function replyText(thread: Pick<ThreadRecord, 'n' | 'title'>, message: string): string {
+  return [
+    `[来自主对话的追加指令 · 讨论串 #${thread.n}「${thread.title}」]`,
+    '',
+    message.trim(),
+    '',
+    '（做完后同样要调用一次 thread_report。）',
+  ].join('\n')
+}
+
 export class ThreadManager {
   /** Sessions being created right now; `agent/created` fires before the record says `running`. */
   private readonly creating = new Set<string>()
@@ -66,6 +79,11 @@ export class ThreadManager {
     return this.creating.has(sessionId) || this.deps.store.thread(sessionId) !== undefined
   }
 
+  /** Only a project's main conversation dispatches threads (as in Claude). */
+  isDispatcher(sessionId: string): boolean {
+    return this.deps.store.projectOfMain(sessionId) !== undefined
+  }
+
   runningCount(mainSessionId: string): number {
     return this.deps.store.threadsOf(mainSessionId).filter((t) => t.status === 'starting' || t.status === 'running').length
   }
@@ -73,6 +91,7 @@ export class ThreadManager {
   async open(mainSessionId: string, input: { title: string; task: string; initiation: Initiation }): Promise<ThreadRecord> {
     const { store, host, config, now } = this.deps
     if (this.isThread(mainSessionId)) throw new ThreadError('讨论串里不能再开讨论串；把这个需要写进 thread_report 的 decisions，交给主对话决定。')
+    if (!this.isDispatcher(mainSessionId)) throw new ThreadError(NOT_A_PROJECT)
     const task = input.task.trim()
     if (task.length === 0) throw new ThreadError('task 不能为空：写一份完整的简报。')
     const running = this.runningCount(mainSessionId)
@@ -88,6 +107,7 @@ export class ThreadManager {
       id, mainSessionId, n, title, task,
       initiation: input.initiation,
       status: 'starting',
+      resolved: false,
       round: null, roundStartSeq: null, roundStartedAt: null,
       lastReport: null, error: null,
       createdAt, updatedAt: createdAt,
@@ -122,6 +142,55 @@ export class ThreadManager {
     return next
   }
 
+  /**
+   * thread_reply: send a thread more instructions. An idle thread starts a new dispatched
+   * round; a running one gets the message as its next turn, and its result is reported
+   * with wake-up rules even if the user started the current round.
+   */
+  async reply(mainSessionId: string, n: number, message: string): Promise<ThreadRecord> {
+    const text = message.trim()
+    if (text.length === 0) throw new ThreadError('message 不能为空。')
+    const thread = this.deps.store.threadsOf(mainSessionId).find((t) => t.n === n)
+    if (thread === undefined) throw new ThreadError(`这个主对话没有讨论串 #${n}。`)
+    if (thread.status === 'failed' || thread.status === 'starting') {
+      throw new ThreadError(`讨论串 #${n} 没有建好（${thread.status}），不能追加；需要的话重新开一个。`)
+    }
+    const agent = await this.deps.host.resolve(thread.id)
+    if (agent === undefined) throw new ThreadError(`讨论串 #${n} 现在连不上（会话可能已被归档或删除）。`)
+    const at = this.deps.now()
+    const next: ThreadRecord = thread.round === null
+      ? { ...thread, status: 'running', round: 'dispatch', roundStartSeq: agent.seq, roundStartedAt: at, resolved: false, updatedAt: at }
+      : { ...thread, round: 'dispatch', resolved: false, updatedAt: at }
+    await this.deps.store.putThread(next)
+    agent.followup(replyText(next, text), noticeSummary(next, '追加指令'))
+    return next
+  }
+
+  /**
+   * After DSH restarts: threads left `starting` failed; `running` threads whose agent is now
+   * idle are settled (their report or last reply goes to the main conversation); notes still
+   * waiting for a main conversation are delivered.
+   */
+  async recover(): Promise<void> {
+    const { store, host, now } = this.deps
+    for (const thread of store.threads()) {
+      if (thread.status === 'starting') {
+        await store.putThread({ ...thread, status: 'failed', error: 'DSH 重启时讨论串还没建好。', updatedAt: now() })
+        continue
+      }
+      if (thread.status !== 'running') continue
+      const agent = await host.resolve(thread.id)
+      if (agent === undefined) {
+        await store.putThread({ ...thread, status: 'failed', round: null, error: 'DSH 重启后连不上这个讨论串。', updatedAt: now() })
+        continue
+      }
+      if (agent.status === 'idle') await this.onIdle(thread.id)
+    }
+    for (const main of store.mains()) {
+      if (main.pendingNotes.length > 0) await this.flush(main.id)
+    }
+  }
+
   /** A message entered a session's inbox. A user message in an idle thread starts a user-driven round. */
   async onInbox(sessionId: string, sourceKind: string, seq: number): Promise<void> {
     if (sourceKind !== 'user') return
@@ -132,7 +201,7 @@ export class ThreadManager {
     }
     if (thread.round !== null) return
     const at = this.deps.now()
-    await this.deps.store.putThread({ ...thread, status: 'running', round: 'user', roundStartSeq: seq, roundStartedAt: at, updatedAt: at })
+    await this.deps.store.putThread({ ...thread, status: 'running', round: 'user', roundStartSeq: seq, roundStartedAt: at, resolved: false, updatedAt: at })
   }
 
   /** The user spoke in a main conversation: automatic wake-ups may start again. */
@@ -149,7 +218,10 @@ export class ThreadManager {
       if (this.deps.store.main(sessionId).pendingNotes.length > 0) await this.flush(sessionId)
       return
     }
-    if (thread.round === null) return
+    if (thread.round === null) {
+      if (thread.status === 'running') await this.deps.store.putThread({ ...thread, status: 'idle', updatedAt: this.deps.now() })
+      return
+    }
     const report = currentReport(thread)
     const fallback = report === null ? this.deps.host.roundOutput(thread.id, thread.roundStartSeq ?? 0) : undefined
     const note: PendingNote = {

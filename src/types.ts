@@ -32,6 +32,8 @@ export interface ThreadRecord {
   task: string
   initiation: Initiation
   status: ThreadStatus
+  /** Marked resolved by the user; a new message to the thread reopens it. */
+  resolved: boolean
   round: RoundOrigin | null
   /** Session log offset when the current round started; the round's events are read from here. */
   roundStartSeq: number | null
@@ -48,6 +50,25 @@ export interface PendingNote {
   text: string
   /** Quiet notes never wake the main conversation; they ride along with its next turn. */
   quiet: boolean
+}
+
+/**
+ * A project, as in Claude: one folder (a DSH workspace) and one standing main conversation
+ * that dispatches threads. Only a project's main conversation can open threads.
+ */
+export interface ProjectRecord {
+  /** `project-<uuid>` */
+  id: string
+  title: string
+  workspaceId: string
+  /** The workspace folder, kept for display. */
+  folder: string
+  mainSessionId: string
+  pinned: boolean
+  /** Added to the system prompt of the main conversation and its threads. */
+  instructions: string
+  createdAt: string
+  updatedAt: string
 }
 
 export interface MainRecord {

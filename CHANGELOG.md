@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- M2a projects:
+  - A project is one folder plus one standing main conversation. Only a project's main conversation can open threads, and its instructions reach the main conversation and every thread.
+  - A "Projects" entry in the left sidebar opens a projects page (create, search, sort, pin, remove).
+  - "Make project" in a conversation's menu.
+  - `thread_reply` sends more instructions to an existing thread.
+  - Threads that were running when DSH stopped are settled on the next start.
+
 - M1 single-thread loop:
   - `thread_open` (`user_asked`, or `offer` with a confirmation question), `thread_status`, and `thread_report` for thread sessions.
   - `/thread <task>`.

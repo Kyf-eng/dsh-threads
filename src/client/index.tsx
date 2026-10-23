@@ -1,34 +1,38 @@
 // Browser half. dist/client.js is wrapped in window.__ModuleLoader__.load by tsdown.config.ts.
-// M0: register an empty right-sidebar "Threads" tab and ping the host over Connection RPC.
+// M2a: the "Projects" sidebar entry and page, and "Make project" in the session menu.
+// The right-sidebar "Threads" tab is still a placeholder until M2b.
 import type { Context } from '@deepseek-ai/cordis'
-import { useEffect, useState } from 'react'
+import type { ComponentType } from 'react'
+import { ProjectsIcon } from './icons.tsx'
+import { en, NS, type Translate, zh } from './locale.ts'
+import { MakeProjectMenuItem } from './MakeProjectMenuItem.tsx'
+import { ProjectsPage } from './ProjectsPage.tsx'
+import { injectStyles } from './styles.ts'
 
-/** Tab implementation id: the package name, as the right sidebar expects. */
+/** Sidebar entry id and `main` panel key. */
+const PANEL_ID = 'dsh-threads-projects'
+/** Right-sidebar tab implementation id: the package name. */
 const TAB_ID = '@fky/dsh-threads'
-const TAB_KIND = 'dsh-threads'
-/**
- * Host route, relative to the page like DSH's own Connection calls: on Desktop the page is
- * dsh-app://app/ and the shell forwards it to the Host with its cookie; on Web it is same-origin.
- * Must match RPC_PATH in src/rpc.ts.
- */
-const RPC_URL = 'api/dsh-threads'
 
-export const inject = ['slots', 'sidebarRightTabs']
+export const inject = ['slots', 'locale', 'layout', 'uiWorkspace', 'workspaces', 'sidebarRightTabs']
 
 type Disposer = () => void
 
-// Narrow views of the host services this file touches; the published slot types
-// depend on packages that are not on npm, so M0 does not import them.
+// Narrow views of the host services this file touches (their published slot types pull in
+// packages that are not on npm).
 interface ClientContext {
   effect(body: () => Disposer, label?: string): void
   slots: {
     inject(name: string, body: () => Disposer): void
-    register(options: {
-      name: string
-      key: string
-      inject: (sessionId: string) => TabInjected
-    }, component: (props: TabProps) => JSX.Element): Disposer
+    register(options: Record<string, unknown>, component: ComponentType<never>): Disposer
   }
+  locale: {
+    register(ns: string, dicts: { zh: Record<string, string>; en: Record<string, string> }): Disposer
+    bind(ns: string): (key: string, params?: Record<string, string | number>) => string
+  }
+  layout: { selectPanel(id: string | null): void }
+  uiWorkspace: { openSession(sessionId: string): void }
+  workspaces: { pinSession(sessionId: string): Promise<void>; unpinSession(sessionId: string): Promise<void> }
   sidebarRightTabs: {
     register(definition: {
       id: string
@@ -39,65 +43,46 @@ interface ClientContext {
   }
 }
 
-async function callHost(method: string, payload: unknown = {}): Promise<unknown> {
-  const response = await fetch(RPC_URL, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ method, payload }),
-  })
-  const body = await response.json().catch(() => ({})) as { result?: unknown; error?: string }
-  if (!response.ok) throw new Error(`HTTP ${response.status}${body.error === undefined ? '' : `: ${body.error}`}`)
-  return body.result
+function PanelIcon({ size }: { size: number; active: boolean }) {
+  return <ProjectsIcon size={size} />
 }
 
-interface TabInjected {
-  ping: () => Promise<unknown>
-}
-
-interface TabProps extends TabInjected {
-  sessionId?: string
-}
-
-const isZh = () => typeof navigator !== 'undefined' && navigator.language.toLowerCase().startsWith('zh')
-const title = () => (isZh() ? '讨论串' : 'Threads')
-
-function ThreadsTab({ sessionId, ping }: TabProps) {
-  const [rpc, setRpc] = useState('…')
-  useEffect(() => {
-    let live = true
-    ping().then(
-      (value) => { if (live) setRpc(JSON.stringify(value)) },
-      (error: unknown) => { if (live) setRpc(`failed: ${String(error)}`) },
-    )
-    return () => { live = false }
-  }, [ping])
-  return (
-    <div style={{ padding: 12, fontSize: 13, lineHeight: 1.6 }}>
-      <div style={{ fontWeight: 600 }}>{title()}</div>
-      <div>{isZh() ? 'M0 占位：讨论串列表在 M2 实现。' : 'M0 placeholder: the thread list arrives in M2.'}</div>
-      <div>session: {sessionId ?? '—'}</div>
-      <div>host RPC: {rpc}</div>
-    </div>
-  )
+function ThreadsTab({ t }: { t: Translate }) {
+  return <div className="dsht-tab">{t('tab.description')}</div>
 }
 
 export function apply(root: Context): void {
   const ctx = root as unknown as ClientContext
-  const ping = () => callHost('ping')
+  ctx.effect(() => injectStyles(), 'dsh-threads: styles')
+  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-threads: locale')
+  const t = ctx.locale.bind(NS) as Translate
+
+  const openSession = (sessionId: string) => ctx.uiWorkspace.openSession(sessionId)
+  const pinSession = (sessionId: string, pinned: boolean) =>
+    (pinned ? ctx.workspaces.pinSession(sessionId) : ctx.workspaces.unpinSession(sessionId))
+  const showProjects = () => ctx.layout.selectPanel(PANEL_ID)
+
+  ctx.slots.inject('main', () => ctx.slots.register(
+    { name: 'main', key: PANEL_ID, locale: NS, inject: () => ({ openSession, pinSession }) },
+    ProjectsPage as ComponentType<never>,
+  ))
+  ctx.slots.inject('sidebar.panellist', () => ctx.slots.register(
+    { name: 'sidebar.panellist', id: PANEL_ID, order: 20, locale: NS, label: () => t('panel') },
+    PanelIcon as ComponentType<never>,
+  ))
+  ctx.slots.inject('sidebar.workspaces.session.menu.item', () => ctx.slots.register(
+    { name: 'sidebar.workspaces.session.menu.item', id: 'dsh-threads-make-project', order: 150, locale: NS, inject: () => ({ showProjects }) },
+    MakeProjectMenuItem as ComponentType<never>,
+  ))
+
   ctx.effect(() => ctx.sidebarRightTabs.register({
     id: TAB_ID,
-    kind: TAB_KIND,
-    title,
-    guide: [{
-      id: 'open',
-      order: 70,
-      title,
-      description: () => (isZh() ? '主对话开出的讨论串' : 'Threads opened by the main conversation'),
-    }],
+    kind: 'dsh-threads',
+    title: () => t('tab.title'),
+    guide: [{ id: 'open', order: 70, title: () => t('tab.title'), description: () => t('tab.description') }],
   }), 'dsh-threads: sidebar tab')
-  ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
-    name: 'sidebar.right.pane.tab',
-    key: TAB_ID,
-    inject: () => ({ ping }),
-  }, ThreadsTab))
+  ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register(
+    { name: 'sidebar.right.pane.tab', key: TAB_ID, locale: NS },
+    ThreadsTab as ComponentType<never>,
+  ))
 }

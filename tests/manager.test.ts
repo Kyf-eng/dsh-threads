@@ -44,6 +44,11 @@ function setup(overrides: Partial<Config> = {}) {
     newSessionId: () => `session-${++ids}`,
     warn: () => {},
   })
+  // 'main' is a project's main conversation; only those dispatch threads.
+  void store.putProject({
+    id: 'project-1', title: 'P', workspaceId: 'ws', folder: '/tmp/p', mainSessionId: 'main',
+    pinned: false, instructions: '', createdAt: '', updatedAt: '',
+  })
   return { manager, store, main, agents, outputs, renamed, inherited, failCreate: () => { failCreate = true } }
 }
 
@@ -135,5 +140,64 @@ describe('ThreadManager', () => {
     expect(t.manager.describe('main')).toContain('#1「查依赖」· running')
     expect(t.manager.describe('main', 1)).toContain('任务：x')
     expect(() => t.manager.describe('main', 9)).toThrow(ThreadError)
+  })
+
+  it('only lets a project main conversation open threads', async () => {
+    t.agents.set('other', new FakeAgent('other'))
+    expect(t.manager.isDispatcher('main')).toBe(true)
+    expect(t.manager.isDispatcher('other')).toBe(false)
+    await expect(t.manager.open('other', { title: 'a', task: 'a', initiation: 'user_asked' })).rejects.toBeInstanceOf(ThreadError)
+  })
+})
+
+describe('ThreadManager.reply', () => {
+  let t: ReturnType<typeof setup>
+  beforeEach(() => { t = setup() })
+
+  it('starts a new dispatched round on an idle thread and reopens it', async () => {
+    await t.manager.open('main', { title: 'a', task: 'x', initiation: 'user_asked' })
+    await t.manager.onIdle('session-1')
+    await t.store.putThread({ ...t.store.thread('session-1')!, resolved: true })
+    const thread = t.agents.get('session-1')!
+    thread.seq = 42
+    await t.manager.reply('main', 1, '再补一个测试')
+    expect(t.store.thread('session-1')).toMatchObject({ status: 'running', round: 'dispatch', roundStartSeq: 42, resolved: false })
+    expect(thread.followups.at(-1)).toContain('再补一个测试')
+  })
+
+  it('upgrades a user-driven round so its result wakes the main conversation', async () => {
+    await t.manager.open('main', { title: 'a', task: 'x', initiation: 'user_asked' })
+    await t.manager.onIdle('session-1')
+    await t.manager.onInbox('session-1', 'user', 5)
+    await t.manager.reply('main', 1, '顺便看下 B')
+    expect(t.store.thread('session-1')).toMatchObject({ round: 'dispatch', roundStartSeq: 5 })
+    await t.manager.onIdle('session-1')
+    expect(t.main.followups).toHaveLength(2)
+  })
+
+  it('refuses an unknown or unfinished thread', async () => {
+    await expect(t.manager.reply('main', 1, 'x')).rejects.toBeInstanceOf(ThreadError)
+    t.failCreate()
+    await expect(t.manager.open('main', { title: 'a', task: 'x', initiation: 'user_asked' })).rejects.toThrow()
+    await expect(t.manager.reply('main', 1, 'x')).rejects.toBeInstanceOf(ThreadError)
+  })
+})
+
+describe('ThreadManager.recover', () => {
+  it('fails threads that never started, settles idle ones and reports unreachable ones', async () => {
+    const t = setup({ maxRunning: 3 })
+    await t.manager.open('main', { title: 'a', task: 'x', initiation: 'user_asked' })
+    await t.manager.open('main', { title: 'b', task: 'y', initiation: 'user_asked' })
+    await t.manager.recordReport('session-1', { status: 'done', summary: '完成了 a', changedFiles: [], decisions: [] })
+    const base = t.store.thread('session-2')!
+    await t.store.putThread({ ...base, id: 'session-9', n: 9, status: 'starting', round: null })
+    t.agents.delete('session-2')
+
+    await t.manager.recover()
+
+    expect(t.store.thread('session-9')).toMatchObject({ status: 'failed' })
+    expect(t.store.thread('session-1')).toMatchObject({ status: 'idle' })
+    expect(t.store.thread('session-2')).toMatchObject({ status: 'failed', round: null })
+    expect(t.main.followups.join('\n')).toContain('完成了 a')
   })
 })

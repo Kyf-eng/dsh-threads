@@ -14,7 +14,10 @@ DeepSeek Harness (DSH) plugin: the main conversation dispatches work into real t
 - Optional host services are read with `optional(ctx, name)` (src/probe.ts); a `ctx.<service>` getter throws when the service is not injected.
 - Tool names start with `thread_` (global tool names must be unique; Agent Team is enabled in the Desktop profile).
 - Browser ↔ host calls go through one Fetch route, `POST /api/dsh-threads` with `{ method, payload }` (src/rpc.ts), registered inside `ctx.inject(['connection'], …)`. Do not use `connection.rpc.handle`: it needs the caller's `ctx.webServer`, which profile bundles cannot inject on Desktop.
-- Session ids follow DSH's own shape: `session-${randomUUID()}`.
+- Session ids follow DSH's own shape: `session-${randomUUID()}`; project ids are `project-${randomUUID()}`.
+- Threads belong to projects: only a project's main conversation gets the dispatcher tools (src/roles.ts, src/install.ts). Keep it that way; it mirrors Claude's projects.
+- New stored fields need zod defaults in src/storage.ts so records written by earlier versions still read.
+- Browser half: the slot catalog (types, scopes, props of every slot) is `CLIENT_SLOT_API` in the app's `dsh-cordis-client-runner/lib/client.js`. Use the host's shared `@deepseek-ai/dsh-client-ui-primitives` (external) and `--dsw-alias-*` theme variables; inject CSS through src/client/styles.ts. Only register slot keys we own.
 - Messages put into a session inbox use `createUserMessage` with `source.kind = 'dsh-threads'`. `ctx.sessionController.prompt` always stamps `kind: 'user'`, so dispatcher-sent tasks go through `resolveAgent(id)` → `agent.followup(...)`.
 - Commits: Conventional Commits (`feat:`, `fix:`, `docs:`, `test:`, `chore:`), one topic per branch, squash merge.
 

@@ -1,6 +1,6 @@
-import type { MainRecord, ThreadRecord } from './types.ts'
+import type { MainRecord, ProjectRecord, ThreadRecord } from './types.ts'
 
-/** Durable plugin state: threads and per-main-conversation delivery state. Backed by src/storage.ts in DSH. */
+/** Durable plugin state: projects, threads and per-main-conversation delivery state. Backed by src/storage.ts in DSH. */
 export interface ThreadStore {
   thread(id: string): ThreadRecord | undefined
   threads(): ThreadRecord[]
@@ -8,7 +8,14 @@ export interface ThreadStore {
   putThread(record: ThreadRecord): Promise<void>
   /** The main conversation's delivery state, or a fresh one when nothing is stored. */
   main(id: string): MainRecord
+  mains(): MainRecord[]
   putMain(record: MainRecord): Promise<void>
+  project(id: string): ProjectRecord | undefined
+  projects(): ProjectRecord[]
+  /** The project whose main conversation this session is. */
+  projectOfMain(mainSessionId: string): ProjectRecord | undefined
+  putProject(record: ProjectRecord): Promise<void>
+  removeProject(id: string): Promise<void>
 }
 
 export function emptyMain(id: string): MainRecord {
@@ -23,12 +30,19 @@ export function byNumber(a: ThreadRecord, b: ThreadRecord): number {
 export function memoryStore(): ThreadStore {
   const threads = new Map<string, ThreadRecord>()
   const mains = new Map<string, MainRecord>()
+  const projects = new Map<string, ProjectRecord>()
   return {
     thread: (id) => threads.get(id),
     threads: () => [...threads.values()],
     threadsOf: (mainSessionId) => [...threads.values()].filter((t) => t.mainSessionId === mainSessionId).sort(byNumber),
     putThread: async (record) => { threads.set(record.id, record) },
     main: (id) => mains.get(id) ?? emptyMain(id),
+    mains: () => [...mains.values()],
     putMain: async (record) => { mains.set(record.id, record) },
+    project: (id) => projects.get(id),
+    projects: () => [...projects.values()],
+    projectOfMain: (mainSessionId) => [...projects.values()].find((p) => p.mainSessionId === mainSessionId),
+    putProject: async (record) => { projects.set(record.id, record) },
+    removeProject: async (id) => { projects.delete(id) },
   }
 }

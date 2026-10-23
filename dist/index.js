@@ -199,9 +199,10 @@ const pinInput = z.object({
 const idInput = z.object({ id: z.string() });
 const mainInput = z.object({ mainSessionId: z.string() });
 function summarize(thread) {
-	const { id, n, title, status, resolved, initiation, lastReport, error, createdAt, updatedAt } = thread;
+	const { id, mainSessionId, n, title, status, resolved, initiation, lastReport, error, createdAt, updatedAt } = thread;
 	return {
 		id,
+		mainSessionId,
 		n,
 		title,
 		status,
@@ -220,6 +221,11 @@ function parse(schema, payload) {
 }
 function apiHandlers(deps) {
 	const { projects, manager, threadsOf, plugin } = deps;
+	const requireThread = (id) => {
+		const thread = deps.thread(id);
+		if (thread === void 0) throw new ProjectError("找不到这个讨论串。");
+		return thread;
+	};
 	return {
 		ping: () => ({
 			ok: true,
@@ -247,7 +253,19 @@ function apiHandlers(deps) {
 				thread: manager.isThread(id)
 			};
 		},
-		"threads.list": (payload) => threadsOf(parse(mainInput, payload).mainSessionId).map(summarize)
+		"threads.list": (payload) => threadsOf(parse(mainInput, payload).mainSessionId).map(summarize),
+		/** One thread for the thread pane header, with its project's title. */
+		"threads.get": (payload) => {
+			const thread = requireThread(parse(idInput, payload).id);
+			return {
+				...summarize(thread),
+				projectTitle: projects.ofMain(thread.mainSessionId)?.title ?? null
+			};
+		},
+		"threads.resolve": async (payload) => summarize(await manager.setResolved(parse(idInput, payload).id, true)),
+		"threads.reopen": async (payload) => summarize(await manager.setResolved(parse(idInput, payload).id, false)),
+		/** Ids of every resolved thread; the client locks their composers. */
+		"threads.resolved": () => deps.threads().filter((t) => t.resolved).map((t) => t.id)
 	};
 }
 // src/delivery.ts
@@ -542,6 +560,19 @@ var ThreadManager = class {
 			updatedAt: this.deps.now()
 		});
 		await this.enqueue(thread.mainSessionId, note);
+	}
+	/** "标记已解决 / 重新打开" from the thread pane. A resolved thread's composer is locked in the UI. */
+	async setResolved(threadId, resolved) {
+		const thread = this.deps.store.thread(threadId);
+		if (thread === void 0) throw new ThreadError("找不到这个讨论串。");
+		if (thread.resolved === resolved) return thread;
+		const next = {
+			...thread,
+			resolved,
+			updatedAt: this.deps.now()
+		};
+		await this.deps.store.putThread(next);
+		return next;
 	}
 	async recordReport(threadId, input) {
 		const thread = this.deps.store.thread(threadId);
@@ -1281,6 +1312,8 @@ async function apply(ctx, config) {
 			projects,
 			manager,
 			threadsOf: (mainSessionId) => store.threadsOf(mainSessionId),
+			thread: (id) => store.thread(id),
+			threads: () => store.threads(),
 			plugin: {
 				name: name$1,
 				version

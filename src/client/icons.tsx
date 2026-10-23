@@ -51,6 +51,17 @@ export function MoreIcon(props: IconProps) {
   )
 }
 
+export function ThreadsIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="6" cy="6" r="2.2" />
+      <circle cx="18" cy="12" r="2.2" />
+      <circle cx="6" cy="18" r="2.2" />
+      <path d="M8.2 6h2.8a4 4 0 0 1 4 4v0M8.2 18h2.8a4 4 0 0 0 4-4v0" />
+    </Svg>
+  )
+}
+
 export function TrashIcon(props: IconProps) {
   return <Svg {...props}><path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 12.5h9l1-12.5M10.5 11v5M13.5 11v5" /></Svg>
 }

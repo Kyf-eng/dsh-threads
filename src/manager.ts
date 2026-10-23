@@ -233,6 +233,16 @@ export class ThreadManager {
     await this.enqueue(thread.mainSessionId, note)
   }
 
+  /** "标记已解决 / 重新打开" from the thread pane. A resolved thread's composer is locked in the UI. */
+  async setResolved(threadId: string, resolved: boolean): Promise<ThreadRecord> {
+    const thread = this.deps.store.thread(threadId)
+    if (thread === undefined) throw new ThreadError('找不到这个讨论串。')
+    if (thread.resolved === resolved) return thread
+    const next = { ...thread, resolved, updatedAt: this.deps.now() }
+    await this.deps.store.putThread(next)
+    return next
+  }
+
   async recordReport(threadId: string, input: Omit<ThreadReport, 'at'>): Promise<ThreadReport> {
     const thread = this.deps.store.thread(threadId)
     if (thread === undefined) throw new ThreadError('只有讨论串会话能调用 thread_report。')

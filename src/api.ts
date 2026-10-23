@@ -17,11 +17,11 @@ const idInput = z.object({ id: z.string() })
 const mainInput = z.object({ mainSessionId: z.string() })
 
 /** What the panel shows for a thread; the brief and internal round bookkeeping stay on the host. */
-export type ThreadSummary = Pick<ThreadRecord, 'id' | 'n' | 'title' | 'status' | 'resolved' | 'initiation' | 'lastReport' | 'error' | 'createdAt' | 'updatedAt'>
+export type ThreadSummary = Pick<ThreadRecord, 'id' | 'mainSessionId' | 'n' | 'title' | 'status' | 'resolved' | 'initiation' | 'lastReport' | 'error' | 'createdAt' | 'updatedAt'>
 
 export function summarize(thread: ThreadRecord): ThreadSummary {
-  const { id, n, title, status, resolved, initiation, lastReport, error, createdAt, updatedAt } = thread
-  return { id, n, title, status, resolved, initiation, lastReport, error, createdAt, updatedAt }
+  const { id, mainSessionId, n, title, status, resolved, initiation, lastReport, error, createdAt, updatedAt } = thread
+  return { id, mainSessionId, n, title, status, resolved, initiation, lastReport, error, createdAt, updatedAt }
 }
 
 function parse<T>(schema: z.ZodType<T>, payload: unknown): T {
@@ -34,9 +34,16 @@ export function apiHandlers(deps: {
   projects: Projects
   manager: ThreadManager
   threadsOf: (mainSessionId: string) => ThreadRecord[]
+  thread: (id: string) => ThreadRecord | undefined
+  threads: () => ThreadRecord[]
   plugin: { name: string; version: string }
 }): RpcHandlers {
   const { projects, manager, threadsOf, plugin } = deps
+  const requireThread = (id: string) => {
+    const thread = deps.thread(id)
+    if (thread === undefined) throw new ProjectError('找不到这个讨论串。')
+    return thread
+  }
   return {
     ping: () => ({ ok: true, plugin }),
     'projects.list': () => projects.list(),
@@ -59,5 +66,14 @@ export function apiHandlers(deps: {
       return { project: projects.ofSession(id) ?? null, thread: manager.isThread(id) }
     },
     'threads.list': (payload) => threadsOf(parse(mainInput, payload).mainSessionId).map(summarize),
+    /** One thread for the thread pane header, with its project's title. */
+    'threads.get': (payload) => {
+      const thread = requireThread(parse(idInput, payload).id)
+      return { ...summarize(thread), projectTitle: projects.ofMain(thread.mainSessionId)?.title ?? null }
+    },
+    'threads.resolve': async (payload) => summarize(await manager.setResolved(parse(idInput, payload).id, true)),
+    'threads.reopen': async (payload) => summarize(await manager.setResolved(parse(idInput, payload).id, false)),
+    /** Ids of every resolved thread; the client locks their composers. */
+    'threads.resolved': () => deps.threads().filter((t) => t.resolved).map((t) => t.id),
   }
 }

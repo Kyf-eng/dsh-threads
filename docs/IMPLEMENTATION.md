@@ -465,6 +465,31 @@ dsh-thread/                    # 本地目录名不变；GitHub 仓库叫 dsh-th
 
 注意：退出 DSH 时如果有任务在跑，会弹"当前正在运行的任务将会中断"的确认框；脚本里的 `quit` 会被它拦住。
 
+#### M2b 落地情况（2026-10-23，分支 `feat/thread-pane`）
+
+右侧讨论串面板：
+- 资源协议 `dsh-threads`（`dsh-resource://dsh-threads/session/<id>`），打开时用 `sessions.retain(id, { source: 'dshThreads' })` 持有会话，标签页关掉才释放。
+- 标签类型 `dsh-threads.chat`：
+  - 正文 = 头部 + `SessionProvider` 包住自己声明的会话作用域子插槽 `dsh-threads.chat.conversation`，子插槽里是 `renderFactorySlot('conversation.content', { variant: 'embedded' })`，照抄 ui-subagent 的 `SidebarChatTab` / `ConversationSlotPanel`；
+  - 不显示空白会话的开场页，避免出现工作区选择器。
+- 头部：状态点、`#n 标题`、项目名、"标记已解决 / 重新打开"、"在主区域打开"。
+- 原来的占位标签页换成"讨论串"列表（kind `dsh-threads`，引导页可进）：列出项目主对话的讨论串（状态点、最新摘要、时间、已解决标记），点击在右侧打开对话。
+- 主对话标题栏（`conversation.session.header.actions`，order 15）：项目主对话显示"讨论串 · N（· M 个运行中）"，点击打开列表；讨论串显示"回到主对话"。
+
+已解决锁定：
+- 宿主端新增 `manager.setResolved`，接口 `threads.get` / `threads.resolve` / `threads.reopen` / `threads.resolved`。
+- 浏览器端给每个已解决的讨论串发布一个低优先级的待处理交互（`ctx.uiSession.registerPendingInteraction`，kind `dsh-threads-resolved`）；输入框插槽链 `conversation.composer` 看到它就换成 `ResolvedComposer`（"此讨论串已解决 · 重新打开"）。
+- 左侧列表只显示审批、计划确认、提问这三种待处理状态，所以不会多出标记。
+- 有会话开始或结束运行、或者本浏览器标记 / 重开之后，重新同步已解决列表。
+
+实机测试（桌面版，后台操作，没有接管屏幕）全部通过：
+- 项目主对话标题栏显示"讨论串 · 1"，点击打开右侧列表。
+- 点列表里的 #1，右侧打开它的实时对话，自带输入框。
+- 在右侧直接给讨论串发消息：讨论串完成并回报；主对话没有被唤醒，唤醒计数也没增加，结果只进了上下文。
+- "标记已解决"后，输入框换成锁定栏；"重新打开"后恢复。左侧列表没有多余标记。
+- "在主区域打开"让讨论串占据中间区域，标题栏出现"回到主对话"；点回去后，主对话的右侧标签（列表 + #1）都还在。
+- 没有新的崩溃日志。
+
 ### M3 并行与隔离；M4 发布
 - 按 Plan.md 原样，补充以下细节：
   - `maxRunning` 改为 3；

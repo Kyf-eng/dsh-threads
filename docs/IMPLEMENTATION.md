@@ -272,14 +272,17 @@ dsh-thread/                    # 本地目录名不变；GitHub 仓库叫 dsh-th
   src/
     index.ts                   # name / inject / Config / apply：组装下面各模块
     config.ts  types.ts
-    store.ts                   # storageDomain：threads / proposals / mains 三张表
+    store.ts                   # ThreadStore 接口 + 内存实现（测试用）
+    storage.ts                 # 用 storageDomain 实现 ThreadStore：threads / mains 两张表（M2 加 proposals）
+    host.ts                    # 把 DSH 服务（sessionController、agents、sessionTitle、permissionPresets…）适配成 ThreadHost
     install.ts                 # agent/created：按会话类型装主对话工具和提示，或讨论串工具和提示
-    manager.ts                 # open / reply / status / stop / startProposal / settle
+    manager.ts                 # open / onInbox / onIdle / recordReport / flush / describe（M2 加 reply / stop / startProposal）
     report.ts                  # 便条拼装、截断、finalAssistantOutput 兜底
-    delivery.ts                # 唤醒规则 + 防循环
-    prompts.ts                 # 主对话和讨论串的提示文本（中英）
-    tools/{thread-open,thread-status,thread-reply,thread-report}.ts
+    delivery.ts                # 唤醒规则 + 防循环（纯函数）
+    prompts.ts                 # 主对话和讨论串的系统提示
+    tools/{thread-open,thread-status,thread-report}.ts   # M2 加 thread-reply
     command.ts                 # /thread
+    services.ts  dsh-types.ts  source.ts   # 可选服务读取、类型声明加载、消息来源类型
     rpc.ts                     # POST /api/dsh-threads {method,payload}：list / startProposal / dismissProposal / stop
     client/index.tsx  client/ThreadsTab.tsx  client/locale.ts
   locale/en.json  locale/zh.json   # { meta: { title, description } }
@@ -370,6 +373,39 @@ dsh-thread/                    # 本地目录名不变；GitHub 仓库叫 dsh-th
   - 状态机。
 
 **完成标准**：对主对话说一个任务，它开出讨论串；讨论串结束后调用 `thread_report`；主对话被唤醒，收到不超过 400 字的便条。
+
+#### M1 落地情况（2026-10-23，分支 `feat/thread-open`）
+
+范围上的取舍：
+- M1 实现了 `thread_open`、`thread_status`、`thread_report` 三个工具和 `/thread <任务>` 命令。`thread_reply` 按 M2 的安排放到 M2。
+- `initiation` 只开放 `user_asked` 和 `offer` 两种。模型自己想到的后续工作，提示词要求它"在回复里提一句、让用户决定"，不调用工具。`proposal` 留到 M2。
+- 重启后的恢复（重新挂上运行中讨论串的状态监听）留到 M2。
+
+实现上和计划不同的地方：
+- **讨论串会话**：用 `sessionController.create` 建，再用 `resolveAgent` + `followup` 发简报，消息来源标记为 `dsh-threads`。"这一轮是谁发起的"由插件自己记录：主对话派的任务记 `dispatch`；讨论串空闲时收到用户消息，记 `user`。
+- **工具和提示按会话挂载**：
+  - 普通会话装 `thread_open`、`thread_status` 和调度员提示；
+  - 讨论串装 `thread_report` 和讨论串提示；
+  - 子代理和 Agent Team 成员（`origin: 'subagent'`）什么都不装。
+- **存储**：拆成 `store.ts`（接口和内存实现）和 `storage.ts`（基于 storageDomain 的实现），这样单元测试不用加载 DSH 的存储包。
+
+实机测试（本机桌面版，标准模式）：
+
+| 路径 | 结果 |
+| --- | --- |
+| 用户说"开个讨论串：…" | 模型选 `user_asked` 调用 `thread_open`，侧栏出现"#1 …"。讨论串调用 `thread_report`（done）后，主对话被自动唤醒，并按"报告不是证据"自己复核了一遍。✅ |
+| `/thread <任务>` | 立即开出 #2。这次讨论串**没调用** `thread_report`，兜底把它最后一条回复写进便条，主对话照常被唤醒。✅（兜底生效） |
+| 加强措辞后再次 `/thread` | 讨论串的系统提示、工具描述、任务简报三处都改成"主对话只能收到 thread_report，结束前必须调用"。#3 主动回报了 done。✅ |
+| `offer` | 弹出"要为「…」开一个讨论串吗？"卡片，三个选项加自定义输入。选"在主对话里做"后没有新建会话，主对话自己完成了任务。✅ |
+| 防循环计数 | 两次自动唤醒后用户发了一条消息，`autoWakeStreak` 清零；之后再唤醒一次，计为 1。✅ |
+
+还没在实机上覆盖的（已有单元测试）：
+- 主对话忙时先压住便条、空闲后再送达；
+- 用户在讨论串里自己聊出来的结果只进上下文、不唤醒；
+- 超过 `maxRunning` 时拒绝；
+- 建会话失败时把讨论串标记为 failed。
+
+审批继承要在隔离的官方 DSH 上验收（第六节第 8 条），这次还没做。
 
 ### M2 面板、追加、提议、恢复
 - 加 `thread_reply` 和 `proposal` 流程（`/thread start`、提议过期）。

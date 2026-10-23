@@ -4,7 +4,7 @@ English | [中文](README.zh.md)
 
 A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) plugin. Your main conversation acts as a dispatcher: when a task is self-contained, it opens a **thread** — a real session you can click into and keep talking to — and when the thread finishes, a short summary comes back to the main conversation.
 
-> Status: **M0 skeleton**. The plugin loads and reports what it can reach; threads arrive in M1. See [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md).
+> Status: **M1**. Opening a thread, getting its report back into the main conversation, and `/thread <task>` work; the sidebar panel, follow-up instructions and proposals arrive in M2. See [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md).
 
 ## Development install
 

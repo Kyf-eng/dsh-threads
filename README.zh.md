@@ -4,7 +4,7 @@
 
 一个 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 插件。主对话当调度员：遇到能独立完成的任务，就开一个**讨论串**——一个你能点进去接着聊的真实会话；讨论串做完后，把简短摘要回报给主对话。
 
-> 状态：**M0 骨架**。插件能加载，并报告它能用到哪些 DSH 服务；讨论串在 M1 实现。详见 [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)。
+> 状态：**M1**。开讨论串、回报主对话、`/thread <任务>` 已可用；侧栏面板、追加指令和提议在 M2 实现。详见 [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)。
 
 ## 开发安装
 

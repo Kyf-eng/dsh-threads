@@ -1,0 +1,6 @@
+# Bundle patch for @fky/dsh-threads, applied when the bundle is enabled in a profile.
+# The row's `name` must be this package's name so DSH also discovers its dsh.client half.
+- insert:
+    - id: dsh-threads
+      name: '@fky/dsh-threads'
+      config: {}

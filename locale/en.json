@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Threads",
+    "description": "The main conversation dispatches work into real thread sessions you can open, and gets short summaries back."
+  }
+}

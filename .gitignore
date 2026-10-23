@@ -1,0 +1,10 @@
+node_modules/
+*.tgz
+.env
+.env.*
+.DS_Store
+coverage/
+*.log
+# Machine-specific development notes
+docs/LOCAL.md
+# dist/ is committed on purpose: GitHub installs run through pnpm 11, which blocks prepare scripts.

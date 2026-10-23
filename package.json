@@ -1,0 +1,81 @@
+{
+  "name": "@fky/dsh-threads",
+  "version": "0.0.0",
+  "description": "DeepSeek Harness plugin: the main conversation dispatches work into real thread sessions and gets short summaries back.",
+  "type": "module",
+  "license": "MIT",
+  "icon": "./icon.svg",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "threads"
+  ],
+  "main": "./dist/index.js",
+  "exports": {
+    ".": "./dist/index.js",
+    "./client": "./dist/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./locale/*.json": "./locale/*.json",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "dsh": ">=0.2.1-rc.2 <0.3.0",
+    "node": "^22.19.0 || >=24"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-session",
+        "@deepseek-ai/dsh-client-ui-sidebar-right"
+      ]
+    }
+  },
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.client.json",
+    "test": "vitest run",
+    "check": "npm run typecheck && npm test && npm run build",
+    "dev:install": "sh scripts/dev-install.sh"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "~4.0.5",
+    "@deepseek-ai/dsh-llm": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-tools": "0.2.1-rc.2",
+    "@deepseek-ai/schemastery": "~3.18.5"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.5",
+    "@deepseek-ai/dsh-agent": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-api-session-controller": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-client-locale": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-sidebar-right": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-slots": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-commands": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-llm": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-storage-domain": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-subagent": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-tools": "0.2.1-rc.2",
+    "@deepseek-ai/schemastery": "3.18.5",
+    "@types/node": "^24.19.2",
+    "@types/react": "^18.3.31",
+    "react": "18.3.1",
+    "tsdown": "^0.23.2",
+    "typescript": "~5.9.3",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  }
+}

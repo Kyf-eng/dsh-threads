@@ -39,6 +39,19 @@ export const zh = {
   'time.days': '{count} 天前',
   'tab.title': '讨论串',
   'tab.description': '主对话开出的讨论串',
+  'tab.thread': '讨论串',
+  'pane.resolve': '标记已解决',
+  'pane.reopen': '重新打开',
+  'pane.openMain': '在主区域打开',
+  'list.empty': '这个项目还没有讨论串。',
+  'list.notProject': '当前对话不是项目，没有讨论串。可以在左侧会话的"…"菜单里选"设为项目"。',
+  'list.noReport': '还没有回报',
+  'list.resolved': '已解决',
+  'header.threads': '讨论串 · {count}',
+  'header.running': '{count} 个运行中',
+  'header.backToMain': '回到主对话',
+  'resolved.notice': '此讨论串已解决。重新打开后才能继续发消息。',
+  'resolved.reopen': '重新打开',
 }
 
 export const en: typeof zh = {
@@ -79,6 +92,19 @@ export const en: typeof zh = {
   'time.days': '{count} d ago',
   'tab.title': 'Threads',
   'tab.description': 'Threads opened by the main conversation',
+  'tab.thread': 'Thread',
+  'pane.resolve': 'Mark resolved',
+  'pane.reopen': 'Reopen',
+  'pane.openMain': 'Open in main view',
+  'list.empty': 'This project has no threads yet.',
+  'list.notProject': 'This conversation is not a project, so it has no threads. Choose "Make project" in its "…" menu.',
+  'list.noReport': 'No report yet',
+  'list.resolved': 'resolved',
+  'header.threads': 'Threads · {count}',
+  'header.running': '{count} running',
+  'header.backToMain': 'Back to main conversation',
+  'resolved.notice': 'This thread is resolved. Reopen it to send more messages.',
+  'resolved.reopen': 'Reopen',
 }
 
 export type MessageKey = keyof typeof zh

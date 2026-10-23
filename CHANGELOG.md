@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- M2b thread pane:
+  - Threads open in the right sidebar with their live conversation and their own composer.
+  - A "Threads" list tab.
+  - "Threads · N" in a project main conversation's header, "Back to main conversation" in a thread's.
+  - "Mark resolved / Reopen": a resolved thread's composer is locked until it is reopened.
+
 - M2a projects:
   - A project is one folder plus one standing main conversation. Only a project's main conversation can open threads, and its instructions reach the main conversation and every thread.
   - A "Projects" entry in the left sidebar opens a projects page (create, search, sort, pin, remove).

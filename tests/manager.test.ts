@@ -183,6 +183,18 @@ describe('ThreadManager.reply', () => {
   })
 })
 
+describe('ThreadManager.setResolved', () => {
+  it('marks a thread resolved, and a user message in it reopens it', async () => {
+    const t = setup()
+    await t.manager.open('main', { title: 'a', task: 'x', initiation: 'user_asked' })
+    await t.manager.onIdle('session-1')
+    expect((await t.manager.setResolved('session-1', true)).resolved).toBe(true)
+    await t.manager.onInbox('session-1', 'user', 3)
+    expect(t.store.thread('session-1')).toMatchObject({ resolved: false, round: 'user' })
+    await expect(t.manager.setResolved('session-x', true)).rejects.toBeInstanceOf(ThreadError)
+  })
+})
+
 describe('ThreadManager.recover', () => {
   it('fails threads that never started, settles idle ones and reports unreachable ones', async () => {
     const t = setup({ maxRunning: 3 })

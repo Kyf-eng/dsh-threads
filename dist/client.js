@@ -50,6 +50,29 @@ function PlusIcon(props) {
 		children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", { d: "M12 5v14M5 12h14" })
 	});
 }
+function ThreadsIcon(props) {
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Svg, {
+		...props,
+		children: [
+			/* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
+				cx: "6",
+				cy: "6",
+				r: "2.2"
+			}),
+			/* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
+				cx: "18",
+				cy: "12",
+				r: "2.2"
+			}),
+			/* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
+				cx: "6",
+				cy: "18",
+				r: "2.2"
+			}),
+			/* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", { d: "M8.2 6h2.8a4 4 0 0 1 4 4v0M8.2 18h2.8a4 4 0 0 0 4-4v0" })
+		]
+	});
+}
 function TrashIcon(props) {
 	return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Svg, {
 		...props,
@@ -106,7 +129,20 @@ const zh = {
 	"time.hours": "{count} 小时前",
 	"time.days": "{count} 天前",
 	"tab.title": "讨论串",
-	"tab.description": "主对话开出的讨论串"
+	"tab.description": "主对话开出的讨论串",
+	"tab.thread": "讨论串",
+	"pane.resolve": "标记已解决",
+	"pane.reopen": "重新打开",
+	"pane.openMain": "在主区域打开",
+	"list.empty": "这个项目还没有讨论串。",
+	"list.notProject": "当前对话不是项目，没有讨论串。可以在左侧会话的\"…\"菜单里选\"设为项目\"。",
+	"list.noReport": "还没有回报",
+	"list.resolved": "已解决",
+	"header.threads": "讨论串 · {count}",
+	"header.running": "{count} 个运行中",
+	"header.backToMain": "回到主对话",
+	"resolved.notice": "此讨论串已解决。重新打开后才能继续发消息。",
+	"resolved.reopen": "重新打开"
 };
 const en = {
 	"panel": "Projects",
@@ -145,7 +181,20 @@ const en = {
 	"time.hours": "{count} h ago",
 	"time.days": "{count} d ago",
 	"tab.title": "Threads",
-	"tab.description": "Threads opened by the main conversation"
+	"tab.description": "Threads opened by the main conversation",
+	"tab.thread": "Thread",
+	"pane.resolve": "Mark resolved",
+	"pane.reopen": "Reopen",
+	"pane.openMain": "Open in main view",
+	"list.empty": "This project has no threads yet.",
+	"list.notProject": "This conversation is not a project, so it has no threads. Choose \"Make project\" in its \"…\" menu.",
+	"list.noReport": "No report yet",
+	"list.resolved": "resolved",
+	"header.threads": "Threads · {count}",
+	"header.running": "{count} running",
+	"header.backToMain": "Back to main conversation",
+	"resolved.notice": "This thread is resolved. Reopen it to send more messages.",
+	"resolved.reopen": "Reopen"
 };
 /** Relative time like "3 天前", from an ISO timestamp. */
 function relativeTime(t, iso, now = Date.now()) {
@@ -181,18 +230,18 @@ let state = {
 	projects: [],
 	error: null
 };
-const listeners = /* @__PURE__ */ new Set();
+const listeners$1 = /* @__PURE__ */ new Set();
 let inflight = null;
 function publish(next) {
 	state = next;
-	for (const listener of listeners) listener();
+	for (const listener of listeners$1) listener();
 }
 const projectsStore = {
 	getSnapshot: () => state,
 	subscribe(listener) {
-		listeners.add(listener);
+		listeners$1.add(listener);
 		return () => {
-			listeners.delete(listener);
+			listeners$1.delete(listener);
 		};
 	},
 	/** Reload from the host; concurrent calls share one request. */
@@ -562,6 +611,128 @@ function ProjectsPage({ t, useWorkspaces, useSessionStatus, openSession, pinSess
 		]
 	});
 }
+// src/client/threads.ts
+/** Bumped after any change this browser makes (resolve, reopen), so panes reload. */
+let revision = 0;
+const listeners = /* @__PURE__ */ new Set();
+const threadsRevision = {
+	bump() {
+		revision += 1;
+		for (const listener of listeners) listener();
+	},
+	subscribe(listener) {
+		listeners.add(listener);
+		return () => {
+			listeners.delete(listener);
+		};
+	},
+	get: () => revision
+};
+function useThreadsRevision() {
+	return (0, react.useSyncExternalStore)(threadsRevision.subscribe, threadsRevision.get);
+}
+/** Load a host value, reloading whenever `deps` change; keeps the last value while reloading. */
+function useHostValue(method, payload, deps) {
+	const [value, setValue] = (0, react.useState)(void 0);
+	(0, react.useEffect)(() => {
+		if (method === null) {
+			setValue(void 0);
+			return;
+		}
+		let live = true;
+		callHost(method, payload).then((next) => {
+			if (live) setValue(next);
+		}, () => {});
+		return () => {
+			live = false;
+		};
+	}, [method, ...deps]);
+	return value;
+}
+/** Right-sidebar resource address of a thread's conversation. */
+const THREAD_ADDRESS = "dsh-resource://dsh-threads/session/";
+function threadAddress(threadId) {
+	return `${THREAD_ADDRESS}${encodeURIComponent(threadId)}`;
+}
+function parseThreadAddress(value) {
+	let url;
+	try {
+		url = new URL(value);
+	} catch {
+		return;
+	}
+	if (url.protocol !== "dsh-resource:" || url.hostname.toLowerCase() !== "dsh-threads") return void 0;
+	const parts = url.pathname.split("/").filter(Boolean);
+	if (parts.length !== 2 || parts[0] !== "session" || parts[1] === void 0) return void 0;
+	try {
+		return decodeURIComponent(parts[1]);
+	} catch {
+		return;
+	}
+}
+const THREAD_ADDRESS_PATTERN = `${THREAD_ADDRESS}**`;
+/** StateDot state for a thread row. */
+function dotState(thread, running) {
+	if (running || thread.status === "running" || thread.status === "starting") return "ongoing";
+	if (thread.status === "failed") return "error";
+	if (thread.resolved) return "done";
+	const report = thread.lastReport?.status;
+	if (report === "needs_decision" || report === "blocked") return "warning";
+	if (report === "failed") return "error";
+	return report === "done" ? "done" : "idle";
+}
+// src/client/resolved.ts
+const RESOLVED_KIND = "dsh-threads-resolved";
+/**
+* Keep one published interaction per resolved thread, re-reading the host list on start,
+* after this browser resolves or reopens a thread, and whenever a session starts or stops.
+*/
+function syncResolved(publish, status) {
+	const active = /* @__PURE__ */ new Map();
+	let disposed = false;
+	let pending;
+	const sync = async () => {
+		const ids = new Set(await callHost("threads.resolved").catch(() => [...active.keys()]));
+		if (disposed) return;
+		for (const [id, unpublish] of active) if (!ids.has(id)) {
+			unpublish();
+			active.delete(id);
+		}
+		for (const id of ids) if (!active.has(id)) active.set(id, publish({
+			key: `${RESOLVED_KIND}:${id}`,
+			sessionId: id,
+			kind: RESOLVED_KIND
+		}, () => {}));
+	};
+	const schedule = () => {
+		if (pending !== void 0) clearTimeout(pending);
+		pending = setTimeout(() => {
+			sync();
+		}, 150);
+	};
+	let runningKey = "";
+	const offStatus = status?.subscribe(() => {
+		const next = [...status.getSnapshot()].filter(([, state]) => state.running === true).map(([id]) => id).sort().join(",");
+		if (next !== runningKey) {
+			runningKey = next;
+			schedule();
+		}
+	});
+	const offRevision = threadsRevision.subscribe(schedule);
+	sync();
+	return () => {
+		disposed = true;
+		if (pending !== void 0) clearTimeout(pending);
+		offStatus?.();
+		offRevision();
+		for (const unpublish of active.values()) unpublish();
+		active.clear();
+	};
+}
+async function setThreadResolved(threadId, resolved) {
+	await callHost(resolved ? "threads.resolve" : "threads.reopen", { id: threadId });
+	threadsRevision.bump();
+}
 // src/client/styles.ts
 const STYLE_ID = "@fky/dsh-threads/styles";
 const css = `
@@ -600,7 +771,22 @@ const css = `
 .dsht-field-label{color:var(--dsw-alias-label-secondary)}
 .dsht-hint{font-size:12px;line-height:17px;color:var(--dsw-alias-label-tertiary)}
 .dsht-buttons{display:flex;justify-content:flex-end;gap:8px}
-.dsht-tab{padding:12px;font-size:13px;line-height:1.6}
+.dsht-tab{padding:12px;font-size:13px;line-height:1.6;color:var(--dsw-alias-label-secondary)}
+.dsht-chat{display:flex;flex-direction:column;height:100%;min-height:0}
+.dsht-chat-body{flex:1;min-height:0;display:flex;flex-direction:column}
+.dsht-pane-head{display:flex;align-items:center;gap:8px;min-height:40px;padding:4px 8px 4px 12px;border-bottom:1px solid var(--dsw-alias-border-l1);font-size:13px;flex:none}
+.dsht-pane-title{flex:1;min-width:0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dsht-pane-project{margin-left:6px;font-weight:400;color:var(--dsw-alias-label-tertiary)}
+.dsht-list{display:flex;flex-direction:column;gap:2px;padding:6px 8px}
+.dsht-list-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 6px 6px;font-size:12px;color:var(--dsw-alias-label-tertiary)}
+.dsht-row{display:flex;gap:10px;align-items:flex-start;width:100%;padding:10px;border:0;border-radius:10px;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
+.dsht-row:hover,.dsht-row:focus-visible{background:var(--dsw-alias-interactive-bg-hover);outline:none}
+.dsht-dot{margin-top:5px;flex:none}
+.dsht-row-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.dsht-row-title{font-size:13px;line-height:18px;font-weight:600;overflow-wrap:anywhere}
+.dsht-row-summary{font-size:12px;line-height:17px;color:var(--dsw-alias-label-secondary);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.dsht-row-meta{font-size:11px;line-height:15px;color:var(--dsw-alias-label-tertiary)}
+.dsht-resolved{box-sizing:border-box;display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;margin:0 auto 12px;padding:12px 16px;border:1px solid var(--dsw-alias-border-l2);border-radius:16px;background:var(--dsw-alias-bg-layer-1);font-size:13px;line-height:19px;color:var(--dsw-alias-label-secondary)}
 @media (max-width:640px){.dsht-page{padding-left:16px;padding-right:16px}.dsht-head{flex-direction:column}}
 `;
 /** Add the stylesheet; returns a disposer that removes it. */
@@ -616,27 +802,242 @@ function injectStyles() {
 		tag.remove();
 	};
 }
+// src/client/ThreadChatTab.tsx
+/** Session-scoped child slot this tab declares; only the declaring entry may render it. */
+const THREAD_CONVERSATION_SLOT = "dsh-threads.chat.conversation";
+function ThreadChatTab({ useTabInfo, useResource, SessionProvider, renderSlot, useSessionStatus, t, openSession }) {
+	const { tab } = useTabInfo();
+	const threadId = parseThreadAddress(tab.contentId);
+	const resource = useResource(tab.contentId);
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+		className: "dsht-chat",
+		"data-dsh-threads-chat": "",
+		children: [threadId === void 0 ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ThreadPaneHeader, {
+			threadId,
+			useSessionStatus,
+			t,
+			openSession
+		}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+			className: "dsht-chat-body",
+			children: resource.value === void 0 ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SessionProvider, {
+				session: resource.value.reference,
+				children: renderSlot(THREAD_CONVERSATION_SLOT, {})
+			})
+		})]
+	});
+}
+function ThreadPaneHeader({ threadId, useSessionStatus, t, openSession }) {
+	const running = useSessionStatus((statuses) => statuses.get(threadId)?.running === true);
+	const revision = useThreadsRevision();
+	const thread = useHostValue("threads.get", { id: threadId }, [
+		threadId,
+		running,
+		revision
+	]);
+	const [busy, setBusy] = (0, react.useState)(false);
+	if (thread === void 0) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { className: "dsht-pane-head" });
+	const toggle = async () => {
+		setBusy(true);
+		try {
+			await setThreadResolved(threadId, !thread.resolved);
+		} finally {
+			setBusy(false);
+		}
+	};
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+		className: "dsht-pane-head",
+		children: [
+			/* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.StateDot, { state: dotState(thread, running) }),
+			/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: "dsht-pane-title",
+				title: thread.title,
+				children: [
+					"#",
+					thread.n,
+					" ",
+					thread.title,
+					thread.projectTitle === null ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: "dsht-pane-project",
+						children: thread.projectTitle
+					})
+				]
+			}),
+			/* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
+				size: "sm",
+				variant: "ghost",
+				disabled: busy || running,
+				onClick: () => {
+					toggle();
+				},
+				children: thread.resolved ? t("pane.reopen") : t("pane.resolve")
+			}),
+			/* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
+				size: "sm",
+				variant: "ghost",
+				onClick: () => openSession(threadId),
+				children: t("pane.openMain")
+			})
+		]
+	});
+}
+/** The embedded Conversation for the thread the tab's SessionProvider supplies. */
+function ThreadConversation({ sessionId, useSession, useConversation, useSessions, renderFactorySlot }) {
+	const session = useSession((value) => value);
+	const active = useConversation((value) => value.activeTargets.size > 0) || !session.blank && !session.awaitingFirstTurn || session.running;
+	const summaryBlank = useSessions((state) => state.byId[sessionId]?.blank);
+	return renderFactorySlot("conversation.content", {
+		variant: "embedded",
+		phase: !active && session.openState === "loading" && summaryBlank !== true ? "settling" : "active",
+		hero: false
+	}, { slots: { views: FixedChatConversationView } });
+}
+function FixedChatConversationView(props) {
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(react_jsx_runtime.Fragment, { children: props.renderSlot("conversation.session", { view: "chat" }) });
+}
+/** Replaces the composer of a resolved thread (conversation.composer chain). */
+function ResolvedComposer({ sessionId, t }) {
+	const [busy, setBusy] = (0, react.useState)(false);
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+		className: "dsht-resolved",
+		children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("resolved.notice") }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
+			size: "sm",
+			variant: "outline",
+			disabled: busy,
+			onClick: () => {
+				setBusy(true);
+				setThreadResolved(sessionId, false).finally(() => setBusy(false));
+			},
+			children: t("resolved.reopen")
+		})]
+	});
+}
+// src/client/ThreadsList.tsx
+const runningIds = (statuses) => [...statuses].filter(([, state]) => state.running === true).map(([id]) => id).sort().join(",");
+/** The project main conversation a session belongs to (itself, or the main of its thread). */
+function useProjectMain(sessionId, revision) {
+	const role = useHostValue(sessionId === void 0 ? null : "sessions.role", { id: sessionId }, [sessionId, revision]);
+	return {
+		role,
+		mainSessionId: role?.project?.mainSessionId
+	};
+}
+function useThreads(mainSessionId, useSessionStatus, revision) {
+	const running = useSessionStatus(runningIds);
+	return useHostValue(mainSessionId === void 0 ? null : "threads.list", { mainSessionId }, [
+		mainSessionId,
+		running,
+		revision
+	]);
+}
+function ThreadsListTab({ sessionId, useSessionStatus, t, openThread, openSession }) {
+	const revision = useThreadsRevision();
+	const { role, mainSessionId } = useProjectMain(sessionId, revision);
+	const threads = useThreads(mainSessionId, useSessionStatus, revision);
+	const runningKey = useSessionStatus(runningIds);
+	const running = (0, react.useMemo)(() => new Set(runningKey.split(",")), [runningKey]);
+	if (role === void 0) return null;
+	if (role.project === null) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+		className: "dsht-tab",
+		children: t("list.notProject")
+	});
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+		className: "dsht-list",
+		children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+			className: "dsht-list-head",
+			children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: role.project.title }), role.thread ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
+				size: "sm",
+				variant: "ghost",
+				onClick: () => openSession(role.project.mainSessionId),
+				children: t("header.backToMain")
+			}) : null]
+		}), threads === void 0 ? null : threads.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+			className: "dsht-tab",
+			children: t("list.empty")
+		}) : threads.map((thread) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+			type: "button",
+			className: "dsht-row",
+			onClick: () => openThread(thread.id),
+			children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.StateDot, {
+				state: dotState(thread, running.has(thread.id)),
+				className: "dsht-dot"
+			}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+				className: "dsht-row-body",
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+						className: "dsht-row-title",
+						children: [
+							"#",
+							thread.n,
+							" ",
+							thread.title
+						]
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: "dsht-row-summary",
+						children: thread.lastReport?.summary ?? thread.error ?? t("list.noReport")
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+						className: "dsht-row-meta",
+						children: [relativeTime(t, thread.updatedAt), thread.resolved ? ` · ${t("list.resolved")}` : ""]
+					})
+				]
+			})]
+		}, thread.id))]
+	});
+}
+/** Conversation header: "讨论串 · N" in a project main conversation, "主对话" in a thread. */
+function ThreadsHeaderAction({ sessionId, useSessionStatus, t, openThreadsList, openSession }) {
+	const revision = useThreadsRevision();
+	const { role, mainSessionId } = useProjectMain(sessionId, revision);
+	const isMain = mainSessionId !== void 0 && mainSessionId === sessionId;
+	const threads = useThreads(isMain ? mainSessionId : void 0, useSessionStatus, revision);
+	if (role === void 0 || role.project === null) return null;
+	if (role.thread) {
+		const main = role.project.mainSessionId;
+		return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
+			size: "sm",
+			variant: "ghost",
+			onClick: () => openSession(main),
+			children: t("header.backToMain")
+		});
+	}
+	if (!isMain) return null;
+	const count = threads?.length ?? 0;
+	const active = threads?.filter((thread) => thread.status === "running" || thread.status === "starting").length ?? 0;
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(_deepseek_ai_dsh_client_ui_primitives.Button, {
+		size: "sm",
+		variant: "ghost",
+		icon: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ThreadsIcon, { size: 14 }),
+		onClick: openThreadsList,
+		children: [t("header.threads", { count }), active > 0 ? ` · ${t("header.running", { count: active })}` : ""]
+	});
+}
 // src/client/index.tsx
 /** Sidebar entry id and `main` panel key. */
 const PANEL_ID = "dsh-threads-projects";
-/** Right-sidebar tab implementation id: the package name. */
-const TAB_ID = "@fky/dsh-threads";
+/** Right-sidebar tab types: the thread list (kind `dsh-threads`) and one thread's conversation. */
+const LIST_TAB_ID = "@fky/dsh-threads";
+const LIST_TAB_KIND = "dsh-threads";
+const CHAT_TAB_ID = "@fky/dsh-threads/chat";
+const CHAT_TAB_KIND = "dsh-threads.chat";
 const inject = [
 	"slots",
 	"locale",
 	"layout",
 	"uiWorkspace",
 	"workspaces",
-	"sidebarRightTabs"
+	"sessions",
+	"resources",
+	"sidebarRight",
+	"sidebarRightTabs",
+	"uiSession"
 ];
 function PanelIcon({ size }) {
 	return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ProjectsIcon, { size });
 }
-function ThreadsTab({ t }) {
-	return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-		className: "dsht-tab",
-		children: t("tab.description")
-	});
+function waitForAbort(signal) {
+	if (signal.aborted) return Promise.resolve();
+	return new Promise((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
 }
 function apply(root) {
 	const ctx = root;
@@ -649,6 +1050,8 @@ function apply(root) {
 	const openSession = (sessionId) => ctx.uiWorkspace.openSession(sessionId);
 	const pinSession = (sessionId, pinned) => pinned ? ctx.workspaces.pinSession(sessionId) : ctx.workspaces.unpinSession(sessionId);
 	const showProjects = () => ctx.layout.selectPanel(PANEL_ID);
+	const openThread = (threadId) => ctx.sidebarRight.openResource(threadAddress(threadId), { kind: CHAT_TAB_KIND });
+	const openThreadsList = () => ctx.sidebarRight.openTab(LIST_TAB_KIND);
 	ctx.slots.inject("main", () => ctx.slots.register({
 		name: "main",
 		key: PANEL_ID,
@@ -672,9 +1075,54 @@ function apply(root) {
 		locale: NS,
 		inject: () => ({ showProjects })
 	}, MakeProjectMenuItem));
+	ctx.effect(() => ctx.resources.register({
+		protocol: "dsh-threads",
+		async *open(address, { signal }) {
+			const threadId = parseThreadAddress(address);
+			if (threadId === void 0) throw new Error(`dsh-threads: invalid thread address "${address}"`);
+			if (signal.aborted) return;
+			const reference = ctx.sessions.retain(threadId, {
+				source: "dshThreads",
+				signal
+			});
+			try {
+				yield {
+					ok: true,
+					value: {
+						threadId,
+						reference
+					}
+				};
+				await waitForAbort(signal);
+			} finally {
+				reference.release();
+			}
+		}
+	}), "dsh-threads: thread resources");
 	ctx.effect(() => ctx.sidebarRightTabs.register({
-		id: TAB_ID,
-		kind: "dsh-threads",
+		id: CHAT_TAB_ID,
+		kind: CHAT_TAB_KIND,
+		patterns: [THREAD_ADDRESS_PATTERN],
+		canOpen: (address) => parseThreadAddress(address) !== void 0,
+		title: (address) => {
+			const id = parseThreadAddress(address);
+			return (id === void 0 ? void 0 : ctx.sessions.list.getSnapshot().byId[id]?.displayTitle) ?? t("tab.thread");
+		}
+	}), "dsh-threads: thread tab type");
+	ctx.slots.inject("sidebar.right.pane.tab", () => ctx.slots.register({
+		name: "sidebar.right.pane.tab",
+		key: CHAT_TAB_ID,
+		locale: NS,
+		inject: () => ({ openSession }),
+		children: { [THREAD_CONVERSATION_SLOT]: {
+			kind: "single",
+			scope: "session"
+		} }
+	}, ThreadChatTab));
+	ctx.slots.inject(THREAD_CONVERSATION_SLOT, () => ctx.slots.register({ name: THREAD_CONVERSATION_SLOT }, ThreadConversation));
+	ctx.effect(() => ctx.sidebarRightTabs.register({
+		id: LIST_TAB_ID,
+		kind: LIST_TAB_KIND,
 		title: () => t("tab.title"),
 		guide: [{
 			id: "open",
@@ -682,12 +1130,34 @@ function apply(root) {
 			title: () => t("tab.title"),
 			description: () => t("tab.description")
 		}]
-	}), "dsh-threads: sidebar tab");
+	}), "dsh-threads: thread list tab type");
 	ctx.slots.inject("sidebar.right.pane.tab", () => ctx.slots.register({
 		name: "sidebar.right.pane.tab",
-		key: TAB_ID,
+		key: LIST_TAB_ID,
+		locale: NS,
+		inject: (sessionId) => ({
+			sessionId,
+			openThread,
+			openSession
+		})
+	}, ThreadsListTab));
+	ctx.slots.inject("conversation.session.header.actions", () => ctx.slots.register({
+		name: "conversation.session.header.actions",
+		id: "dsh-threads",
+		order: 15,
+		locale: NS,
+		inject: () => ({
+			openThreadsList,
+			openSession
+		})
+	}, ThreadsHeaderAction));
+	const publishResolved = ctx.uiSession.registerPendingInteraction(() => 0);
+	ctx.effect(() => syncResolved(publishResolved, ctx.uiSession.sessionStatus), "dsh-threads: resolved threads");
+	ctx.slots.inject("conversation.composer", () => ctx.slots.register({
+		name: "conversation.composer",
+		select: ({ pendingInteraction }) => pendingInteraction?.kind === "dsh-threads-resolved" ? pendingInteraction : null,
 		locale: NS
-	}, ThreadsTab));
+	}, ResolvedComposer));
 }
 exports.apply = apply;
 exports.inject = inject;

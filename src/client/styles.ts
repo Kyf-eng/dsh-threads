@@ -39,7 +39,22 @@ const css = `
 .dsht-field-label{color:var(--dsw-alias-label-secondary)}
 .dsht-hint{font-size:12px;line-height:17px;color:var(--dsw-alias-label-tertiary)}
 .dsht-buttons{display:flex;justify-content:flex-end;gap:8px}
-.dsht-tab{padding:12px;font-size:13px;line-height:1.6}
+.dsht-tab{padding:12px;font-size:13px;line-height:1.6;color:var(--dsw-alias-label-secondary)}
+.dsht-chat{display:flex;flex-direction:column;height:100%;min-height:0}
+.dsht-chat-body{flex:1;min-height:0;display:flex;flex-direction:column}
+.dsht-pane-head{display:flex;align-items:center;gap:8px;min-height:40px;padding:4px 8px 4px 12px;border-bottom:1px solid var(--dsw-alias-border-l1);font-size:13px;flex:none}
+.dsht-pane-title{flex:1;min-width:0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dsht-pane-project{margin-left:6px;font-weight:400;color:var(--dsw-alias-label-tertiary)}
+.dsht-list{display:flex;flex-direction:column;gap:2px;padding:6px 8px}
+.dsht-list-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 6px 6px;font-size:12px;color:var(--dsw-alias-label-tertiary)}
+.dsht-row{display:flex;gap:10px;align-items:flex-start;width:100%;padding:10px;border:0;border-radius:10px;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
+.dsht-row:hover,.dsht-row:focus-visible{background:var(--dsw-alias-interactive-bg-hover);outline:none}
+.dsht-dot{margin-top:5px;flex:none}
+.dsht-row-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.dsht-row-title{font-size:13px;line-height:18px;font-weight:600;overflow-wrap:anywhere}
+.dsht-row-summary{font-size:12px;line-height:17px;color:var(--dsw-alias-label-secondary);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.dsht-row-meta{font-size:11px;line-height:15px;color:var(--dsw-alias-label-tertiary)}
+.dsht-resolved{box-sizing:border-box;display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;margin:0 auto 12px;padding:12px 16px;border:1px solid var(--dsw-alias-border-l2);border-radius:16px;background:var(--dsw-alias-bg-layer-1);font-size:13px;line-height:19px;color:var(--dsw-alias-label-secondary)}
 @media (max-width:640px){.dsht-page{padding-left:16px;padding-right:16px}.dsht-head{flex-direction:column}}
 `
 

@@ -6,7 +6,7 @@ import { glyphState, ThreadGlyph } from './glyphs.tsx'
 import type { Translate } from './locale.ts'
 import { setThreadResolved } from './resolved.ts'
 import { parseThreadAddress, type ThreadDetail, useHostValue, useThreadsRevision } from './threads.ts'
-import { BranchChip, Pill } from './ui.tsx'
+import { BranchChip, CheckIcon, ExpandIcon, Pill, ReopenIcon } from './ui.tsx'
 
 /** Session-scoped child slot this tab declares; only the declaring entry may render it. */
 export const THREAD_CONVERSATION_SLOT = 'dsh-threads.chat.conversation'
@@ -68,8 +68,10 @@ function ThreadPaneHeader({ threadId, useSessionStatus, t, openSession }: {
         </div>
       </div>
       <div className="dsht-pane-actions">
-        <Pill disabled={busy || running} onClick={() => { void toggle() }}>{thread.resolved ? t('pane.reopen') : t('pane.resolve')}</Pill>
-        <Pill onClick={() => openSession(threadId)}>{t('pane.openMain')}</Pill>
+        <Pill icon={thread.resolved ? <ReopenIcon /> : <CheckIcon />} disabled={busy || running} onClick={() => { void toggle() }}>
+          {thread.resolved ? t('pane.reopen') : t('pane.resolve')}
+        </Pill>
+        <Pill icon={<ExpandIcon />} onClick={() => openSession(threadId)}>{t('pane.openMain')}</Pill>
       </div>
     </div>
   )

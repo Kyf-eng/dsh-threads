@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix: colors derived from DSH's theme (borders, hover and button fills, focus ring) were computed on `:root`, where DSH's theme variables are not defined, so they were empty; in light mode project cards had no border at all.
+- "↳ N replies" cards size to their content; thread pane buttons have icons; project cards have a resting shadow.
 - Fix: a user message in the main conversation now always resets the wake-up streak, even while a report is being delivered (found in an end-to-end run).
 - `maxAutoWakes: 0` is documented as "never wake automatically".
 

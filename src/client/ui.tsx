@@ -36,6 +36,18 @@ export function StartIcon() {
   return <Svg><path d="M9 7 4.5 11.5 9 16" /><path d="M4.5 11.5h10a5 5 0 0 0 5-5V5" /></Svg>
 }
 
+export function CheckIcon() {
+  return <Svg><path d="m5.5 12.5 4 4 9-9.5" /></Svg>
+}
+
+export function ReopenIcon() {
+  return <Svg><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3L4.5 9" /><path d="M4.5 4.5V9H9" /></Svg>
+}
+
+export function ExpandIcon() {
+  return <Svg><path d="M14 4.5h5.5V10M10 19.5H4.5V14M19.5 4.5 13 11M4.5 19.5 11 13" /></Svg>
+}
+
 export function CloseIcon() {
   return <Svg><path d="m7 7 10 10M17 7 7 17" /></Svg>
 }

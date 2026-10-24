@@ -8,7 +8,7 @@ DeepSeek Harness (DSH) plugin: the main conversation dispatches work into real t
 - `npm run dev:install` — link this checkout into the Desktop profile. DSH must be fully quit first.
 
 ## Conventions
-- Target DSH is pinned to `0.2.1-rc.2` (`engines.dsh` decides compatibility). `@deepseek-ai/*` packages are devDependencies for types only; runtime imports must also be listed in `peerDependencies` so DSH resolves them to its own copies. Never bundle them (`deps.neverBundle`).
+- Developed against DSH `0.2.1-rc.2`; `engines.dsh` (`>=0.2.1-rc.2 <0.3.0`) decides compatibility. `@deepseek-ai/*` packages are devDependencies pinned to that version for types and tests; runtime imports must also be listed in `peerDependencies`, with the same range as `engines.dsh`, so DSH resolves them to its own copies. Never bundle them (`deps.neverBundle`).
 - `.npmrc` sets `legacy-peer-deps=true`; DSH packages pin many exact peers we do not want installed.
 - `dist/` is committed: GitHub installs go through pnpm 11, which blocks `prepare` scripts. Rebuild and commit `dist/` with every source change.
 - Optional host services are read with `optional(ctx, name)` (src/probe.ts); a `ctx.<service>` getter throws when the service is not injected.

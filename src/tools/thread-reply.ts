@@ -1,6 +1,7 @@
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { type ThreadManager, ThreadError } from '../manager.ts'
+import { msg } from '../messages.ts'
 
 export function threadReplyTool(manager: ThreadManager): ToolDefinition {
   return defineTool({
@@ -24,9 +25,9 @@ export function threadReplyTool(manager: ThreadManager): ToolDefinition {
       if (caller === undefined) throw new Error('thread_reply needs a calling session')
       try {
         const thread = await manager.reply(caller.id, args.n, args.message)
-        return `已把追加指令发给讨论串 #${thread.n}「${thread.title}」。它做完会再回报；不要等待或轮询。`
+        return msg().toolReplied(thread.n, thread.title)
       } catch (error) {
-        if (error instanceof ThreadError) return `没有发送：${error.message}`
+        if (error instanceof ThreadError) return msg().toolNotSent(error.message)
         throw error
       }
     },

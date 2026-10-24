@@ -18,6 +18,7 @@ DeepSeek Harness (DSH) plugin: the main conversation dispatches work into real t
 - Threads belong to projects: only a project's main conversation gets the dispatcher tools (src/roles.ts, src/install.ts). Keep it that way; it mirrors Claude's projects.
 - New stored fields need zod defaults in src/storage.ts so records written by earlier versions still read.
 - Browser half: the slot catalog (types, scopes, props of every slot) is `CLIENT_SLOT_API` in the app's `dsh-cordis-client-runner/lib/client.js`. Use the host's shared `@deepseek-ai/dsh-client-ui-primitives` (external) and `--dsw-alias-*` theme variables; inject CSS through src/client/styles.ts. Only register slot keys we own.
+- Host-side text (tool results, notes, briefs, `/thread` replies, errors the panes show) goes through `msg()` in src/messages.ts, with Chinese and English entries; the browser's `ctx.locale` text lives in src/client/locale.ts. System prompts stay English.
 - Messages put into a session inbox use `createUserMessage` with `source.kind = 'dsh-threads'`. `ctx.sessionController.prompt` always stamps `kind: 'user'`, so dispatcher-sent tasks go through `resolveAgent(id)` → `agent.followup(...)`.
 - Commits: Conventional Commits (`feat:`, `fix:`, `docs:`, `test:`, `chore:`), one topic per branch, squash merge.
 

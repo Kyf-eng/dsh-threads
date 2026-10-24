@@ -4,10 +4,89 @@ window.__ModuleLoader__.load({
 		var module = { exports: {} };
 		var exports = module.exports;
 Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
-let react_jsx_runtime = require("react/jsx-runtime");
 let react = require("react");
+let react_jsx_runtime = require("react/jsx-runtime");
 let _deepseek_ai_dsh_client_ui_primitives = require("@deepseek-ai/dsh-client-ui-primitives");
 let react_dom = require("react-dom");
+// src/client/api.ts
+/**
+* Host route, relative to the page like DSH's own Connection calls: on Desktop the page is
+* dsh-app://app/ and the shell forwards it to the Host with its cookie; on Web it is same-origin.
+* Must match RPC_PATH in src/rpc.ts.
+*/
+const RPC_URL = "api/dsh-threads";
+let localeOf = () => void 0;
+/** Every host call carries the page's language, so the host's own text follows it (src/messages.ts). */
+function sendLocaleToHost(read) {
+	localeOf = read;
+	return () => {
+		localeOf = () => void 0;
+	};
+}
+function pageLocale() {
+	try {
+		return localeOf();
+	} catch {
+		return;
+	}
+}
+async function callHost(method, payload = {}) {
+	const response = await fetch(RPC_URL, {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify({
+			method,
+			payload,
+			locale: pageLocale()
+		})
+	});
+	const body = await response.json().catch(() => ({}));
+	if (!response.ok) throw new Error((body.error ?? `HTTP ${response.status}`).replace(/^(Project|Thread)?Error: /, ""));
+	return body.result;
+}
+let state = {
+	status: "idle",
+	projects: [],
+	error: null
+};
+const listeners$2 = /* @__PURE__ */ new Set();
+let inflight = null;
+function publish$1(next) {
+	state = next;
+	for (const listener of listeners$2) listener();
+}
+const projectsStore = {
+	getSnapshot: () => state,
+	subscribe(listener) {
+		listeners$2.add(listener);
+		return () => {
+			listeners$2.delete(listener);
+		};
+	},
+	/** Reload from the host; concurrent calls share one request. */
+	refresh() {
+		if (inflight !== null) return inflight;
+		if (state.status === "idle") publish$1({
+			...state,
+			status: "loading"
+		});
+		inflight = callHost("projects.list").then((projects) => publish$1({
+			status: "ready",
+			projects,
+			error: null
+		})).catch((error) => publish$1({
+			...state,
+			status: "error",
+			error: error instanceof Error ? error.message : String(error)
+		})).finally(() => {
+			inflight = null;
+		});
+		return inflight;
+	}
+};
+function useProjects() {
+	return (0, react.useSyncExternalStore)(projectsStore.subscribe, projectsStore.getSnapshot);
+}
 // src/client/chat.ts
 const NOTICE_NODE = "dsh-threads-notice";
 const OPENED_KEY = "dsh-threads-opened";
@@ -230,69 +309,6 @@ function BellIcon(props) {
 		...props,
 		children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", { d: "M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15zM10 20.5a2 2 0 0 0 4 0" })
 	});
-}
-// src/client/api.ts
-/**
-* Host route, relative to the page like DSH's own Connection calls: on Desktop the page is
-* dsh-app://app/ and the shell forwards it to the Host with its cookie; on Web it is same-origin.
-* Must match RPC_PATH in src/rpc.ts.
-*/
-const RPC_URL = "api/dsh-threads";
-async function callHost(method, payload = {}) {
-	const response = await fetch(RPC_URL, {
-		method: "POST",
-		headers: { "content-type": "application/json" },
-		body: JSON.stringify({
-			method,
-			payload
-		})
-	});
-	const body = await response.json().catch(() => ({}));
-	if (!response.ok) throw new Error((body.error ?? `HTTP ${response.status}`).replace(/^(Project|Thread)?Error: /, ""));
-	return body.result;
-}
-let state = {
-	status: "idle",
-	projects: [],
-	error: null
-};
-const listeners$2 = /* @__PURE__ */ new Set();
-let inflight = null;
-function publish$1(next) {
-	state = next;
-	for (const listener of listeners$2) listener();
-}
-const projectsStore = {
-	getSnapshot: () => state,
-	subscribe(listener) {
-		listeners$2.add(listener);
-		return () => {
-			listeners$2.delete(listener);
-		};
-	},
-	/** Reload from the host; concurrent calls share one request. */
-	refresh() {
-		if (inflight !== null) return inflight;
-		if (state.status === "idle") publish$1({
-			...state,
-			status: "loading"
-		});
-		inflight = callHost("projects.list").then((projects) => publish$1({
-			status: "ready",
-			projects,
-			error: null
-		})).catch((error) => publish$1({
-			...state,
-			status: "error",
-			error: error instanceof Error ? error.message : String(error)
-		})).finally(() => {
-			inflight = null;
-		});
-		return inflight;
-	}
-};
-function useProjects() {
-	return (0, react.useSyncExternalStore)(projectsStore.subscribe, projectsStore.getSnapshot);
 }
 // src/client/threads.ts
 /** Bumped after any change this browser makes (resolve, reopen), so panes reload. */
@@ -3439,6 +3455,10 @@ function apply(root) {
 		en
 	}), "dsh-threads: locale");
 	const t = ctx.locale.bind(NS);
+	ctx.effect(() => sendLocaleToHost(() => ctx.locale.getLocale().active), "dsh-threads: host locale");
+	ctx.on("locale/change", () => {
+		callHost("ping").catch(() => {});
+	});
 	const openSession = (sessionId) => ctx.uiWorkspace.openSession(sessionId);
 	const pinSession = (sessionId, pinned) => pinned ? ctx.workspaces.pinSession(sessionId) : ctx.workspaces.unpinSession(sessionId);
 	const showProjects = () => ctx.layout.selectPanel(PANEL_ID);

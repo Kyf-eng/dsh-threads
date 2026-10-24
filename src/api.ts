@@ -1,6 +1,7 @@
 // Methods served on POST /api/dsh-threads for the browser half (src/client).
 import { z } from 'zod'
 import type { ThreadManager } from './manager.ts'
+import { msg } from './messages.ts'
 import { ProjectError, type Projects } from './projects.ts'
 import type { RpcHandlers } from './rpc.ts'
 import { plainLine, truncate } from './report.ts'
@@ -93,7 +94,7 @@ export function isWaiting(thread: ThreadRecord): boolean {
 
 function parse<T>(schema: z.ZodType<T>, payload: unknown): T {
   const result = schema.safeParse(payload)
-  if (!result.success) throw new ProjectError(`请求参数不对：${result.error.issues.map((issue) => issue.message).join('；')}`)
+  if (!result.success) throw new ProjectError(msg().badRequest(result.error.issues.map((issue) => issue.message)))
   return result.data
 }
 
@@ -113,7 +114,7 @@ export function apiHandlers(deps: {
   const projectThreads = () => deps.threads().filter((t) => projects.ofMain(t.mainSessionId) !== undefined)
   const requireThread = (id: string) => {
     const thread = deps.thread(id)
-    if (thread === undefined) throw new ProjectError('找不到这个讨论串。')
+    if (thread === undefined) throw new ProjectError(msg().threadNotFound)
     return thread
   }
   return {

@@ -7,6 +7,7 @@ import { existsSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
+import { msg } from './messages.ts'
 import type { ThreadWorktree } from './types.ts'
 
 /** Runs git with literal arguments in `cwd`; resolves stdout, rejects with git's message. */
@@ -44,19 +45,19 @@ export async function createWorktree(git: Git, folder: string, name: string): Pr
     // Relative to the top level as git sees it, so symlinked paths (/tmp on macOS) do not matter.
     subdir = (await git(folder, ['rev-parse', '--show-prefix'])).trim().replace(/\/+$/, '')
   } catch {
-    throw new WorktreeError(`项目文件夹 ${folder} 不是 git 仓库，没法开 worktree。不用 worktree 再开，或者请用户先初始化仓库。`)
+    throw new WorktreeError(msg().notARepository(folder))
   }
   let baseCommit: string
   try {
     baseCommit = (await git(repositoryRoot, ['rev-parse', '--verify', 'HEAD^{commit}'])).trim()
   } catch {
-    throw new WorktreeError('仓库还没有任何提交，没法从 HEAD 开 worktree。')
+    throw new WorktreeError(msg().noCommits)
   }
   if (subdir.length > 0) {
     try {
       await git(repositoryRoot, ['cat-file', '-e', `${baseCommit}:${subdir}`])
     } catch {
-      throw new WorktreeError(`项目文件夹 ${subdir} 还没有提交进仓库，worktree 里不会有它。不用 worktree 再开，或者请用户先提交。`)
+      throw new WorktreeError(msg().subfolderNotCommitted(subdir))
     }
   }
   await preparePool(join(repositoryRoot, ...POOL))

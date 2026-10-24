@@ -120,6 +120,52 @@ describe('ThreadManager', () => {
     await expect(t.manager.open('other', { title: 'a', task: 'a', initiation: 'user_asked' })).rejects.toBeInstanceOf(ThreadError)
   })
 
+  it('stops a running thread: no reminder, a quiet note that says the user stopped it', async () => {
+    t = setup({ reportReminder: true })
+    await t.manager.open('main', { title: 'a', task: 'x', initiation: 'user_asked' })
+    const thread = t.agents.get('session-1')!
+    thread.status = 'running'
+    await t.manager.stop('session-1')
+    await t.manager.onIdle('session-1')
+    // The reminder would have restarted the thread.
+    expect(thread.followups).toHaveLength(1)
+    expect(t.store.thread('session-1')).toMatchObject({ status: 'idle', round: null })
+    expect(t.main.followups).toHaveLength(0)
+    expect(t.main.injects[0]).toContain('· stopped ·')
+    expect(t.main.injects[0]).toContain('不要自己重开或重派')
+    expect(t.main.metas[0]?.threads[0]?.status).toBe('stopped')
+  })
+
+  it('treats DSH\'s own stop button like ours', async () => {
+    t = setup({ reportReminder: true })
+    await t.manager.open('main', { title: 'a', task: 'x', initiation: 'user_asked' })
+    t.stopped.add('session-1')
+    await t.manager.onIdle('session-1')
+    expect(t.agents.get('session-1')?.followups).toHaveLength(1)
+    expect(t.main.injects[0]).toContain('· stopped ·')
+  })
+
+  it('refuses to stop a thread that is not running', async () => {
+    await t.manager.open('main', { title: 'a', task: 'x', initiation: 'user_asked' })
+    // The record says running but the agent is idle: nothing to cancel.
+    await expect(t.manager.stop('session-1')).rejects.toThrow('现在没有在运行')
+    await t.manager.onIdle('session-1')
+    await expect(t.manager.stopNumber('main', 1)).rejects.toBeInstanceOf(ThreadError)
+    await expect(t.manager.stopNumber('main', 9)).rejects.toThrow('没有讨论串 #9')
+  })
+
+  it('archives a finished thread on its own, refuses while it runs, and refuses follow-ups to it', async () => {
+    await t.manager.open('main', { title: 'a', task: 'x', initiation: 'user_asked' })
+    await expect(t.manager.setArchived('session-1', true)).rejects.toThrow('先停止再归档')
+    await t.manager.onIdle('session-1')
+    expect((await t.manager.setArchived('session-1', true)).archived).toBe(true)
+    expect(t.archived.has('session-1')).toBe(true)
+    await expect(t.manager.reply('main', 1, 'more')).rejects.toThrow('已被用户归档')
+    expect(t.manager.describe('main')).toContain('· 已归档')
+    expect((await t.manager.setArchived('session-1', false)).archived).toBe(false)
+    expect(t.archived.has('session-1')).toBe(false)
+  })
+
   it('treats a deleted project\'s threads as ordinary conversations', async () => {
     await t.manager.open('main', { title: 'a', task: 'x', initiation: 'user_asked' })
     await t.manager.onIdle('session-1')

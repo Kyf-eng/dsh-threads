@@ -50,6 +50,8 @@ export interface ThreadRecord {
   status: ThreadStatus
   /** Marked resolved by the user; a new message to the thread reopens it. */
   resolved: boolean
+  /** Archived on its own by the user (its session is archived in DSH); hidden from the threads list. */
+  archived: boolean
   round: RoundOrigin | null
   /**
    * What the user typed in the thread during the current round, in their own words. The report

@@ -34,7 +34,7 @@ To remove it: `dsh plugin --profile desktop remove @fky/dsh-threads`.
 
 1. **Projects → New project**: name it and pick a folder (any folder; it becomes a workspace if it is not one).
 2. In the project's main conversation, ask for work in the background ("open a thread to…"). You can also type `/thread <task>`, or `/thread -w <task>` for a thread with its own worktree.
-3. Click a thread card to open the thread on the right. Talk to it there; **Mark resolved** when you are done with it.
+3. Click a thread card to open the thread on the right. Talk to it there; **Stop** it while it runs (or `/thread stop <n>`), **Mark resolved** when you are done with it, and archive it to put it away (archived threads are listed apart and can be unarchived).
 4. When the model suggests threads, start one, all, or none from the card above the composer.
 5. A worktree thread's changes stay on its branch. Merge it yourself or ask the main conversation to, then run `/thread cleanup` (and `/thread cleanup confirm`).
 

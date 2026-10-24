@@ -7,7 +7,7 @@ const project = { title: 'Vetoarc', notify: 'attention' as const, archived: fals
 function thread(report: ThreadRecord['lastReport']): ThreadRecord {
   return {
     id: 'session-t', mainSessionId: 'session-m', n: 3, title: '查依赖', task: 'x', initiation: 'user_asked', status: 'idle',
-    resolved: false, round: null, userMessages: [], roundStartSeq: null, roundStartedAt: null, lastReport: report, error: null,
+    resolved: false, archived: false, round: null, userMessages: [], roundStartSeq: null, roundStartedAt: null, lastReport: report, error: null,
     worktree: null, reminder: null, createdAt: '', updatedAt: '',
   }
 }

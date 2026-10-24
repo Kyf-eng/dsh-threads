@@ -62,6 +62,16 @@ describe('/thread', () => {
     expect(await run('第二件')).toEqual({ kind: 'error', text: expect.stringContaining('已有 1 个讨论串在运行（上限 1）') })
   })
 
+  it('stops a thread by number', async () => {
+    await run('长任务')
+    t.agents.get('session-1')!.status = 'running'
+    expect(await run('stop #1')).toEqual({ kind: 'success', text: '已停止讨论串 #1「长任务」。' })
+    expect(await run('stop 1')).toEqual({ kind: 'error', text: '讨论串 #1 现在没有在运行。' })
+    expect((await run('stop 4')).text).toBe('这个主对话没有讨论串 #4。')
+    // "stop" followed by words is a task, not the subcommand.
+    expect((await run('stop the flaky test')).text).toContain('已开讨论串 #2')
+  })
+
   it('lists worktrees on cleanup and removes them only on cleanup confirm', async () => {
     expect((await run('cleanup')).text).toContain('没有可以清理的 worktree')
     await run('-w 改 README')

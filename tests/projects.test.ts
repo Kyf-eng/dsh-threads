@@ -66,7 +66,7 @@ function setup() {
 
 function threadOf(mainSessionId: string, id: string, status: 'idle' | 'running') {
   return {
-    id, mainSessionId, n: 1, title: 't', task: 'x', initiation: 'user_asked' as const, status, resolved: false,
+    id, mainSessionId, n: 1, title: 't', task: 'x', initiation: 'user_asked' as const, status, resolved: false, archived: false,
     round: status === 'running' ? 'dispatch' as const : null, userMessages: [], roundStartSeq: 0, roundStartedAt: null,
     lastReport: null, error: null, worktree: null, reminder: null, createdAt: '', updatedAt: '',
   }
@@ -168,6 +168,17 @@ describe('Projects', () => {
     expect(t.archived.size).toBe(0)
   })
 
+  it('leaves a thread the user archived on its own archived, and out of the counts', async () => {
+    const project = await t.projects.create({ title: 'A', workspaceId: 'ws-1' })
+    await t.store.putThread(threadOf('session-main-1', 'session-t1', 'idle'))
+    await t.store.putThread({ ...threadOf('session-main-1', 'session-t2', 'idle'), n: 2, archived: true })
+    t.archived.add('session-t2')
+    expect(t.projects.list()[0]?.threads).toBe(1)
+    await t.projects.archive(project.id)
+    await t.projects.unarchive(project.id)
+    expect([...t.archived]).toEqual(['session-t2'])
+  })
+
   it('refuses to archive while a thread runs or the main conversation is busy', async () => {
     const project = await t.projects.create({ title: 'A', workspaceId: 'ws-1' })
     await t.store.putThread(threadOf('session-main-1', 'session-t1', 'running'))
@@ -213,7 +224,7 @@ describe('Projects', () => {
     const project = await t.projects.create({ title: 'A', workspaceId: 'ws-1' })
     await t.store.putThread({
       id: 'session-t1', mainSessionId: project.mainSessionId, n: 1, title: 't', task: 'x', initiation: 'user_asked',
-      status: 'running', resolved: false, round: 'dispatch', userMessages: [], roundStartSeq: 0, roundStartedAt: null,
+      status: 'running', resolved: false, archived: false, round: 'dispatch', userMessages: [], roundStartSeq: 0, roundStartedAt: null,
       lastReport: null, error: null, worktree: null, reminder: null, createdAt: '', updatedAt: '2030-01-01T00:00:00.000Z',
     })
     expect(t.projects.list()[0]).toMatchObject({ threads: 1, running: 1, lastActivity: '2030-01-01T00:00:00.000Z' })

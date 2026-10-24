@@ -563,6 +563,7 @@ function glyphState(thread, running = false) {
 	if (running || thread.status === "running" || thread.status === "starting") return "running";
 	if (thread.status === "failed") return "failed";
 	if (thread.resolved) return "resolved";
+	if (thread.archived === true) return "done";
 	return reportGlyph(thread.lastReport?.status);
 }
 /** For card data that carries only the report status (`done`, `needs_decision`, `no-report`, …). */
@@ -697,6 +698,25 @@ function ReopenIcon() {
 }
 function ExpandIcon() {
 	return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Svg, { children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", { d: "M14 4.5h5.5V10M10 19.5H4.5V14M19.5 4.5 13 11M4.5 19.5 11 13" }) });
+}
+function StopIcon() {
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Svg, { children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("rect", {
+		x: "6.5",
+		y: "6.5",
+		width: "11",
+		height: "11",
+		rx: "2"
+	}) });
+}
+/** Archive box (paths from Lucide, ISC). */
+function ArchiveIcon() {
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Svg, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("rect", {
+		x: "3",
+		y: "4",
+		width: "18",
+		height: "5",
+		rx: "1"
+	}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", { d: "M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9M10 13h4" })] });
 }
 function CloseIcon() {
 	return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Svg, { children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", { d: "m7 7 10 10M17 7 7 17" }) });
@@ -970,7 +990,8 @@ const STATUS_KEYS = {
 	blocked: "status.blocked",
 	needs_decision: "status.needsDecision",
 	failed: "status.failed",
-	"no-report": "status.noReport"
+	"no-report": "status.noReport",
+	stopped: "status.stopped"
 };
 /** Threads that wait on the user lead a report card. */
 function waitingFirst(cards) {
@@ -1192,10 +1213,15 @@ const zh = {
 	"pane.resolve": "标记已解决",
 	"pane.reopen": "重新打开",
 	"pane.openMain": "在主区域打开",
+	"pane.stop": "停止",
+	"pane.archive": "归档",
+	"pane.unarchive": "取消归档",
+	"pane.archived": "已归档",
 	"list.empty": "这个项目还没有讨论串。",
 	"list.notProject": "当前对话不是项目，没有讨论串。可以在左侧会话的\"…\"菜单里选\"设为项目\"。",
 	"list.noReport": "还没有回报",
 	"list.resolved": "已解决",
+	"list.archived": "已归档 · {count}",
 	"header.threads": "讨论串 · {count}",
 	"header.running": "{count} 个运行中",
 	"header.waiting": "{count} 个等你回复",
@@ -1216,6 +1242,7 @@ const zh = {
 	"status.failed": "失败",
 	"status.noReport": "没有回报",
 	"status.running": "运行中",
+	"status.stopped": "已停止",
 	"proposals.title": "建议的讨论串",
 	"proposals.start": "开始 {count} 个讨论串",
 	"proposals.dismiss": "都不要",
@@ -1329,10 +1356,15 @@ const en = {
 	"pane.resolve": "Mark resolved",
 	"pane.reopen": "Reopen",
 	"pane.openMain": "Open in main view",
+	"pane.stop": "Stop",
+	"pane.archive": "Archive",
+	"pane.unarchive": "Unarchive",
+	"pane.archived": "Archived",
 	"list.empty": "This project has no threads yet.",
 	"list.notProject": "This conversation is not a project, so it has no threads. Choose \"Make project\" in its \"…\" menu.",
 	"list.noReport": "No report yet",
 	"list.resolved": "resolved",
+	"list.archived": "Archived · {count}",
 	"header.threads": "Threads · {count}",
 	"header.running": "{count} running",
 	"header.waiting": "{count} waiting for you",
@@ -1353,6 +1385,7 @@ const en = {
 	"status.failed": "failed",
 	"status.noReport": "no report",
 	"status.running": "running",
+	"status.stopped": "stopped",
 	"proposals.title": "Suggested threads",
 	"proposals.start": "Start {count} threads",
 	"proposals.dismiss": "Dismiss all",
@@ -2565,6 +2598,14 @@ async function setThreadResolved(threadId, resolved) {
 	await callHost(resolved ? "threads.resolve" : "threads.reopen", { id: threadId });
 	threadsRevision.bump();
 }
+async function setThreadArchived(threadId, archived) {
+	await callHost(archived ? "threads.archive" : "threads.unarchive", { id: threadId });
+	threadsRevision.bump();
+}
+async function stopThread(threadId) {
+	await callHost("threads.stop", { id: threadId });
+	threadsRevision.bump();
+}
 // src/client/SidebarProjects.tsx
 let anchor = null;
 const anchorListeners = /* @__PURE__ */ new Set();
@@ -2932,7 +2973,12 @@ body,[class*="dsht-"]{
 
 /* Thread list tab */
 .dsht-tab{padding:12px;font-size:13px;line-height:1.6;color:var(--dsw-alias-label-secondary)}
-.dsht-list{display:flex;flex-direction:column;gap:4px;padding:6px 8px}
+.dsht-list{box-sizing:border-box;display:flex;flex-direction:column;gap:4px;height:100%;min-height:0;overflow-y:auto;padding:6px 8px}
+.dsht-list-fold{display:flex;align-items:center;gap:4px;width:100%;margin-top:6px;padding:6px 10px;border:0;border-radius:8px;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:12px;cursor:pointer}
+.dsht-list-fold:hover{background:var(--dsht-press);color:var(--dsw-alias-label-secondary)}
+.dsht-list-fold svg{transition:transform .15s var(--dsht-ease)}
+.dsht-list-fold.is-open svg{transform:rotate(90deg)}
+.dsht-items-archived{opacity:.72}
 .dsht-list-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 10px 6px;font-size:12px;color:var(--dsw-alias-label-tertiary)}
 
 .dsht-error{font-size:13px;line-height:19px;color:var(--dsw-alias-state-error-primary)}
@@ -3139,13 +3185,9 @@ function ThreadPaneHeader({ threadId, useSessionStatus, t, openSession }) {
 	]);
 	const [busy, setBusy] = (0, react.useState)(false);
 	if (thread === void 0) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { className: "dsht-pane-head" });
-	const toggle = async () => {
+	const act = (action) => {
 		setBusy(true);
-		try {
-			await setThreadResolved(threadId, !thread.resolved);
-		} finally {
-			setBusy(false);
-		}
+		action().catch(() => {}).finally(() => setBusy(false));
 	};
 	return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 		className: "dsht-pane-head",
@@ -3162,22 +3204,39 @@ function ThreadPaneHeader({ threadId, useSessionStatus, t, openSession }) {
 					}), thread.title]
 				}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 					className: "dsht-pane-meta",
-					children: [thread.projectTitle === null ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: thread.projectTitle }), thread.worktree === null ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(BranchChip, {
-						branch: thread.worktree.branch,
-						removed: thread.worktree.removed
-					})]
+					children: [
+						thread.projectTitle === null ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: thread.projectTitle }),
+						thread.archived ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("pane.archived") }) : null,
+						thread.worktree === null ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(BranchChip, {
+							branch: thread.worktree.branch,
+							removed: thread.worktree.removed
+						})
+					]
 				})]
 			}),
 			/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				className: "dsht-pane-actions",
-				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Pill, {
+				children: [running ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Pill, {
+					icon: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(StopIcon, {}),
+					disabled: busy,
+					onClick: () => act(() => stopThread(threadId)),
+					children: t("pane.stop")
+				}) : thread.archived ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Pill, {
+					icon: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ArchiveIcon, {}),
+					disabled: busy,
+					onClick: () => act(() => setThreadArchived(threadId, false)),
+					children: t("pane.unarchive")
+				}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Pill, {
 					icon: thread.resolved ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ReopenIcon, {}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CheckIcon, {}),
-					disabled: busy || running,
-					onClick: () => {
-						toggle();
-					},
+					disabled: busy,
+					onClick: () => act(() => setThreadResolved(threadId, !thread.resolved)),
 					children: thread.resolved ? t("pane.reopen") : t("pane.resolve")
 				}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Pill, {
+					icon: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ArchiveIcon, {}),
+					label: t("pane.archive"),
+					disabled: busy,
+					onClick: () => act(() => setThreadArchived(threadId, true))
+				})] }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Pill, {
 					icon: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ExpandIcon, {}),
 					onClick: () => openSession(threadId),
 					children: t("pane.openMain")
@@ -3246,44 +3305,61 @@ function ThreadsListTab({ sessionId, useSessionStatus, t, openThread, openSessio
 	const threads = useThreads(mainSessionId, useSessionStatus, revision);
 	const runningKey = useSessionStatus(runningIds);
 	const running = (0, react.useMemo)(() => new Set(runningKey.split(",")), [runningKey]);
+	const [showArchived, setShowArchived] = (0, react.useState)(false);
 	if (role === void 0) return null;
 	if (role.project === null) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 		className: "dsht-tab",
 		children: t("list.notProject")
 	});
+	const active = threads?.filter((thread) => !thread.archived) ?? [];
+	const archived = threads?.filter((thread) => thread.archived) ?? [];
+	const item = (thread) => {
+		const state = glyphState(thread, running.has(thread.id));
+		const report = thread.lastReport;
+		const status = thread.archived ? t("pane.archived") : state === "running" ? t("status.running") : state === "resolved" ? t("list.resolved") : report === null ? t("list.noReport") : t(STATUS_KEYS[report.status] ?? "status.noReport");
+		return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ThreadItem, {
+			n: thread.n,
+			title: thread.title,
+			state,
+			status: `${status} · ${relativeTime(t, thread.updatedAt)}`,
+			summary: state === "running" ? void 0 : report?.summary ?? thread.error ?? void 0,
+			decision: state === "waiting" ? report?.decisions[0] : void 0,
+			decisionLabel: t("card.decision"),
+			branch: thread.worktree === null || thread.worktree.removed ? void 0 : thread.worktree.branch,
+			openLabel: t("card.open"),
+			onOpen: () => openThread(thread.id)
+		}, thread.id);
+	};
 	return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 		className: "dsht-list",
-		children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-			className: "dsht-list-head",
-			children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: role.project.title }), role.thread ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
-				size: "sm",
-				variant: "ghost",
-				onClick: () => openSession(role.project.mainSessionId),
-				children: t("header.backToMain")
-			}) : null]
-		}), threads === void 0 ? null : threads.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-			className: "dsht-tab",
-			children: t("list.empty")
-		}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-			className: "dsht-items",
-			children: sortForList(threads, running).map((thread) => {
-				const state = glyphState(thread, running.has(thread.id));
-				const report = thread.lastReport;
-				const status = state === "running" ? t("status.running") : state === "resolved" ? t("list.resolved") : report === null ? t("list.noReport") : t(STATUS_KEYS[report.status] ?? "status.noReport");
-				return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ThreadItem, {
-					n: thread.n,
-					title: thread.title,
-					state,
-					status: `${status} · ${relativeTime(t, thread.updatedAt)}`,
-					summary: state === "running" ? void 0 : report?.summary ?? thread.error ?? void 0,
-					decision: state === "waiting" ? report?.decisions[0] : void 0,
-					decisionLabel: t("card.decision"),
-					branch: thread.worktree === null || thread.worktree.removed ? void 0 : thread.worktree.branch,
-					openLabel: t("card.open"),
-					onOpen: () => openThread(thread.id)
-				}, thread.id);
-			})
-		})]
+		children: [
+			/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: "dsht-list-head",
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: role.project.title }), role.thread ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
+					size: "sm",
+					variant: "ghost",
+					onClick: () => openSession(role.project.mainSessionId),
+					children: t("header.backToMain")
+				}) : null]
+			}),
+			threads === void 0 ? null : active.length === 0 && archived.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+				className: "dsht-tab",
+				children: t("list.empty")
+			}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+				className: "dsht-items",
+				children: sortForList(active, running).map(item)
+			}),
+			archived.length === 0 ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+				type: "button",
+				className: `dsht-list-fold${showArchived ? " is-open" : ""}`,
+				"aria-expanded": showArchived,
+				onClick: () => setShowArchived((open) => !open),
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ChevronIcon, {}), t("list.archived", { count: archived.length })]
+			}), showArchived ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+				className: "dsht-items dsht-items-archived",
+				children: [...archived].sort((a, b) => b.n - a.n).map(item)
+			}) : null] })
+		]
 	});
 }
 /** Waiting on the user first, then running, then the rest; resolved threads last; newest first within each. */
@@ -3311,7 +3387,7 @@ function ThreadsHeaderAction({ sessionId, useSessionStatus, t, openThreadsList, 
 		});
 	}
 	if (!isMain) return null;
-	const count = threads?.length ?? 0;
+	const count = threads?.filter((thread) => !thread.archived).length ?? 0;
 	const active = threads?.filter((thread) => thread.status === "running" || thread.status === "starting").length ?? 0;
 	const waiting = threads?.filter((thread) => glyphState(thread) === "waiting").length ?? 0;
 	return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(_deepseek_ai_dsh_client_ui_primitives.Button, {

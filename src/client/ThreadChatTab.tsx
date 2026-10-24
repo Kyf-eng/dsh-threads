@@ -4,9 +4,9 @@
 import { useState, type ReactNode } from 'react'
 import { glyphState, ThreadGlyph } from './glyphs.tsx'
 import type { Translate } from './locale.ts'
-import { setThreadResolved } from './resolved.ts'
+import { setThreadArchived, setThreadResolved, stopThread } from './resolved.ts'
 import { parseThreadAddress, type ThreadDetail, useHostValue, useThreadsRevision } from './threads.ts'
-import { BranchChip, CheckIcon, ExpandIcon, Pill, ReopenIcon } from './ui.tsx'
+import { ArchiveIcon, BranchChip, CheckIcon, ExpandIcon, Pill, ReopenIcon, StopIcon } from './ui.tsx'
 
 /** Session-scoped child slot this tab declares; only the declaring entry may render it. */
 export const THREAD_CONVERSATION_SLOT = 'dsh-threads.chat.conversation'
@@ -49,13 +49,10 @@ function ThreadPaneHeader({ threadId, useSessionStatus, t, openSession }: {
   const thread = useHostValue<ThreadDetail>('threads.get', { id: threadId }, [threadId, running, revision])
   const [busy, setBusy] = useState(false)
   if (thread === undefined) return <div className="dsht-pane-head" />
-  const toggle = async () => {
+  // A refusal here only means the state changed under the button; the views reload either way.
+  const act = (action: () => Promise<void>) => {
     setBusy(true)
-    try {
-      await setThreadResolved(threadId, !thread.resolved)
-    } finally {
-      setBusy(false)
-    }
+    void action().catch(() => {}).finally(() => setBusy(false))
   }
   return (
     <div className="dsht-pane-head">
@@ -64,13 +61,21 @@ function ThreadPaneHeader({ threadId, useSessionStatus, t, openSession }: {
         <div className="dsht-pane-title" title={thread.title}><span className="dsht-item-n">#{thread.n}</span>{thread.title}</div>
         <div className="dsht-pane-meta">
           {thread.projectTitle === null ? null : <span>{thread.projectTitle}</span>}
+          {thread.archived ? <span>{t('pane.archived')}</span> : null}
           {thread.worktree === null ? null : <BranchChip branch={thread.worktree.branch} removed={thread.worktree.removed} />}
         </div>
       </div>
       <div className="dsht-pane-actions">
-        <Pill icon={thread.resolved ? <ReopenIcon /> : <CheckIcon />} disabled={busy || running} onClick={() => { void toggle() }}>
-          {thread.resolved ? t('pane.reopen') : t('pane.resolve')}
-        </Pill>
+        {running
+          ? <Pill icon={<StopIcon />} disabled={busy} onClick={() => act(() => stopThread(threadId))}>{t('pane.stop')}</Pill>
+          : thread.archived
+            ? <Pill icon={<ArchiveIcon />} disabled={busy} onClick={() => act(() => setThreadArchived(threadId, false))}>{t('pane.unarchive')}</Pill>
+            : <>
+                <Pill icon={thread.resolved ? <ReopenIcon /> : <CheckIcon />} disabled={busy} onClick={() => act(() => setThreadResolved(threadId, !thread.resolved))}>
+                  {thread.resolved ? t('pane.reopen') : t('pane.resolve')}
+                </Pill>
+                <Pill icon={<ArchiveIcon />} label={t('pane.archive')} disabled={busy} onClick={() => act(() => setThreadArchived(threadId, true))} />
+              </>}
         <Pill icon={<ExpandIcon />} onClick={() => openSession(threadId)}>{t('pane.openMain')}</Pill>
       </div>
     </div>

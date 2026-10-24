@@ -10,6 +10,8 @@ export interface ThreadView {
   title: string
   status: 'starting' | 'running' | 'idle' | 'failed'
   resolved: boolean
+  /** Archived on its own; listed apart. */
+  archived: boolean
   initiation: 'user_asked' | 'offer' | 'proposal'
   lastReport: { status: 'done' | 'blocked' | 'needs_decision' | 'failed'; summary: string; changedFiles: string[]; decisions: string[]; at: string } | null
   error: string | null

@@ -62,7 +62,7 @@ describe('composeNote', () => {
 describe('currentReport', () => {
   const base: ThreadRecord = {
     id: 'session-1', mainSessionId: 'main', n: 1, title: 't', task: 'x', initiation: 'user_asked',
-    status: 'running', resolved: false, round: 'dispatch', userMessages: [], roundStartSeq: 0, roundStartedAt: '2026-10-23T10:00:00.000Z',
+    status: 'running', resolved: false, archived: false, round: 'dispatch', userMessages: [], roundStartSeq: 0, roundStartedAt: '2026-10-23T10:00:00.000Z',
     lastReport: null, error: null, worktree: null, reminder: null, createdAt: '', updatedAt: '',
   }
   const report = (at: string) => normalizeReport({ status: 'done', summary: 's' }, 300, at)

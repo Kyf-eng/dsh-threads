@@ -29,6 +29,9 @@ export function setup(overrides: Partial<Config> = {}, options: { slowWrites?: b
   const entered: string[] = []
   const models: string[] = []
   const removals = new Map<string, { outcome: 'removed' | 'missing' | 'dirty'; branchKept: boolean }>()
+  /** Threads whose latest turn the user stopped. */
+  const stopped = new Set<string>()
+  const archived = new Set<string>()
   const host: ThreadHost = {
     async createSession(_main, id) {
       if (failCreate) throw new Error('create failed')
@@ -47,6 +50,19 @@ export function setup(overrides: Partial<Config> = {}, options: { slowWrites?: b
     },
     setPermission(thread, preset) { inherited.push(`${preset}->${thread}`) },
     roundOutput(id) { return outputs.get(id) },
+    stoppedByUser: (id) => stopped.has(id),
+    async cancel(id) {
+      const agent = agents.get(id)
+      if (agent === undefined || agent.status !== 'running') return false
+      agent.status = 'idle'
+      stopped.add(id)
+      return true
+    },
+    async archiveSession(id) {
+      if (agents.get(id)?.status === 'running') throw new Error('workspace/session-active')
+      archived.add(id)
+    },
+    async unarchiveSession(id) { archived.delete(id) },
     async createWorktree(_main, name) {
       if (notARepo) throw new WorktreeError('not a git repository')
       return { path: `/repo/.agents/worktrees/dsh-threads-${name}`, subdir, branch: `dsh-threads/${name}`, baseCommit: 'abc1234def', repositoryRoot: '/repo', removed: false }
@@ -83,5 +99,5 @@ export function setup(overrides: Partial<Config> = {}, options: { slowWrites?: b
     pinned: false, instructions: '', icon: 'folder', goal: '', archived: false, notify: 'attention',
     mainModel: null, threadModel: null, createdAt: '', updatedAt: '',
   })
-  return { manager, store, main, agents, outputs, renamed, inherited, entered, removals, models, failCreate: () => { failCreate = true }, notARepo: () => { notARepo = true }, unreachableMain: () => { unreachableMain = true }, subdir: (value: string) => { subdir = value } }
+  return { manager, store, main, agents, outputs, renamed, inherited, entered, removals, models, stopped, archived, failCreate: () => { failCreate = true }, notARepo: () => { notARepo = true }, unreachableMain: () => { unreachableMain = true }, subdir: (value: string) => { subdir = value } }
 }

@@ -68,9 +68,11 @@ export function composeNote(
   report: ThreadReport | null,
   fallbackText: string | undefined,
   maxChars: number,
+  options: { stopped?: boolean } = {},
 ): string {
-  const status = report?.status ?? 'no-report'
+  const status = options.stopped === true ? 'stopped' : report?.status ?? 'no-report'
   const lines = [`[讨论串 #${thread.n}「${thread.title}」· ${status} · 这是讨论串的报告，不是证据]`]
+  if (options.stopped === true) lines.push('用户在这一轮做完之前停止了讨论串。不要自己重开或重派这件事，除非用户要求。')
   // Right under the header so truncation never drops it.
   if (thread.worktree != null) {
     lines.push(`分支：${thread.worktree.branch}（讨论串自己的 worktree；改动不在项目文件夹里，用户要求时再合并）`)

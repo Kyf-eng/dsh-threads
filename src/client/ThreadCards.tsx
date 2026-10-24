@@ -17,6 +17,7 @@ export const STATUS_KEYS: Record<string, MessageKey> = {
   needs_decision: 'status.needsDecision',
   failed: 'status.failed',
   'no-report': 'status.noReport',
+  stopped: 'status.stopped',
 }
 
 /** Threads that wait on the user lead a report card. */

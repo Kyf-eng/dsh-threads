@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The running mark breathes in place, dim to bright, instead of a spreading blue ring.
+
 ## 0.1.0-rc.3 — 2026-10-24
 
 The projects page, the card menu and project settings, reworked after Claude's.

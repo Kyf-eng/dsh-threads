@@ -24,6 +24,7 @@ interface UserQuestionsLike {
 }
 
 const DESCRIPTION = 'Open a thread: a real background session for a self-contained task. It reports back here with a short summary when it finishes. '
+  + 'In this project, use it instead of a subagent for work that writes files or takes more than a few minutes, so this conversation stays free. '
   + 'See the "Threads (dsh-threads)" section of your instructions for when to use it and which initiation to pass.'
 
 export function threadOpenTool(ctx: Context, manager: ThreadManager): ToolDefinition {

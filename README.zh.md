@@ -4,7 +4,7 @@
 
 一个 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 插件，照着 Claude 的"项目 + 讨论串"做。项目的主对话当调度员：遇到能独立完成的任务，就开一个**讨论串**——一个你能点进去接着聊的真实会话；讨论串做完后，把简短的回报发回主对话。
 
-> 状态：**0.1.0-rc.2**，预发布版。基于 DeepSeek Harness 0.2.1-rc.2 开发和测试。更新记录见 [CHANGELOG.md](CHANGELOG.md)，设计说明见 [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)。
+> 状态：**0.1.0-rc.3**，预发布版。基于 DeepSeek Harness 0.2.1-rc.2 开发和测试。更新记录见 [CHANGELOG.md](CHANGELOG.md)，设计说明见 [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)。
 
 ## 功能
 
@@ -22,10 +22,10 @@
 2. 把插件加到你的 profile：
 
    ```sh
-   dsh plugin --profile desktop add https://github.com/Kyf-eng/dsh-threads/releases/download/v0.1.0-rc.2/fky-dsh-threads-0.1.0-rc.2.tgz
+   dsh plugin --profile desktop add https://github.com/Kyf-eng/dsh-threads/releases/download/v0.1.0-rc.3/fky-dsh-threads-0.1.0-rc.3.tgz
    ```
 
-   Web 版用 `--profile web`。也可以用 `github:Kyf-eng/dsh-threads#v0.1.0-rc.2`。
+   Web 版用 `--profile web`。也可以用 `github:Kyf-eng/dsh-threads#v0.1.0-rc.3`。
 3. 启动 DeepSeek Harness，左侧出现"项目"。
 
 卸载：`dsh plugin --profile desktop remove @fky/dsh-threads`。

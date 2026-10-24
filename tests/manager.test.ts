@@ -135,14 +135,17 @@ describe('ThreadManager', () => {
     expect(t.store.main('main').pendingNotes).toHaveLength(0)
   })
 
-  it('reports a round the user drove in the thread quietly', async () => {
+  it('reports a round the user drove in the thread quietly, quoting what they asked', async () => {
     await t.manager.open('main', { title: 'a', task: 'x', initiation: 'user_asked' })
     await t.manager.onIdle('session-1')
-    await t.manager.onInbox('session-1', 'user', 10)
-    expect(t.store.thread('session-1')).toMatchObject({ status: 'running', round: 'user', roundStartSeq: 10 })
+    await t.manager.onInbox('session-1', 'user', 10, '困难模式再快一点')
+    await t.manager.onInbox('session-1', 'user', 12, '起步 60ms')
+    expect(t.store.thread('session-1')).toMatchObject({ status: 'running', round: 'user', roundStartSeq: 10, userMessages: ['困难模式再快一点', '起步 60ms'] })
     await t.manager.onIdle('session-1')
     expect(t.main.followups).toHaveLength(1)
     expect(t.main.injects).toHaveLength(1)
+    expect(t.main.injects[0]).toContain('用户的原话：「困难模式再快一点」 「起步 60ms」')
+    expect(t.store.thread('session-1')?.userMessages).toEqual([])
   })
 
   it('ignores our own messages and stops waking after maxAutoWakes until the user speaks', async () => {

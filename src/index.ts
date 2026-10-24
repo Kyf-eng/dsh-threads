@@ -9,6 +9,7 @@ import { createHost } from './host.ts'
 import { installPerAgent } from './install.ts'
 import { ThreadManager } from './manager.ts'
 import { Projects } from './projects.ts'
+import { textOf } from './report.ts'
 import { type ConnectionLike, registerRpc } from './rpc.ts'
 import { optional } from './services.ts'
 import './source.ts'
@@ -46,7 +47,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     if (status === 'idle') manager.onIdle(agent.id).catch(fail)
   })
   ctx.on('agent/inbox/inserted', ({ agent, message }) => {
-    manager.onInbox(agent.id, message.source.kind, Number(agent.session.seq)).catch(fail)
+    const text = textOf(message.content as { type: string; text?: string }[] | undefined) ?? ''
+    manager.onInbox(agent.id, message.source.kind, Number(agent.session.seq), text).catch(fail)
   })
 
   installPerAgent(ctx, manager, projects, config)

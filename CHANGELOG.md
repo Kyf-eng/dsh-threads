@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- A report from a round the user drove in the thread says so and quotes the user's words, so the main conversation treats the change as the user's decision instead of something the thread did on its own. Words the user adds during a dispatched round are quoted too.
+- The coordinator hands choices to the thread: when a task starts with options for the user to pick, the thread presents them and waits (raised hand) instead of the main conversation drafting and asking first. When a thread waits on the user, the main conversation says so in a line instead of asking again with a question box.
+- The coordinator keeps its own turns short (merge what was asked, run the project's tests, report) and gives longer checks and new writing to threads, so the user can always reach it.
+
 ## 0.1.0-rc.4 — 2026-10-24
 
 Projects get their own section in the sidebar, after Claude's, and the running mark breathes in place.

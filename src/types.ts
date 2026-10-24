@@ -48,6 +48,11 @@ export interface ThreadRecord {
   /** Marked resolved by the user; a new message to the thread reopens it. */
   resolved: boolean
   round: RoundOrigin | null
+  /**
+   * What the user typed in the thread during the current round, in their own words. The report
+   * quotes it, so the main conversation knows a change was the user's request, not the thread's idea.
+   */
+  userMessages: string[]
   /** Session log offset when the current round started; the round's events are read from here. */
   roundStartSeq: number | null
   roundStartedAt: string | null

@@ -65,7 +65,7 @@ function setup() {
 function threadOf(mainSessionId: string, id: string, status: 'idle' | 'running') {
   return {
     id, mainSessionId, n: 1, title: 't', task: 'x', initiation: 'user_asked' as const, status, resolved: false,
-    round: status === 'running' ? 'dispatch' as const : null, roundStartSeq: 0, roundStartedAt: null,
+    round: status === 'running' ? 'dispatch' as const : null, userMessages: [], roundStartSeq: 0, roundStartedAt: null,
     lastReport: null, error: null, worktree: null, reminder: null, createdAt: '', updatedAt: '',
   }
 }
@@ -181,7 +181,7 @@ describe('Projects', () => {
     const project = await t.projects.create({ title: 'A', workspaceId: 'ws-1' })
     await t.store.putThread({
       id: 'session-t1', mainSessionId: project.mainSessionId, n: 1, title: 't', task: 'x', initiation: 'user_asked',
-      status: 'running', resolved: false, round: 'dispatch', roundStartSeq: 0, roundStartedAt: null,
+      status: 'running', resolved: false, round: 'dispatch', userMessages: [], roundStartSeq: 0, roundStartedAt: null,
       lastReport: null, error: null, worktree: null, reminder: null, createdAt: '', updatedAt: '2030-01-01T00:00:00.000Z',
     })
     expect(t.projects.list()[0]).toMatchObject({ threads: 1, running: 1, lastActivity: '2030-01-01T00:00:00.000Z' })

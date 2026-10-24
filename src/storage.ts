@@ -24,6 +24,7 @@ const threadSchema = z.object({
   status: z.enum(['starting', 'running', 'idle', 'failed']),
   resolved: z.boolean().default(false),
   round: z.enum(['dispatch', 'user']).nullable(),
+  userMessages: z.array(z.string()).default([]),
   roundStartSeq: z.number().int().nonnegative().nullable(),
   roundStartedAt: z.string().nullable(),
   lastReport: reportSchema.nullable(),

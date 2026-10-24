@@ -11,6 +11,8 @@ import type { RemoveResult } from './worktree.ts'
 const CARD_SUMMARY_MAX = 160
 /** Changed files a transcript card lists (the thread pane has the rest). */
 const CARD_FILES_MAX = 4
+/** The user's latest messages in one thread round kept for its report. */
+const USER_MESSAGES_MAX = 5
 
 function cardOf(thread: Pick<ThreadRecord, 'id' | 'n' | 'title' | 'worktree'>): ThreadCardInfo {
   const card: ThreadCardInfo = { threadId: thread.id, n: thread.n, title: thread.title }
@@ -176,7 +178,7 @@ export class ThreadManager {
       initiation: input.initiation,
       status: 'starting',
       resolved: false,
-      round: null, roundStartSeq: null, roundStartedAt: null,
+      round: null, userMessages: [], roundStartSeq: null, roundStartedAt: null,
       lastReport: null, error: null,
       worktree,
       reminder: null,
@@ -214,7 +216,7 @@ export class ThreadManager {
   /** Start a round the main conversation asked for. The record is saved before the message is sent. */
   private async dispatch(record: ThreadRecord, agent: ThreadAgent, text: string): Promise<ThreadRecord> {
     const at = this.deps.now()
-    const next: ThreadRecord = { ...record, status: 'running', round: 'dispatch', roundStartSeq: agent.seq, roundStartedAt: at, reminder: null, updatedAt: at }
+    const next: ThreadRecord = { ...record, status: 'running', round: 'dispatch', userMessages: [], roundStartSeq: agent.seq, roundStartedAt: at, reminder: null, updatedAt: at }
     await this.deps.store.putThread(next)
     agent.followup(text, noticeSummary(next, '任务'), { role: 'brief', threads: [cardOf(next)], wake: true })
     return next
@@ -237,7 +239,7 @@ export class ThreadManager {
     if (agent === undefined) throw new ThreadError(`讨论串 #${n} 现在连不上（会话可能已被归档或删除）。`)
     const at = this.deps.now()
     const next: ThreadRecord = thread.round === null
-      ? { ...thread, status: 'running', round: 'dispatch', roundStartSeq: agent.seq, roundStartedAt: at, resolved: false, reminder: null, updatedAt: at }
+      ? { ...thread, status: 'running', round: 'dispatch', userMessages: [], roundStartSeq: agent.seq, roundStartedAt: at, resolved: false, reminder: null, updatedAt: at }
       : { ...thread, round: 'dispatch', resolved: false, reminder: null, updatedAt: at }
     await this.deps.store.putThread(next)
     agent.followup(replyText(next, text), noticeSummary(next, '追加指令'), { role: 'reply', threads: [cardOf(next)], wake: true })
@@ -269,17 +271,24 @@ export class ThreadManager {
     }
   }
 
-  /** A message entered a session's inbox. A user message in an idle thread starts a user-driven round. */
-  async onInbox(sessionId: string, sourceKind: string, seq: number): Promise<void> {
+  /**
+   * A message entered a session's inbox. A user message in an idle thread starts a user-driven
+   * round; in any round, the user's words are kept for the report.
+   */
+  async onInbox(sessionId: string, sourceKind: string, seq: number, text = ''): Promise<void> {
     if (sourceKind !== 'user') return
     const thread = this.deps.store.thread(sessionId)
     if (thread === undefined) {
       await this.onMainUserMessage(sessionId)
       return
     }
-    if (thread.round !== null) return
+    const said = text.trim().length === 0 ? [] : [text.trim()]
     const at = this.deps.now()
-    await this.deps.store.putThread({ ...thread, status: 'running', round: 'user', roundStartSeq: seq, roundStartedAt: at, resolved: false, reminder: null, updatedAt: at })
+    if (thread.round !== null) {
+      if (said.length > 0) await this.deps.store.putThread({ ...thread, userMessages: [...thread.userMessages, ...said].slice(-USER_MESSAGES_MAX), updatedAt: at })
+      return
+    }
+    await this.deps.store.putThread({ ...thread, status: 'running', round: 'user', userMessages: said, roundStartSeq: seq, roundStartedAt: at, resolved: false, reminder: null, updatedAt: at })
   }
 
   /** The user spoke in a main conversation: automatic wake-ups may start again. */
@@ -346,7 +355,7 @@ export class ThreadManager {
         ...(report === null || report.changedFiles.length === 0 ? {} : { files: report.changedFiles.slice(0, CARD_FILES_MAX) }),
       },
     }
-    await this.deps.store.putThread({ ...thread, status: 'idle', round: null, reminder: null, updatedAt: this.deps.now() })
+    await this.deps.store.putThread({ ...thread, status: 'idle', round: null, userMessages: [], reminder: null, updatedAt: this.deps.now() })
     // Start queued proposals first: the note then waits for them, and the main conversation
     // hears from the whole batch once instead of once per thread.
     await this.drainQueue(thread.mainSessionId)

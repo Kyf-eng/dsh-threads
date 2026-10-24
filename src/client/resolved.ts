@@ -70,3 +70,13 @@ export async function setThreadResolved(threadId: string, resolved: boolean): Pr
   await callHost(resolved ? 'threads.resolve' : 'threads.reopen', { id: threadId })
   threadsRevision.bump()
 }
+
+export async function setThreadArchived(threadId: string, archived: boolean): Promise<void> {
+  await callHost(archived ? 'threads.archive' : 'threads.unarchive', { id: threadId })
+  threadsRevision.bump()
+}
+
+export async function stopThread(threadId: string): Promise<void> {
+  await callHost('threads.stop', { id: threadId })
+  threadsRevision.bump()
+}

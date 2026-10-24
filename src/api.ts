@@ -75,20 +75,20 @@ export function notifyTarget(id: string, deps: {
 }
 
 /** What the panel shows for a thread; the brief and internal round bookkeeping stay on the host. */
-export type ThreadSummary = Pick<ThreadRecord, 'id' | 'mainSessionId' | 'n' | 'title' | 'status' | 'resolved' | 'initiation' | 'lastReport' | 'error' | 'createdAt' | 'updatedAt'> & {
+export type ThreadSummary = Pick<ThreadRecord, 'id' | 'mainSessionId' | 'n' | 'title' | 'status' | 'resolved' | 'archived' | 'initiation' | 'lastReport' | 'error' | 'createdAt' | 'updatedAt'> & {
   worktree: { branch: string; path: string; removed: boolean } | null
 }
 
 export function summarize(thread: ThreadRecord): ThreadSummary {
-  const { id, mainSessionId, n, title, status, resolved, initiation, lastReport, error, createdAt, updatedAt } = thread
+  const { id, mainSessionId, n, title, status, resolved, archived, initiation, lastReport, error, createdAt, updatedAt } = thread
   const worktree = thread.worktree === null ? null : { branch: thread.worktree.branch, path: thread.worktree.path, removed: thread.worktree.removed }
-  return { id, mainSessionId, n, title, status, resolved, initiation, lastReport, error, worktree, createdAt, updatedAt }
+  return { id, mainSessionId, n, title, status, resolved, archived, initiation, lastReport, error, worktree, createdAt, updatedAt }
 }
 
 /** A thread that stopped to ask the user something (Claude's raised hand). */
 export function isWaiting(thread: ThreadRecord): boolean {
   const status = thread.lastReport?.status
-  return !thread.resolved && thread.status === 'idle' && (status === 'needs_decision' || status === 'blocked')
+  return !thread.resolved && !thread.archived && thread.status === 'idle' && (status === 'needs_decision' || status === 'blocked')
 }
 
 function parse<T>(schema: z.ZodType<T>, payload: unknown): T {
@@ -155,6 +155,9 @@ export function apiHandlers(deps: {
     },
     'threads.resolve': async (payload) => summarize(await manager.setResolved(parse(idInput, payload).id, true)),
     'threads.reopen': async (payload) => summarize(await manager.setResolved(parse(idInput, payload).id, false)),
+    'threads.stop': async (payload) => summarize(await manager.stop(parse(idInput, payload).id)),
+    'threads.archive': async (payload) => summarize(await manager.setArchived(parse(idInput, payload).id, true)),
+    'threads.unarchive': async (payload) => summarize(await manager.setArchived(parse(idInput, payload).id, false)),
     /** Ids of every resolved thread; the client locks their composers. */
     'threads.resolved': () => projectThreads().filter((t) => t.resolved).map((t) => t.id),
     /** Which sessions are threads and which are project main conversations (sidebar row badges). */
@@ -169,7 +172,7 @@ export function apiHandlers(deps: {
         return {
           id: p.mainSessionId,
           icon: p.icon,
-          threads: threads.length,
+          threads: threads.filter((t) => !t.archived).length,
           running: threads.filter((t) => t.status === 'running' || t.status === 'starting').length,
           waiting: threads.filter(isWaiting).length,
         }

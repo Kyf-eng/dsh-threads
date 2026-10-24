@@ -207,6 +207,27 @@ export function createHost(ctx: Context): ThreadHost & ProjectHost & ReplyHost {
       return textOf(finalAssistantOutput(events) as { type: string; text?: string }[] | undefined)
     },
 
+    async cancel(sessionId) {
+      const agent = live(sessionId)
+      if (agent === undefined || agent.status !== 'running') return false
+      // As DSH stops a session it archives: queued input is dropped instead of starting another turn.
+      agent.cancel({ kind: 'user' })
+      return true
+    },
+
+    stoppedByUser(threadId, fromSeq) {
+      const agent = live(threadId)
+      if (agent === undefined) return false
+      const events = agent.session.snapshotEvents(fromSeq as Parameters<typeof agent.session.snapshotEvents>[0])
+      for (let i = events.length - 1; i >= 0; i -= 1) {
+        const event = events[i] as { type: string; data?: { reason?: { kind: string; reason?: { kind: string } } } }
+        if (event.type !== 'turn/end') continue
+        const reason = event.data?.reason
+        return reason?.kind === 'aborted' && reason.reason?.kind === 'user'
+      }
+      return false
+    },
+
     roundOutput(threadId, fromSeq) {
       const agent = live(threadId)
       if (agent === undefined) return undefined

@@ -42,6 +42,13 @@ export interface ThreadHost {
   setPermission(threadId: string, preset: string): void
   /** Text of the thread's last assistant reply since `fromSeq`. */
   roundOutput(threadId: string, fromSeq: number): string | undefined
+  /** Whether the thread's latest turn since `fromSeq` ended because the user stopped it (DSH's stop button, or ours). */
+  stoppedByUser(threadId: string, fromSeq: number): boolean
+  /** Stop the thread's running turn, dropping input queued behind it; false when nothing was running. */
+  cancel(threadId: string): Promise<boolean>
+  /** Archive a session in DSH (it leaves the sidebar and cannot run); throws when it is busy. */
+  archiveSession(sessionId: string): Promise<void>
+  unarchiveSession(sessionId: string): Promise<void>
   /** A new worktree branched from the main conversation's folder (throws WorktreeError when it cannot). */
   createWorktree(mainSessionId: string, name: string): Promise<ThreadWorktree>
   /** Make `path` the thread's working directory. */
@@ -203,6 +210,7 @@ export class ThreadManager {
       initiation: input.initiation,
       status: 'starting',
       resolved: false,
+      archived: false,
       round: null, userMessages: [], roundStartSeq: null, roundStartedAt: null,
       lastReport: null, error: null,
       worktree,
@@ -260,6 +268,7 @@ export class ThreadManager {
     if (thread.status === 'failed' || thread.status === 'starting') {
       throw new ThreadError(`讨论串 #${n} 没有建好（${thread.status}），不能追加；需要的话重新开一个。`)
     }
+    if (thread.archived) throw new ThreadError(`讨论串 #${n} 已被用户归档。需要继续就请用户在讨论串列表里取消归档，或者开一个新的。`)
     const agent = await this.deps.host.resolve(thread.id)
     if (agent === undefined) throw new ThreadError(`讨论串 #${n} 现在连不上（会话可能已被归档或删除）。`)
     const at = this.deps.now()
@@ -340,14 +349,16 @@ export class ThreadManager {
       if (thread.status === 'running') await this.deps.store.putThread({ ...thread, status: 'idle', updatedAt: this.deps.now() })
       return
     }
+    // The user stopped the round (DSH's stop button in the thread, or ours): never remind it back to work.
+    const stopped = this.deps.host.stoppedByUser(thread.id, thread.roundStartSeq ?? 0)
     // A task round that ended without thread_report: ask once, keep the round open.
-    if (thread.round === 'dispatch' && thread.reminder === null && this.deps.config.reportReminder
+    if (!stopped && thread.round === 'dispatch' && thread.reminder === null && this.deps.config.reportReminder
       && currentReport(thread) === null && await this.remind(thread)) return
     // Until the note is queued, delivery must not mistake this thread for finished-and-reported:
     // another thread settling at the same moment would otherwise wake the main conversation alone.
     this.settling.add(thread.id)
     try {
-      await this.settle(thread)
+      await this.settle(thread, stopped)
     } finally {
       this.settling.delete(thread.id)
     }
@@ -365,18 +376,22 @@ export class ThreadManager {
     return true
   }
 
-  private async settle(thread: ThreadRecord): Promise<void> {
+  /**
+   * Turn the finished round into a note for the main conversation. A round the user drove, or
+   * stopped, is quiet: the user already knows, and the main conversation hears at its next turn.
+   */
+  private async settle(thread: ThreadRecord, stopped = false): Promise<void> {
     const report = currentReport(thread)
     const fallback = report !== null ? undefined
       : thread.reminder !== null ? thread.reminder.fallback ?? undefined
       : this.deps.host.roundOutput(thread.id, thread.roundStartSeq ?? 0)
     const note: PendingNote = {
       threadId: thread.id,
-      text: composeNote(thread, report, fallback, this.deps.config.noteMaxChars),
-      quiet: thread.round === 'user',
+      text: composeNote(thread, report, fallback, this.deps.config.noteMaxChars, { stopped }),
+      quiet: thread.round === 'user' || stopped,
       card: {
         ...cardOf(thread),
-        status: report?.status ?? 'no-report',
+        status: stopped ? 'stopped' : report?.status ?? 'no-report',
         summary: truncate(plainLine(report?.summary ?? fallback ?? ''), CARD_SUMMARY_MAX),
         ...(report?.decisions[0] === undefined ? {} : { decision: truncate(report.decisions[0], CARD_SUMMARY_MAX) }),
         ...(report === null || report.changedFiles.length === 0 ? {} : { files: report.changedFiles.slice(0, CARD_FILES_MAX) }),
@@ -480,6 +495,44 @@ export class ThreadManager {
     return next
   }
 
+  /**
+   * Stop a running thread (the pane's stop, `/thread stop`). Its round then settles as stopped,
+   * quietly and without a reminder (onIdle reads the turn's end).
+   */
+  async stop(threadId: string): Promise<ThreadRecord> {
+    const thread = this.deps.store.thread(threadId)
+    if (thread === undefined) throw new ThreadError('找不到这个讨论串。')
+    if (thread.status === 'starting') throw new ThreadError(`讨论串 #${thread.n} 还在建，稍后再停。`)
+    if (thread.status !== 'running' || !await this.deps.host.cancel(threadId)) throw new ThreadError(`讨论串 #${thread.n} 现在没有在运行。`)
+    return thread
+  }
+
+  /** `/thread stop <n>` from a main conversation. */
+  stopNumber(mainSessionId: string, n: number): Promise<ThreadRecord> {
+    const thread = this.deps.store.threadsOf(mainSessionId).find((t) => t.n === n)
+    if (thread === undefined) return Promise.reject(new ThreadError(`这个主对话没有讨论串 #${n}。`))
+    return this.stop(thread.id)
+  }
+
+  /**
+   * Archive one thread, as in Claude: its session is archived in DSH (out of the way, nothing
+   * deleted) and it leaves the threads list. Refused while it runs; stop it first.
+   */
+  async setArchived(threadId: string, archived: boolean): Promise<ThreadRecord> {
+    const thread = this.deps.store.thread(threadId)
+    if (thread === undefined) throw new ThreadError('找不到这个讨论串。')
+    if (thread.archived === archived) return thread
+    if (archived) {
+      if (thread.status === 'running' || thread.status === 'starting') throw new ThreadError(`讨论串 #${thread.n} 还在运行，先停止再归档。`)
+      await this.deps.host.archiveSession(threadId)
+    } else {
+      await this.deps.host.unarchiveSession(threadId)
+    }
+    const next = { ...thread, archived, updatedAt: this.deps.now() }
+    await this.deps.store.putThread(next)
+    return next
+  }
+
   async recordReport(threadId: string, input: Omit<ThreadReport, 'at'>): Promise<ThreadReport> {
     const thread = this.deps.store.thread(threadId)
     if (thread === undefined) throw new ThreadError('只有讨论串会话能调用 thread_report。')
@@ -547,7 +600,7 @@ export class ThreadManager {
       if (thread === undefined) throw new ThreadError(`没有讨论串 #${n}。`)
       const report = thread.lastReport
       return [
-        `讨论串 #${thread.n}「${thread.title}」· ${thread.status}（会话 ${thread.id}）`,
+        `讨论串 #${thread.n}「${thread.title}」· ${thread.status}${thread.archived ? ' · 已归档' : ''}（会话 ${thread.id}）`,
         thread.worktree === null ? '' : `worktree：${thread.worktree.path}，分支 ${thread.worktree.branch}${thread.worktree.removed ? '（已删除 worktree）' : ''}`,
         `任务：${truncate(thread.task, 600)}`,
         report === null
@@ -563,7 +616,7 @@ export class ThreadManager {
     if (threads.length === 0) return '这个主对话还没有讨论串。'
     return threads.map((t) => {
       const latest = t.lastReport === null ? '无回报' : `${t.lastReport.status}：${truncate(t.lastReport.summary, 80)}`
-      return `#${t.n}「${t.title}」· ${t.status} · ${latest}`
+      return `#${t.n}「${t.title}」· ${t.status}${t.archived ? ' · 已归档' : ''} · ${latest}`
     }).join('\n')
   }
 }

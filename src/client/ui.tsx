@@ -48,6 +48,15 @@ export function ExpandIcon() {
   return <Svg><path d="M14 4.5h5.5V10M10 19.5H4.5V14M19.5 4.5 13 11M4.5 19.5 11 13" /></Svg>
 }
 
+export function StopIcon() {
+  return <Svg><rect x="6.5" y="6.5" width="11" height="11" rx="2" /></Svg>
+}
+
+/** Archive box (paths from Lucide, ISC). */
+export function ArchiveIcon() {
+  return <Svg><rect x="3" y="4" width="18" height="5" rx="1" /><path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9M10 13h4" /></Svg>
+}
+
 export function CloseIcon() {
   return <Svg><path d="m7 7 10 10M17 7 7 17" /></Svg>
 }

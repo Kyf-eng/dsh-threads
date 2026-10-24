@@ -130,7 +130,8 @@ export class Projects {
       const lastActivity = threads.reduce((latest, t) => (t.updatedAt > latest ? t.updatedAt : latest), project.updatedAt)
       return {
         ...project,
-        threads: threads.length,
+        // Threads the user archived one by one no longer count.
+        threads: threads.filter((t) => !t.archived).length,
         running: threads.filter((t) => t.status === 'starting' || t.status === 'running').length,
         lastActivity,
       }
@@ -261,7 +262,9 @@ export class Projects {
 
   async unarchive(id: string): Promise<ProjectRecord> {
     const project = this.require(id)
-    for (const sessionId of [project.mainSessionId, ...this.deps.store.threadsOf(project.mainSessionId).map((t) => t.id)]) {
+    // Threads the user archived on their own stay archived.
+    const threads = this.deps.store.threadsOf(project.mainSessionId).filter((t) => !t.archived)
+    for (const sessionId of [project.mainSessionId, ...threads.map((t) => t.id)]) {
       await this.deps.host.unarchiveSession(sessionId).catch(() => {})
     }
     const next = { ...project, archived: false, updatedAt: this.deps.now() }

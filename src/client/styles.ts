@@ -135,7 +135,12 @@ body,[class*="dsht-"]{
 
 /* Thread list tab */
 .dsht-tab{padding:12px;font-size:13px;line-height:1.6;color:var(--dsw-alias-label-secondary)}
-.dsht-list{display:flex;flex-direction:column;gap:4px;padding:6px 8px}
+.dsht-list{box-sizing:border-box;display:flex;flex-direction:column;gap:4px;height:100%;min-height:0;overflow-y:auto;padding:6px 8px}
+.dsht-list-fold{display:flex;align-items:center;gap:4px;width:100%;margin-top:6px;padding:6px 10px;border:0;border-radius:8px;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:12px;cursor:pointer}
+.dsht-list-fold:hover{background:var(--dsht-press);color:var(--dsw-alias-label-secondary)}
+.dsht-list-fold svg{transition:transform .15s var(--dsht-ease)}
+.dsht-list-fold.is-open svg{transform:rotate(90deg)}
+.dsht-items-archived{opacity:.72}
 .dsht-list-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 10px 6px;font-size:12px;color:var(--dsw-alias-label-tertiary)}
 
 .dsht-error{font-size:13px;line-height:19px;color:var(--dsw-alias-state-error-primary)}

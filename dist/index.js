@@ -394,6 +394,10 @@ var ThreadManager = class {
 	creating = /* @__PURE__ */ new Set();
 	/** Per-main-conversation serialization of delivery. */
 	chains = /* @__PURE__ */ new Map();
+	/** Per-main-conversation serialization of opening threads (running limit, numbers, proposal queue). */
+	openings = /* @__PURE__ */ new Map();
+	/** Threads whose round ended but whose note is not queued yet; delivery counts them as running. */
+	settling = /* @__PURE__ */ new Set();
 	constructor(deps) {
 		this.deps = deps;
 	}
@@ -407,14 +411,23 @@ var ThreadManager = class {
 	runningCount(mainSessionId) {
 		return this.deps.store.threadsOf(mainSessionId).filter((t) => t.status === "starting" || t.status === "running").length;
 	}
-	async open(mainSessionId, input) {
+	/** Open a thread. Opens for one main conversation run one at a time, so parallel calls cannot overshoot the limit or share a number. */
+	open(mainSessionId, input) {
+		return this.opening(mainSessionId, () => this.openNow(mainSessionId, input));
+	}
+	opening(mainSessionId, task) {
+		const next = (this.openings.get(mainSessionId) ?? Promise.resolve()).then(task, task);
+		this.openings.set(mainSessionId, next.catch(() => void 0));
+		return next;
+	}
+	async openNow(mainSessionId, input) {
 		const { store, host, config, now } = this.deps;
 		if (this.isThread(mainSessionId)) throw new ThreadError("讨论串里不能再开讨论串；把这个需要写进 thread_report 的 decisions，交给主对话决定。");
 		if (!this.isDispatcher(mainSessionId)) throw new ThreadError(NOT_A_PROJECT);
 		const task = input.task.trim();
 		if (task.length === 0) throw new ThreadError("task 不能为空：写一份完整的简报。");
 		const running = this.runningCount(mainSessionId);
-		if (running >= config.maxRunning) throw new ThreadError(`已有 ${running} 个讨论串在运行（上限 ${config.maxRunning}）。等它回报后再开，或者这件事在主对话里做。`);
+		if (running >= config.maxRunning) throw new ThreadError(`已有 ${running} 个讨论串在运行（上限 ${config.maxRunning}）。等有讨论串回报后再开，或者这件事在主对话里做。`);
 		const n = Math.max(0, ...store.threadsOf(mainSessionId).map((t) => t.n)) + 1;
 		const title = truncate(input.title.trim(), TITLE_MAX) || titleFrom(task);
 		const id = this.deps.newSessionId();
@@ -593,6 +606,15 @@ var ThreadManager = class {
 			});
 			return;
 		}
+		this.settling.add(thread.id);
+		try {
+			await this.settle(thread);
+		} finally {
+			this.settling.delete(thread.id);
+		}
+		await this.flush(thread.mainSessionId);
+	}
+	async settle(thread) {
 		const report = currentReport(thread);
 		const fallback = report === null ? this.deps.host.roundOutput(thread.id, thread.roundStartSeq ?? 0) : void 0;
 		const note = {
@@ -612,7 +634,13 @@ var ThreadManager = class {
 			updatedAt: this.deps.now()
 		});
 		await this.drainQueue(thread.mainSessionId);
-		await this.enqueue(thread.mainSessionId, note);
+		await this.serial(thread.mainSessionId, async () => {
+			const main = this.deps.store.main(thread.mainSessionId);
+			await this.deps.store.putMain({
+				...main,
+				pendingNotes: [...main.pendingNotes, note]
+			});
+		});
 	}
 	/**
 	* thread_propose: suggestions the model came up with itself. They wait in the proposals
@@ -675,29 +703,31 @@ var ThreadManager = class {
 		}
 	}
 	/** Start queued proposals, oldest first, while there is room under `maxRunning`. */
-	async drainQueue(mainSessionId) {
-		for (const proposal of this.deps.store.proposalsOf(mainSessionId)) {
-			if (proposal.state !== "queued") continue;
-			if (this.runningCount(mainSessionId) >= this.deps.config.maxRunning) return;
-			try {
-				const thread = await this.open(mainSessionId, {
-					title: proposal.title,
-					task: proposal.task,
-					initiation: "proposal"
-				});
-				await this.deps.store.putProposal({
-					...proposal,
-					state: "started",
-					threadId: thread.id
-				});
-			} catch (error) {
-				this.deps.warn(`dsh-threads: could not start proposal ${proposal.id}: ${String(error)}`);
-				await this.deps.store.putProposal({
-					...proposal,
-					state: "dismissed"
-				});
+	drainQueue(mainSessionId) {
+		return this.opening(mainSessionId, async () => {
+			for (const proposal of this.deps.store.proposalsOf(mainSessionId)) {
+				if (proposal.state !== "queued") continue;
+				if (this.runningCount(mainSessionId) >= this.deps.config.maxRunning) return;
+				try {
+					const thread = await this.openNow(mainSessionId, {
+						title: proposal.title,
+						task: proposal.task,
+						initiation: "proposal"
+					});
+					await this.deps.store.putProposal({
+						...proposal,
+						state: "started",
+						threadId: thread.id
+					});
+				} catch (error) {
+					this.deps.warn(`dsh-threads: could not start proposal ${proposal.id}: ${String(error)}`);
+					await this.deps.store.putProposal({
+						...proposal,
+						state: "dismissed"
+					});
+				}
 			}
-		}
+		});
 	}
 	/** "标记已解决 / 重新打开" from the thread pane. A resolved thread's composer is locked in the UI. */
 	async setResolved(threadId, resolved) {
@@ -723,16 +753,6 @@ var ThreadManager = class {
 		});
 		return report;
 	}
-	async enqueue(mainSessionId, note) {
-		await this.serial(mainSessionId, async () => {
-			const main = this.deps.store.main(mainSessionId);
-			await this.deps.store.putMain({
-				...main,
-				pendingNotes: [...main.pendingNotes, note]
-			});
-		});
-		await this.flush(mainSessionId);
-	}
 	/** Deliver held notes if the rules allow it now. */
 	flush(mainSessionId) {
 		return this.serial(mainSessionId, async () => {
@@ -740,7 +760,8 @@ var ThreadManager = class {
 			if (main.pendingNotes.length === 0) return;
 			const agent = await this.deps.host.resolve(mainSessionId);
 			if (agent === void 0) return;
-			const { record } = flushNotes(main, agent, this.runningCount(mainSessionId), this.deps.config.maxAutoWakes);
+			const settling = this.deps.store.threadsOf(mainSessionId).filter((t) => this.settling.has(t.id)).length;
+			const { record } = flushNotes(main, agent, this.runningCount(mainSessionId) + settling, this.deps.config.maxAutoWakes);
 			await this.deps.store.putMain(record);
 		});
 	}
@@ -816,7 +837,7 @@ function registerThreadCommand(ctx, manager, packageName) {
 }
 // src/config.ts
 const Config = z$1.object({
-	maxRunning: z$1.natural().min(1).default(1).description("How many threads one main conversation may run at once."),
+	maxRunning: z$1.natural().min(1).default(3).description("How many threads one main conversation may run at once."),
 	maxAutoWakes: z$1.natural().default(5).description("Consecutive automatic wake-ups of the main conversation before reports wait for the user."),
 	noteMaxChars: z$1.natural().min(80).default(400).description("Longest report delivered back to the main conversation."),
 	summaryMaxChars: z$1.natural().min(40).default(300).description("Longest summary a thread may submit through thread_report."),
@@ -954,7 +975,6 @@ You can delegate work to threads: real sessions that run in the background. The 
 - Only for a self-contained task that can be delivered on its own and takes many steps: an investigation with a written result, a change to a separate part of the code, a long job.
 - Do quick things yourself here: a question, a lookup, a few tool calls, one edit.
 - Parts of the current task (searching, reading many files, checking your own work) are not threads; use subagents for those if needed.
-- At most ${maxRunning} thread${maxRunning === 1 ? "" : "s"} may run at once per conversation.
 
 ## How to open one: thread_open
 - initiation "user_asked": the user's latest message explicitly asks for a thread or for separate/background work. It opens immediately.
@@ -962,6 +982,11 @@ You can delegate work to threads: real sessions that run in the background. The 
 - If the idea is your own (a follow-up you noticed, work that should happen next), do not call thread_open. Call thread_propose: the suggestions appear as a checklist card and start only when the user picks them. At most a few per turn, only real work worth doing, and never the same suggestion twice.
 - The thread cannot see this conversation. Write a complete brief in "task": the goal, the relevant files or context, constraints, and what done looks like.
 - After opening, do not wait for or poll the thread. Continue with other work or end your turn.
+
+## Running threads in parallel
+- At most ${maxRunning} thread${maxRunning === 1 ? "" : "s"} may run at once per conversation; thread_open refuses beyond that.
+- Threads share the project folder. Open several at once only for independent work: read-only work (investigations, reviews, counts) can always run side by side, but two threads that change files must never touch the same files. If two tasks would edit the same files, or one needs the other's result, make them one thread or open the second after the first reports.
+- Reports are held while any of your threads is still running, then arrive together in one message.
 
 ## Follow-ups: thread_reply
 - To give an existing thread more instructions (a correction, the next step, an answer to its decision), use thread_reply with its number instead of opening a new thread.
@@ -984,6 +1009,7 @@ function threadPrompt(summaryMaxChars) {
 A main conversation opened this session to do one task; its first message is the brief. The user may also talk to you here directly.
 - Do the task in this session and keep the details here.
 - Your reply text does not reach the main conversation; only thread_report does. Right before you finish every reply, call thread_report exactly once, even for a short task and even if the brief says to do nothing else: a status (done | blocked | needs_decision | failed), a summary of at most ${summaryMaxChars} characters saying what is now true and what is not done or not verified, the files you changed, and any decisions the user must make.
+- Other threads may be working in the same folder at the same time. Change only the files your task needs and leave changes you did not make alone. Do not commit, switch branches, stash, reset, or run tree-wide rewrites (formatters, codemods) unless the brief asks for it.
 - If you need the user to decide something, put it in decisions, report needs_decision, and stop.
 - You cannot open threads yourself.`;
 }

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- M3a parallel threads:
+  - Up to 3 threads per main conversation run at once (`maxRunning` default 3).
+  - Opening threads is serialized per main conversation, so parallel `thread_open` calls and queued proposals cannot overshoot the limit or share a number.
+  - Reports still wait until no thread is running and arrive as one message, including when two threads finish at the same moment.
+  - Prompts: the dispatcher runs only independent work in parallel; threads leave other threads' changes alone and do not commit, switch branches or reset unless asked.
+
 - M2c thread cards:
   - Reports, briefs and follow-ups show as thread cards in the conversation instead of a plain notice row; a batch of reports arrives as one card.
   - "N replies" at the end of a turn that opened threads, with live status.

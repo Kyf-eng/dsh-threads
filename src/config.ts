@@ -1,7 +1,7 @@
 import z from '@deepseek-ai/schemastery'
 
 export const Config = z.object({
-  maxRunning: z.natural().min(1).default(1)
+  maxRunning: z.natural().min(1).default(3)
     .description('How many threads one main conversation may run at once.'),
   maxAutoWakes: z.natural().default(5)
     .description('Consecutive automatic wake-ups of the main conversation before reports wait for the user.'),

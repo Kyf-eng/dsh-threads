@@ -81,6 +81,10 @@ export class ThreadManager {
   private readonly creating = new Set<string>()
   /** Per-main-conversation serialization of delivery. */
   private readonly chains = new Map<string, Promise<void>>()
+  /** Per-main-conversation serialization of opening threads (running limit, numbers, proposal queue). */
+  private readonly openings = new Map<string, Promise<unknown>>()
+  /** Threads whose round ended but whose note is not queued yet; delivery counts them as running. */
+  private readonly settling = new Set<string>()
 
   constructor(private readonly deps: ManagerDeps) {}
 
@@ -97,7 +101,19 @@ export class ThreadManager {
     return this.deps.store.threadsOf(mainSessionId).filter((t) => t.status === 'starting' || t.status === 'running').length
   }
 
-  async open(mainSessionId: string, input: { title: string; task: string; initiation: Initiation }): Promise<ThreadRecord> {
+  /** Open a thread. Opens for one main conversation run one at a time, so parallel calls cannot overshoot the limit or share a number. */
+  open(mainSessionId: string, input: { title: string; task: string; initiation: Initiation }): Promise<ThreadRecord> {
+    return this.opening(mainSessionId, () => this.openNow(mainSessionId, input))
+  }
+
+  private opening<T>(mainSessionId: string, task: () => Promise<T>): Promise<T> {
+    const previous = this.openings.get(mainSessionId) ?? Promise.resolve()
+    const next = previous.then(task, task)
+    this.openings.set(mainSessionId, next.catch(() => undefined))
+    return next
+  }
+
+  private async openNow(mainSessionId: string, input: { title: string; task: string; initiation: Initiation }): Promise<ThreadRecord> {
     const { store, host, config, now } = this.deps
     if (this.isThread(mainSessionId)) throw new ThreadError('讨论串里不能再开讨论串；把这个需要写进 thread_report 的 decisions，交给主对话决定。')
     if (!this.isDispatcher(mainSessionId)) throw new ThreadError(NOT_A_PROJECT)
@@ -105,7 +121,7 @@ export class ThreadManager {
     if (task.length === 0) throw new ThreadError('task 不能为空：写一份完整的简报。')
     const running = this.runningCount(mainSessionId)
     if (running >= config.maxRunning) {
-      throw new ThreadError(`已有 ${running} 个讨论串在运行（上限 ${config.maxRunning}）。等它回报后再开，或者这件事在主对话里做。`)
+      throw new ThreadError(`已有 ${running} 个讨论串在运行（上限 ${config.maxRunning}）。等有讨论串回报后再开，或者这件事在主对话里做。`)
     }
 
     const n = Math.max(0, ...store.threadsOf(mainSessionId).map((t) => t.n)) + 1
@@ -231,6 +247,18 @@ export class ThreadManager {
       if (thread.status === 'running') await this.deps.store.putThread({ ...thread, status: 'idle', updatedAt: this.deps.now() })
       return
     }
+    // Until the note is queued, delivery must not mistake this thread for finished-and-reported:
+    // another thread settling at the same moment would otherwise wake the main conversation alone.
+    this.settling.add(thread.id)
+    try {
+      await this.settle(thread)
+    } finally {
+      this.settling.delete(thread.id)
+    }
+    await this.flush(thread.mainSessionId)
+  }
+
+  private async settle(thread: ThreadRecord): Promise<void> {
     const report = currentReport(thread)
     const fallback = report === null ? this.deps.host.roundOutput(thread.id, thread.roundStartSeq ?? 0) : undefined
     const note: PendingNote = {
@@ -247,7 +275,10 @@ export class ThreadManager {
     // Start queued proposals first: the note then waits for them, and the main conversation
     // hears from the whole batch once instead of once per thread.
     await this.drainQueue(thread.mainSessionId)
-    await this.enqueue(thread.mainSessionId, note)
+    await this.serial(thread.mainSessionId, async () => {
+      const main = this.deps.store.main(thread.mainSessionId)
+      await this.deps.store.putMain({ ...main, pendingNotes: [...main.pendingNotes, note] })
+    })
   }
 
   /**
@@ -311,18 +342,20 @@ export class ThreadManager {
   }
 
   /** Start queued proposals, oldest first, while there is room under `maxRunning`. */
-  private async drainQueue(mainSessionId: string): Promise<void> {
-    for (const proposal of this.deps.store.proposalsOf(mainSessionId)) {
-      if (proposal.state !== 'queued') continue
-      if (this.runningCount(mainSessionId) >= this.deps.config.maxRunning) return
-      try {
-        const thread = await this.open(mainSessionId, { title: proposal.title, task: proposal.task, initiation: 'proposal' })
-        await this.deps.store.putProposal({ ...proposal, state: 'started', threadId: thread.id })
-      } catch (error) {
-        this.deps.warn(`dsh-threads: could not start proposal ${proposal.id}: ${String(error)}`)
-        await this.deps.store.putProposal({ ...proposal, state: 'dismissed' })
+  private drainQueue(mainSessionId: string): Promise<void> {
+    return this.opening(mainSessionId, async () => {
+      for (const proposal of this.deps.store.proposalsOf(mainSessionId)) {
+        if (proposal.state !== 'queued') continue
+        if (this.runningCount(mainSessionId) >= this.deps.config.maxRunning) return
+        try {
+          const thread = await this.openNow(mainSessionId, { title: proposal.title, task: proposal.task, initiation: 'proposal' })
+          await this.deps.store.putProposal({ ...proposal, state: 'started', threadId: thread.id })
+        } catch (error) {
+          this.deps.warn(`dsh-threads: could not start proposal ${proposal.id}: ${String(error)}`)
+          await this.deps.store.putProposal({ ...proposal, state: 'dismissed' })
+        }
       }
-    }
+    })
   }
 
   /** "标记已解决 / 重新打开" from the thread pane. A resolved thread's composer is locked in the UI. */
@@ -343,14 +376,6 @@ export class ThreadManager {
     return report
   }
 
-  private async enqueue(mainSessionId: string, note: PendingNote): Promise<void> {
-    await this.serial(mainSessionId, async () => {
-      const main = this.deps.store.main(mainSessionId)
-      await this.deps.store.putMain({ ...main, pendingNotes: [...main.pendingNotes, note] })
-    })
-    await this.flush(mainSessionId)
-  }
-
   /** Deliver held notes if the rules allow it now. */
   flush(mainSessionId: string): Promise<void> {
     return this.serial(mainSessionId, async () => {
@@ -358,7 +383,8 @@ export class ThreadManager {
       if (main.pendingNotes.length === 0) return
       const agent = await this.deps.host.resolve(mainSessionId)
       if (agent === undefined) return
-      const { record } = flushNotes(main, agent, this.runningCount(mainSessionId), this.deps.config.maxAutoWakes)
+      const settling = this.deps.store.threadsOf(mainSessionId).filter((t) => this.settling.has(t.id)).length
+      const { record } = flushNotes(main, agent, this.runningCount(mainSessionId) + settling, this.deps.config.maxAutoWakes)
       await this.deps.store.putMain(record)
     })
   }

@@ -1,3 +1,4 @@
+import { msg } from './messages.ts'
 import type { ThreadRecord, ThreadReport } from './types.ts'
 
 const ELLIPSIS = '…'
@@ -56,7 +57,7 @@ export function currentReport(thread: ThreadRecord): ThreadReport | null {
 
 /** One line for the chat UI's notice row (the UI bounds it further). */
 export function noticeSummary(thread: Pick<ThreadRecord, 'n' | 'title'>, status: string): string {
-  return `讨论串 #${thread.n}「${thread.title}」· ${status}`
+  return msg().noticeSummary(thread.n, thread.title, status)
 }
 
 /**
@@ -70,29 +71,24 @@ export function composeNote(
   maxChars: number,
   options: { stopped?: boolean } = {},
 ): string {
+  const m = msg()
   const status = options.stopped === true ? 'stopped' : report?.status ?? 'no-report'
-  const lines = [`[讨论串 #${thread.n}「${thread.title}」· ${status} · 这是讨论串的报告，不是证据]`]
-  if (options.stopped === true) lines.push('用户在这一轮做完之前停止了讨论串。不要自己重开或重派这件事，除非用户要求。')
+  const lines = [m.noteHeader(thread.n, thread.title, status)]
+  if (options.stopped === true) lines.push(m.noteStopped)
   // Right under the header so truncation never drops it.
-  if (thread.worktree != null) {
-    lines.push(`分支：${thread.worktree.branch}（讨论串自己的 worktree；改动不在项目文件夹里，用户要求时再合并）`)
-  }
+  if (thread.worktree != null) lines.push(m.noteBranch(thread.worktree.branch))
   // Also near the top: without it a change the user asked for in the thread reads as the thread's own idea.
-  const said = (thread.userMessages ?? []).map((text) => `「${truncate(plainLine(text), USER_WORDS_MAX)}」`).join(' ')
-  if (said.length > 0) {
-    lines.push(thread.round === 'user'
-      ? `这一轮是用户自己在讨论串里要求的，不是讨论串自作主张。用户的原话：${said}`
-      : `这一轮中用户在讨论串里说过：${said}`)
-  }
+  const said = (thread.userMessages ?? []).map((text) => m.quote(truncate(plainLine(text), USER_WORDS_MAX))).join(' ')
+  if (said.length > 0) lines.push(thread.round === 'user' ? m.noteUserRound(said) : m.noteUserSaid(said))
   if (report !== null) {
-    lines.push(`摘要：${report.summary}`)
-    if (report.changedFiles.length > 0) lines.push(`改动：${report.changedFiles.join('、')}`)
-    if (report.decisions.length > 0) lines.push(`待用户决定：${report.decisions.join('；')}`)
+    lines.push(m.noteSummary(report.summary))
+    if (report.changedFiles.length > 0) lines.push(m.changedFiles(report.changedFiles))
+    if (report.decisions.length > 0) lines.push(m.decisionsLine(report.decisions))
   } else if (fallbackText !== undefined) {
-    lines.push(`（讨论串没有调用 thread_report，以下是它最后一条回复）${fallbackText}`)
+    lines.push(m.noteFallback(fallbackText))
   } else {
-    lines.push('（讨论串结束了，但没有回报也没有回复；用户可以点开讨论串查看。）')
+    lines.push(m.noteNothing)
   }
-  lines.push(`详情：thread_status { n: ${thread.n} }，或让用户在侧栏打开该讨论串。`)
+  lines.push(m.noteDetails(thread.n))
   return truncate(lines.join('\n'), maxChars)
 }

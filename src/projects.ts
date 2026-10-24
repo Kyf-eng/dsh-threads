@@ -1,6 +1,7 @@
 // Projects, as in Claude: one folder (DSH workspace) + one standing main conversation.
 // The projects page, the session menu and the /thread gate all go through here.
 import { isAbsolute } from 'node:path'
+import { msg } from './messages.ts'
 import { truncate } from './report.ts'
 import type { ThreadStore } from './store.ts'
 import type { ModelChoice, NotifyLevel, ProjectRecord } from './types.ts'
@@ -9,6 +10,8 @@ const TITLE_MAX = 60
 const INSTRUCTIONS_MAX = 4000
 const GOAL_MAX = 8000
 const ICON_MAX = 40
+/** A full path in this system's own form, for the "write the full path" hint. */
+const FOLDER_EXAMPLE = process.platform === 'win32' ? 'C:\\Users\\me\\code\\app' : process.platform === 'darwin' ? '/Users/me/code/app' : '/home/me/code/app'
 
 /** A refusal shown to the user as-is (not a bug). */
 export class ProjectError extends Error {}
@@ -77,7 +80,7 @@ export interface ProjectsDeps {
 
 function cleanTitle(title: string): string {
   const value = truncate(title.trim(), TITLE_MAX)
-  if (value.length === 0) throw new ProjectError('项目名不能为空。')
+  if (value.length === 0) throw new ProjectError(msg().emptyProjectTitle)
   return value
 }
 
@@ -146,23 +149,23 @@ export class Projects {
     if (input.fromSessionId !== undefined) {
       const existing = store.projectOfMain(input.fromSessionId)
       if (existing !== undefined) return existing
-      if (this.deps.isThread(input.fromSessionId)) throw new ProjectError('讨论串不能设为项目。')
+      if (this.deps.isThread(input.fromSessionId)) throw new ProjectError(msg().threadNotProject)
       workspace = host.workspaceOf(input.fromSessionId)
-      if (workspace === undefined) throw new ProjectError('这个会话不在任何工作区里，没法设为项目。')
+      if (workspace === undefined) throw new ProjectError(msg().notInWorkspace)
       mainSessionId = input.fromSessionId
     } else {
       const folder = input.folder?.trim()
       if (folder !== undefined && folder.length > 0) {
-        if (!isAbsolute(folder)) throw new ProjectError('文件夹要写完整路径，例如 /Users/me/code/app。')
+        if (!isAbsolute(folder)) throw new ProjectError(msg().absoluteFolder(FOLDER_EXAMPLE))
         try {
           workspace = await host.ensureWorkspace(folder, title)
         } catch (error) {
-          throw new ProjectError(`没法用这个文件夹：${error instanceof Error ? error.message : String(error)}`)
+          throw new ProjectError(msg().badFolder(error instanceof Error ? error.message : String(error)))
         }
       } else {
-        if (input.workspaceId === undefined) throw new ProjectError('请选择项目的文件夹（工作区）。')
+        if (input.workspaceId === undefined) throw new ProjectError(msg().pickFolder)
         workspace = host.workspace(input.workspaceId)
-        if (workspace === undefined) throw new ProjectError('找不到这个工作区。')
+        if (workspace === undefined) throw new ProjectError(msg().workspaceNotFound)
       }
       mainSessionId = await host.createMainSession(workspace.id, title)
     }
@@ -191,7 +194,7 @@ export class Projects {
 
   private require(id: string): ProjectRecord {
     const project = this.deps.store.project(id)
-    if (project === undefined) throw new ProjectError('找不到这个项目。')
+    if (project === undefined) throw new ProjectError(msg().projectNotFound)
     return project
   }
 
@@ -202,7 +205,7 @@ export class Projects {
       try {
         await this.deps.host.applyModel(project.mainSessionId, patch.mainModel)
       } catch (error) {
-        throw new ProjectError(`主对话没法换成这个模型：${error instanceof Error ? error.message : String(error)}`)
+        throw new ProjectError(msg().modelRefused(error instanceof Error ? error.message : String(error)))
       }
     }
     const next: ProjectRecord = {
@@ -243,12 +246,12 @@ export class Projects {
     const project = this.require(id)
     const threads = this.deps.store.threadsOf(project.mainSessionId)
     if (threads.some((t) => t.status === 'running' || t.status === 'starting')) {
-      throw new ProjectError('还有讨论串在运行，等它们结束再归档。')
+      throw new ProjectError(msg().archiveWhileRunning)
     }
     try {
       await this.deps.host.archiveSession(project.mainSessionId)
     } catch (error) {
-      throw new ProjectError(`主对话现在没法归档（可能还在运行）：${error instanceof Error ? error.message : String(error)}`)
+      throw new ProjectError(msg().mainBusy(error instanceof Error ? error.message : String(error)))
     }
     for (const thread of threads) {
       // A thread whose session was deleted in DSH is simply skipped.
@@ -299,7 +302,7 @@ export class Projects {
   async remove(id: string): Promise<void> {
     const project = this.require(id)
     if (this.deps.store.threadsOf(project.mainSessionId).some((t) => t.status === 'running' || t.status === 'starting')) {
-      throw new ProjectError('还有讨论串在运行，等它们结束再删除。')
+      throw new ProjectError(msg().deleteWhileRunning)
     }
     await this.deps.store.removeProject(id)
     this.changed()

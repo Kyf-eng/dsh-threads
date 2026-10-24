@@ -8,6 +8,7 @@ import { finalAssistantOutput } from '@deepseek-ai/dsh-subagent'
 import { randomUUID } from 'node:crypto'
 import type { ThreadAgent, ThreadHost } from './manager.ts'
 import type { ProjectHost, TokenBuckets, WorkspaceInfo } from './projects.ts'
+import { msg } from './messages.ts'
 import { textOf } from './report.ts'
 import { optional } from './services.ts'
 import { type NoticeMeta, SOURCE_KIND } from './source.ts'
@@ -164,18 +165,18 @@ export function createHost(ctx: Context): ThreadHost & ProjectHost & ReplyHost {
       if (presets === undefined) return undefined
       // Resumed when needed: queued proposals may start while the main conversation is not loaded.
       const main = await resolveAgent(mainSessionId)
-      if (main === undefined) throw new Error(`主对话 ${mainSessionId} 连不上`)
+      if (main === undefined) throw new Error(msg().mainUnreachable(mainSessionId))
       const preset = presets.current(main.session)
       // `custom`: the main conversation's sandbox and approval knobs match no preset, and
       // `set` accepts only real presets, so there is nothing safe to copy.
-      if (preset === 'custom') throw new Error('主对话的审批设置是自定义的（custom），不对应任何模式；先在主对话里选一个审批模式')
+      if (preset === 'custom') throw new Error(msg().customPreset)
       return preset
     },
 
     setPermission(threadId, preset) {
       const presets = optional<PermissionPresetsLike>(ctx, 'permissionPresets')
       const thread = live(threadId)
-      if (presets === undefined || thread === undefined) throw new Error(`没法给讨论串 ${threadId} 设审批模式。`)
+      if (presets === undefined || thread === undefined) throw new Error(msg().cannotSetPreset(threadId))
       presets.set(thread.session, preset)
     },
 
@@ -185,14 +186,14 @@ export function createHost(ctx: Context): ThreadHost & ProjectHost & ReplyHost {
           const main = live(mainSessionId)
           return main === undefined ? undefined : optional<WorkingDirectoryLike>(ctx, 'workingDirectory')?.get(main.session)
         })()
-      if (folder === undefined) throw new Error('找不到主对话所在的文件夹。')
+      if (folder === undefined) throw new Error(msg().noMainFolder)
       return createWorktree(systemGit, folder, name)
     },
 
     async enterDirectory(threadId, path) {
       const agent = live(threadId)
       const directories = optional<WorkingDirectoryLike>(ctx, 'workingDirectory')
-      if (agent === undefined || directories === undefined) throw new Error(`没法把讨论串 ${threadId} 切到 ${path}。`)
+      if (agent === undefined || directories === undefined) throw new Error(msg().cannotEnter(threadId, path))
       await directories.set(agent, path)
     },
 

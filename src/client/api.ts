@@ -8,11 +8,28 @@ import { useSyncExternalStore } from 'react'
  */
 const RPC_URL = 'api/dsh-threads'
 
+let localeOf: () => string | undefined = () => undefined
+
+/** Every host call carries the page's language, so the host's own text follows it (src/messages.ts). */
+export function sendLocaleToHost(read: () => string): () => void {
+  localeOf = read
+  return () => { localeOf = () => undefined }
+}
+
+function pageLocale(): string | undefined {
+  try {
+    return localeOf()
+  } catch {
+    // Never let the language hint break a call; the host keeps the language it had.
+    return undefined
+  }
+}
+
 export async function callHost<T>(method: string, payload: unknown = {}): Promise<T> {
   const response = await fetch(RPC_URL, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ method, payload }),
+    body: JSON.stringify({ method, payload, locale: pageLocale() }),
   })
   const body = await response.json().catch(() => ({})) as { result?: T; error?: string }
   if (!response.ok) throw new Error((body.error ?? `HTTP ${response.status}`).replace(/^(Project|Thread)?Error: /, ''))

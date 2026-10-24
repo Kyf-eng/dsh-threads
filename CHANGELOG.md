@@ -6,6 +6,7 @@
 - Fix: a thread could start under DSH's default permission mode when its main conversation was not loaded (for example a queued suggestion starting after a restart). The main conversation is now loaded first, and when its mode cannot be read — or it uses custom settings that match no mode — the thread is not opened.
 - Stop and archive single threads. The thread pane's header has **Stop** while the thread runs (also `/thread stop <n>`) and **Archive** when it does not; archived threads leave the list (they wait under "Archived · N" and can be unarchived) and the counts, and the main conversation cannot send them follow-ups. A stopped round, whether stopped there or with DeepSeek Harness's own stop button, is no longer reminded back to work: it reaches the main conversation quietly as "stopped", and the coordinator does not restart it on its own.
 - Fix: the threads list scrolls; with many threads the last ones were cut off.
+- The host half speaks the page's language: the "open a thread?" question, `/thread` replies, errors in the panes, the task cards in a thread, tool results and reports are in English or Chinese, following DeepSeek Harness's language (English until the page has loaded). The "write the full path" hint uses this system's own path form.
 - Fix: when a project's folder is a subfolder of a git repository (a monorepo package), a worktree thread now works in that subfolder of its checkout instead of the repository root. A subfolder that is not committed yet is refused before anything is created.
 
 ## 0.1.0-rc.5 — 2026-10-24

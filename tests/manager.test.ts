@@ -24,6 +24,7 @@ function setup(overrides: Partial<Config> = {}, options: { slowWrites?: boolean;
   const inherited: string[] = []
   let failCreate = false
   let notARepo = false
+  let unreachableMain = false
   const entered: string[] = []
   const models: string[] = []
   const removals = new Map<string, { outcome: 'removed' | 'missing' | 'dirty'; branchKept: boolean }>()
@@ -39,7 +40,11 @@ function setup(overrides: Partial<Config> = {}, options: { slowWrites?: boolean;
       return agents.get(id)
     },
     rename(id, title) { renamed.push(`${id}:${title}`) },
-    inheritPermission(main, thread) { inherited.push(`${main}->${thread}`) },
+    async permissionOf(main) {
+      if (!agents.has(main) || unreachableMain) throw new Error('main unreachable')
+      return 'ask'
+    },
+    setPermission(thread, preset) { inherited.push(`${preset}->${thread}`) },
     roundOutput(id) { return outputs.get(id) },
     async createWorktree(_main, name) {
       if (notARepo) throw new WorktreeError('not a git repository')
@@ -77,7 +82,7 @@ function setup(overrides: Partial<Config> = {}, options: { slowWrites?: boolean;
     pinned: false, instructions: '', icon: 'folder', goal: '', archived: false, notify: 'attention',
     mainModel: null, threadModel: null, createdAt: '', updatedAt: '',
   })
-  return { manager, store, main, agents, outputs, renamed, inherited, entered, removals, models, failCreate: () => { failCreate = true }, notARepo: () => { notARepo = true } }
+  return { manager, store, main, agents, outputs, renamed, inherited, entered, removals, models, failCreate: () => { failCreate = true }, notARepo: () => { notARepo = true }, unreachableMain: () => { unreachableMain = true } }
 }
 
 describe('ThreadManager', () => {
@@ -88,9 +93,25 @@ describe('ThreadManager', () => {
     const thread = await t.manager.open('main', { title: '查依赖', task: '列出过期依赖', initiation: 'user_asked' })
     expect(thread).toMatchObject({ n: 1, status: 'running', round: 'dispatch', mainSessionId: 'main' })
     expect(t.renamed).toEqual(['session-1:#1 查依赖'])
-    expect(t.inherited).toEqual(['main->session-1'])
+    expect(t.inherited).toEqual(['ask->session-1'])
     expect(t.agents.get('session-1')?.followups[0]).toContain('列出过期依赖')
     expect(t.manager.isThread('session-1')).toBe(true)
+  })
+
+  it('refuses to open a thread when the main conversation\'s preset cannot be read', async () => {
+    t.unreachableMain()
+    await expect(t.manager.open('main', { title: 'a', task: 'x', initiation: 'user_asked', worktree: true })).rejects.toBeInstanceOf(ThreadError)
+    // Nothing was created: no record, no session, no worktree checkout entered.
+    expect(t.store.threadsOf('main')).toEqual([])
+    expect(t.agents.has('session-1')).toBe(false)
+    expect(t.entered).toEqual([])
+  })
+
+  it('does not set a preset when the setting is off', async () => {
+    t = setup({ inheritPermissionPreset: false })
+    t.unreachableMain()
+    await t.manager.open('main', { title: 'a', task: 'x', initiation: 'user_asked' })
+    expect(t.inherited).toEqual([])
   })
 
   it('refuses beyond maxRunning, and refuses from inside a thread', async () => {

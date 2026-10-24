@@ -658,6 +658,15 @@ var ThreadManager = class {
 		const n = Math.max(0, ...store.threadsOf(mainSessionId).map((t) => t.n)) + 1;
 		const title = truncate(input.title.trim(), TITLE_MAX) || titleFrom(task);
 		const id = this.deps.newSessionId();
+		let preset;
+		if (config.inheritPermissionPreset) {
+			try {
+				preset = await host.permissionOf(mainSessionId);
+			} catch (error) {
+				throw new ThreadError(`没有开讨论串：没法让它沿用主对话的审批模式（${error instanceof Error ? error.message : String(error)}）。`);
+			}
+			if (preset === void 0) this.deps.warn("dsh-threads: DSH has no permission presets; the thread follows its default");
+		}
 		let worktree = null;
 		if (input.worktree === true) try {
 			worktree = await host.createWorktree(mainSessionId, `${n}-${id.replace(/^session-/, "").slice(0, 6)}`);
@@ -699,7 +708,7 @@ var ThreadManager = class {
 			} catch (error) {
 				this.deps.warn(`dsh-threads: could not rename thread ${id}: ${String(error)}`);
 			}
-			if (config.inheritPermissionPreset) host.inheritPermission(mainSessionId, id);
+			if (preset !== void 0) host.setPermission(id, preset);
 			record = await this.dispatch(record, agent, briefText(record, task));
 			return record;
 		} catch (error) {
@@ -1435,12 +1444,20 @@ function createHost(ctx) {
 		workspaceOf(sessionId) {
 			return workspaceInfo(ctx.workspaceRegistry.list().find((candidate) => candidate.sessionIds.includes(sessionId)));
 		},
-		inheritPermission(mainSessionId, threadId) {
+		async permissionOf(mainSessionId) {
 			const presets = optional(ctx, "permissionPresets");
-			const main = live(mainSessionId);
+			if (presets === void 0) return void 0;
+			const main = await resolveAgent(mainSessionId);
+			if (main === void 0) throw new Error(`主对话 ${mainSessionId} 连不上`);
+			const preset = presets.current(main.session);
+			if (preset === "custom") throw new Error("主对话的审批设置是自定义的（custom），不对应任何模式；先在主对话里选一个审批模式");
+			return preset;
+		},
+		setPermission(threadId, preset) {
+			const presets = optional(ctx, "permissionPresets");
 			const thread = live(threadId);
-			if (presets === void 0 || main === void 0 || thread === void 0) return;
-			presets.set(thread.session, presets.current(main.session));
+			if (presets === void 0 || thread === void 0) throw new Error(`没法给讨论串 ${threadId} 设审批模式。`);
+			presets.set(thread.session, preset);
 		},
 		async createWorktree(mainSessionId, name) {
 			const folder = ctx.workspaceRegistry.list().find((candidate) => candidate.sessionIds.includes(mainSessionId))?.path ?? (() => {

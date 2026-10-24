@@ -33,8 +33,13 @@ export interface ThreadHost {
   /** The live agent for a session, resuming it when needed. */
   resolve(sessionId: string): Promise<ThreadAgent | undefined>
   rename(sessionId: string, title: string): void
-  /** Give the thread the main conversation's current permission preset. */
-  inheritPermission(mainSessionId: string, threadId: string): void
+  /**
+   * The main conversation's current permission preset, resuming it when needed; undefined when
+   * DSH has no presets. Throws when the main conversation cannot be reached.
+   */
+  permissionOf(mainSessionId: string): Promise<string | undefined>
+  /** Give the thread this permission preset (throws when it cannot). */
+  setPermission(threadId: string, preset: string): void
   /** Text of the thread's last assistant reply since `fromSeq`. */
   roundOutput(threadId: string, fromSeq: number): string | undefined
   /** A new worktree branched from the main conversation's folder (throws WorktreeError when it cannot). */
@@ -172,6 +177,17 @@ export class ThreadManager {
     const n = Math.max(0, ...store.threadsOf(mainSessionId).map((t) => t.n)) + 1
     const title = truncate(input.title.trim(), TITLE_MAX) || titleFrom(task)
     const id = this.deps.newSessionId()
+    // Read before anything is created: a thread must never run under DSH's default preset
+    // because its main conversation was not loaded (the default may be looser).
+    let preset: string | undefined
+    if (config.inheritPermissionPreset) {
+      try {
+        preset = await host.permissionOf(mainSessionId)
+      } catch (error) {
+        throw new ThreadError(`没有开讨论串：没法让它沿用主对话的审批模式（${error instanceof Error ? error.message : String(error)}）。`)
+      }
+      if (preset === undefined) this.deps.warn('dsh-threads: DSH has no permission presets; the thread follows its default')
+    }
     // Before the session exists, so a folder that is not a git repository costs nothing.
     let worktree: ThreadWorktree | null = null
     if (input.worktree === true) {
@@ -210,7 +226,7 @@ export class ThreadManager {
       } catch (error) {
         this.deps.warn(`dsh-threads: could not rename thread ${id}: ${String(error)}`)
       }
-      if (config.inheritPermissionPreset) host.inheritPermission(mainSessionId, id)
+      if (preset !== undefined) host.setPermission(id, preset)
       record = await this.dispatch(record, agent, briefText(record, task))
       return record
     } catch (error) {

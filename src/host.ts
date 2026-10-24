@@ -159,12 +159,24 @@ export function createHost(ctx: Context): ThreadHost & ProjectHost & ReplyHost {
       return workspaceInfo(ctx.workspaceRegistry.list().find((candidate) => candidate.sessionIds.includes(sessionId as SessionId)))
     },
 
-    inheritPermission(mainSessionId, threadId) {
+    async permissionOf(mainSessionId) {
       const presets = optional<PermissionPresetsLike>(ctx, 'permissionPresets')
-      const main = live(mainSessionId)
+      if (presets === undefined) return undefined
+      // Resumed when needed: queued proposals may start while the main conversation is not loaded.
+      const main = await resolveAgent(mainSessionId)
+      if (main === undefined) throw new Error(`主对话 ${mainSessionId} 连不上`)
+      const preset = presets.current(main.session)
+      // `custom`: the main conversation's sandbox and approval knobs match no preset, and
+      // `set` accepts only real presets, so there is nothing safe to copy.
+      if (preset === 'custom') throw new Error('主对话的审批设置是自定义的（custom），不对应任何模式；先在主对话里选一个审批模式')
+      return preset
+    },
+
+    setPermission(threadId, preset) {
+      const presets = optional<PermissionPresetsLike>(ctx, 'permissionPresets')
       const thread = live(threadId)
-      if (presets === undefined || main === undefined || thread === undefined) return
-      presets.set(thread.session, presets.current(main.session))
+      if (presets === undefined || thread === undefined) throw new Error(`没法给讨论串 ${threadId} 设审批模式。`)
+      presets.set(thread.session, preset)
     },
 
     async createWorktree(mainSessionId, name) {

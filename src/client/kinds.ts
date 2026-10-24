@@ -98,10 +98,19 @@ interface StatusSource {
   subscribe(listener: () => void): () => void
 }
 
-/** Reload on start, after this browser changes something, and when any session starts or stops. */
+/** How long after a session stops the host has surely settled its thread record. */
+const SETTLE_MS = 1500
+
+/**
+ * Reload on start, after this browser changes something, and when any session starts or stops.
+ * A thread's record settles on the host just after its session stops, so views that reloaded on
+ * the stop itself may still see it running; when a session stops, every thread view (they all
+ * follow `threadsRevision`) reloads once more a moment later.
+ */
 export function syncKinds(status: StatusSource | undefined): () => void {
   let disposed = false
   let pending: ReturnType<typeof setTimeout> | undefined
+  let settle: ReturnType<typeof setTimeout> | undefined
   const load = async () => {
     const next = await callHost<{ threads: string[]; mains: ({ id: string } & MainKind)[] }>('sessions.kinds').catch(() => undefined)
     if (!disposed && next !== undefined) {
@@ -112,12 +121,17 @@ export function syncKinds(status: StatusSource | undefined): () => void {
     if (pending !== undefined) clearTimeout(pending)
     pending = setTimeout(() => { void load() }, 300)
   }
-  let runningKey = ''
+  let running = new Set<string>()
   const offStatus = status?.subscribe(() => {
-    const next = [...status.getSnapshot()].filter(([, state]) => state.running === true).map(([id]) => id).sort().join(',')
-    if (next !== runningKey) {
-      runningKey = next
-      schedule()
+    const next = new Set([...status.getSnapshot()].filter(([, state]) => state.running === true).map(([id]) => id))
+    const stopped = [...running].some((id) => !next.has(id))
+    const changed = stopped || [...next].some((id) => !running.has(id))
+    running = next
+    if (!changed) return
+    schedule()
+    if (stopped) {
+      if (settle !== undefined) clearTimeout(settle)
+      settle = setTimeout(() => threadsRevision.bump(), SETTLE_MS)
     }
   })
   const offRevision = threadsRevision.subscribe(schedule)
@@ -125,6 +139,7 @@ export function syncKinds(status: StatusSource | undefined): () => void {
   return () => {
     disposed = true
     if (pending !== undefined) clearTimeout(pending)
+    if (settle !== undefined) clearTimeout(settle)
     offStatus?.()
     offRevision()
     document.querySelector(`style[data-plugin-css="${SIDEBAR_STYLE_ID}"]`)?.remove()

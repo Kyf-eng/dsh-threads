@@ -411,10 +411,18 @@ function publish(next) {
 	writeSidebarCss(next);
 	for (const listener of listeners) listener();
 }
-/** Reload on start, after this browser changes something, and when any session starts or stops. */
+/** How long after a session stops the host has surely settled its thread record. */
+const SETTLE_MS = 1500;
+/**
+* Reload on start, after this browser changes something, and when any session starts or stops.
+* A thread's record settles on the host just after its session stops, so views that reloaded on
+* the stop itself may still see it running; when a session stops, every thread view (they all
+* follow `threadsRevision`) reloads once more a moment later.
+*/
 function syncKinds(status) {
 	let disposed = false;
 	let pending;
+	let settle;
 	const load = async () => {
 		const next = await callHost("sessions.kinds").catch(() => void 0);
 		if (!disposed && next !== void 0) publish({
@@ -429,12 +437,17 @@ function syncKinds(status) {
 			load();
 		}, 300);
 	};
-	let runningKey = "";
+	let running = /* @__PURE__ */ new Set();
 	const offStatus = status?.subscribe(() => {
-		const next = [...status.getSnapshot()].filter(([, state]) => state.running === true).map(([id]) => id).sort().join(",");
-		if (next !== runningKey) {
-			runningKey = next;
-			schedule();
+		const next = new Set([...status.getSnapshot()].filter(([, state]) => state.running === true).map(([id]) => id));
+		const stopped = [...running].some((id) => !next.has(id));
+		const changed = stopped || [...next].some((id) => !running.has(id));
+		running = next;
+		if (!changed) return;
+		schedule();
+		if (stopped) {
+			if (settle !== void 0) clearTimeout(settle);
+			settle = setTimeout(() => threadsRevision.bump(), SETTLE_MS);
 		}
 	});
 	const offRevision = threadsRevision.subscribe(schedule);
@@ -442,6 +455,7 @@ function syncKinds(status) {
 	return () => {
 		disposed = true;
 		if (pending !== void 0) clearTimeout(pending);
+		if (settle !== void 0) clearTimeout(settle);
 		offStatus?.();
 		offRevision();
 		document.querySelector(`style[data-plugin-css="${SIDEBAR_STYLE_ID}"]`)?.remove();

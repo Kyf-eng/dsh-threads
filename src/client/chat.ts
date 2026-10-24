@@ -32,7 +32,7 @@ export interface NoticeData {
   time: unknown
   /** Started a turn (followup) vs. joined the context (inject); null on messages from before M2c. */
   wake: boolean | null
-  role: 'brief' | 'reply' | 'report' | null
+  role: 'brief' | 'reply' | 'reminder' | 'report' | null
   threads: ThreadCardInfo[]
   summary: string
   text: string
@@ -43,6 +43,8 @@ interface NoticeState extends NoticeData {
 }
 
 const isAppend = (event: ChatEvent) => event.surfaceOp === 'append'
+
+const ROLES: ReadonlySet<unknown> = new Set(['brief', 'reply', 'reminder', 'report'])
 
 function isCard(value: unknown): value is ThreadCardInfo {
   const card = value as ThreadCardInfo | null
@@ -63,7 +65,7 @@ export const noticeDefinition = {
     return {
       seq: event.seq,
       time: event.time,
-      role: source.role === 'brief' || source.role === 'reply' || source.role === 'report' ? source.role : null,
+      role: ROLES.has(source.role) ? source.role : null,
       wake: typeof source.wake === 'boolean' ? source.wake : null,
       threads: Array.isArray(source.threads) ? source.threads.filter(isCard) : [],
       summary: typeof source.summary === 'string' ? source.summary : '',

@@ -42,7 +42,7 @@ export function NoticeCard({ node, sessionId, useSessionStatus, t, openThread }:
 
   // A brief or a follow-up, shown inside the thread; or an older notice without card data.
   const card = threads[0]
-  const heading = role === 'brief' ? t('notice.brief') : role === 'reply' ? t('notice.reply') : summary
+  const heading = role === 'brief' ? t('notice.brief') : role === 'reply' ? t('notice.reply') : role === 'reminder' ? t('notice.reminder') : summary
   const body = text.split('\n').filter((line, index) => !(index === 0 && line.startsWith('['))).join('\n').trim()
   return (
     <div className="dsht-card dsht-brief">

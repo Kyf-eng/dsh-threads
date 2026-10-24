@@ -13,6 +13,8 @@ export const Config = z.object({
     .description('Days before an unstarted thread proposal expires.'),
   maxProposalsPerTurn: z.natural().min(1).default(3)
     .description('Most thread proposals the main conversation may make in one turn.'),
+  reportReminder: z.boolean().default(true)
+    .description('When a task round ends without thread_report, ask the thread once to report before falling back to its last reply.'),
   inheritPermissionPreset: z.boolean().default(true)
     .description('Give each thread the main conversation\'s current permission preset instead of the user default.'),
 })

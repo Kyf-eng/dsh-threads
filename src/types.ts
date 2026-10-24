@@ -55,6 +55,11 @@ export interface ThreadRecord {
   error: string | null
   /** Its own checkout when it was opened with `worktree: true`; otherwise it shares the project folder. */
   worktree: ThreadWorktree | null
+  /**
+   * Set when this round ended without thread_report and the thread was asked once to report.
+   * `fallback` is its last reply from before the reminder, used if it still does not report.
+   */
+  reminder: { fallback: string | null } | null
   createdAt: string
   updatedAt: string
 }

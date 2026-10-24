@@ -11,6 +11,12 @@ let _deepseek_ai_dsh_client_ui_primitives = require("@deepseek-ai/dsh-client-ui-
 const NOTICE_NODE = "dsh-threads-notice";
 const OPENED_KEY = "dsh-threads-opened";
 const isAppend = (event) => event.surfaceOp === "append";
+const ROLES = /* @__PURE__ */ new Set([
+	"brief",
+	"reply",
+	"reminder",
+	"report"
+]);
 function isCard(value) {
 	const card = value;
 	return typeof card === "object" && card !== null && typeof card.threadId === "string" && typeof card.n === "number" && typeof card.title === "string";
@@ -33,7 +39,7 @@ const noticeDefinition = {
 		return {
 			seq: event.seq,
 			time: event.time,
-			role: source.role === "brief" || source.role === "reply" || source.role === "report" ? source.role : null,
+			role: ROLES.has(source.role) ? source.role : null,
 			wake: typeof source.wake === "boolean" ? source.wake : null,
 			threads: Array.isArray(source.threads) ? source.threads.filter(isCard) : [],
 			summary: typeof source.summary === "string" ? source.summary : "",
@@ -848,7 +854,7 @@ function NoticeCard({ node, sessionId, useSessionStatus, t, openThread }) {
 		openThread
 	});
 	const card = threads[0];
-	const heading = role === "brief" ? t("notice.brief") : role === "reply" ? t("notice.reply") : summary;
+	const heading = role === "brief" ? t("notice.brief") : role === "reply" ? t("notice.reply") : role === "reminder" ? t("notice.reminder") : summary;
 	const body = text.split("\n").filter((line, index) => !(index === 0 && line.startsWith("["))).join("\n").trim();
 	return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 		className: "dsht-card dsht-brief",
@@ -1014,6 +1020,7 @@ const zh = {
 	"notice.report": "讨论串回报 · {count}",
 	"notice.brief": "来自主对话的任务",
 	"notice.reply": "主对话追加的指令",
+	"notice.reminder": "提醒回报",
 	"status.done": "已完成",
 	"status.blocked": "受阻",
 	"status.needsDecision": "待你决定",
@@ -1091,6 +1098,7 @@ const en = {
 	"notice.report": "Thread reports · {count}",
 	"notice.brief": "Task from the main conversation",
 	"notice.reply": "Follow-up from the main conversation",
+	"notice.reminder": "Report reminder",
 	"status.done": "done",
 	"status.blocked": "blocked",
 	"status.needsDecision": "needs your decision",

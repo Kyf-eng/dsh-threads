@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Report reminder: when a task round ends without `thread_report`, the thread is asked once to report (`reportReminder`, on by default); if it still does not, its reply from before the reminder is used.
+
 - M3c Claude-style UI:
   - Threads no longer appear in the left session list; a project's main conversation row shows ↳N, plus a raised hand when a thread waits for you and a breathing dot while threads run.
   - One design kit for every surface: state marks (breathing dot, raised hand, hollow ring, check), thread items with an amber "waiting for you" box, green/blue/amber file chips, purple branch chips, pill buttons.

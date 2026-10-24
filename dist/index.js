@@ -423,6 +423,14 @@ function briefText(thread, task) {
 		"（重要：结束本轮回复之前，必须调用一次 thread_report。主对话只能收到 thread_report 的内容，收不到你的回复正文。）"
 	].join("\n");
 }
+/** Sent once when a task round ended without thread_report. */
+function reminderText(thread) {
+	return [
+		`[dsh-threads 提醒 · 讨论串 #${thread.n}「${thread.title}」]`,
+		"",
+		"你结束了这一轮，但没有调用 thread_report，主对话收不到结果。现在调用一次 thread_report 汇报这一轮的结果（status、summary、changedFiles、decisions）。不用重做任务，也不要做别的事。"
+	].join("\n");
+}
 /** A follow-up instruction from the main conversation (thread_reply). */
 function replyText(thread, message) {
 	return [
@@ -503,6 +511,7 @@ var ThreadManager = class {
 			lastReport: null,
 			error: null,
 			worktree,
+			reminder: null,
 			createdAt,
 			updatedAt: createdAt
 		};
@@ -541,6 +550,7 @@ var ThreadManager = class {
 			round: "dispatch",
 			roundStartSeq: agent.seq,
 			roundStartedAt: at,
+			reminder: null,
 			updatedAt: at
 		};
 		await this.deps.store.putThread(next);
@@ -572,11 +582,13 @@ var ThreadManager = class {
 			roundStartSeq: agent.seq,
 			roundStartedAt: at,
 			resolved: false,
+			reminder: null,
 			updatedAt: at
 		} : {
 			...thread,
 			round: "dispatch",
 			resolved: false,
+			reminder: null,
 			updatedAt: at
 		};
 		await this.deps.store.putThread(next);
@@ -637,6 +649,7 @@ var ThreadManager = class {
 			roundStartSeq: seq,
 			roundStartedAt: at,
 			resolved: false,
+			reminder: null,
 			updatedAt: at
 		});
 	}
@@ -664,6 +677,7 @@ var ThreadManager = class {
 			});
 			return;
 		}
+		if (thread.round === "dispatch" && thread.reminder === null && this.deps.config.reportReminder && currentReport(thread) === null && await this.remind(thread)) return;
 		this.settling.add(thread.id);
 		try {
 			await this.settle(thread);
@@ -672,9 +686,26 @@ var ThreadManager = class {
 		}
 		await this.flush(thread.mainSessionId);
 	}
+	/** Send the one reminder; the thread stays `running` and the round settles on its next idle. */
+	async remind(thread) {
+		const agent = await this.deps.host.resolve(thread.id);
+		if (agent === void 0) return false;
+		const fallback = this.deps.host.roundOutput(thread.id, thread.roundStartSeq ?? 0) ?? null;
+		await this.deps.store.putThread({
+			...thread,
+			reminder: { fallback },
+			updatedAt: this.deps.now()
+		});
+		agent.followup(reminderText(thread), noticeSummary(thread, "提醒回报"), {
+			role: "reminder",
+			threads: [cardOf(thread)],
+			wake: true
+		});
+		return true;
+	}
 	async settle(thread) {
 		const report = currentReport(thread);
-		const fallback = report === null ? this.deps.host.roundOutput(thread.id, thread.roundStartSeq ?? 0) : void 0;
+		const fallback = report !== null ? void 0 : thread.reminder !== null ? thread.reminder.fallback ?? void 0 : this.deps.host.roundOutput(thread.id, thread.roundStartSeq ?? 0);
 		const note = {
 			threadId: thread.id,
 			text: composeNote(thread, report, fallback, this.deps.config.noteMaxChars),
@@ -691,6 +722,7 @@ var ThreadManager = class {
 			...thread,
 			status: "idle",
 			round: null,
+			reminder: null,
 			updatedAt: this.deps.now()
 		});
 		await this.drainQueue(thread.mainSessionId);
@@ -964,6 +996,7 @@ const Config = z$1.object({
 	summaryMaxChars: z$1.natural().min(40).default(300).description("Longest summary a thread may submit through thread_report."),
 	proposalTtlDays: z$1.natural().min(1).default(7).description("Days before an unstarted thread proposal expires."),
 	maxProposalsPerTurn: z$1.natural().min(1).default(3).description("Most thread proposals the main conversation may make in one turn."),
+	reportReminder: z$1.boolean().default(true).description("When a task round ends without thread_report, ask the thread once to report before falling back to its last reply."),
 	inheritPermissionPreset: z$1.boolean().default(true).description("Give each thread the main conversation's current permission preset instead of the user default.")
 });
 // src/services.ts
@@ -1733,6 +1766,7 @@ const threadSchema = z.object({
 		repositoryRoot: z.string(),
 		removed: z.boolean().default(false)
 	}).nullable().default(null),
+	reminder: z.object({ fallback: z.string().nullable() }).nullable().default(null),
 	createdAt: z.string(),
 	updatedAt: z.string()
 });

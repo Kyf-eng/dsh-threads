@@ -32,12 +32,17 @@ export class WorktreeError extends Error {}
 
 /**
  * New branch `dsh-threads/<name>` checked out at `<repo>/.agents/worktrees/dsh-threads-<name>`,
- * from the folder's current HEAD. Uncommitted files in the folder are not carried over.
+ * from the folder's current HEAD. Uncommitted files in the folder are not carried over. When the
+ * folder is a subfolder of the repository (a monorepo package), `subdir` names it, and the thread
+ * works in the same subfolder of its checkout (`worktreeFolder`).
  */
 export async function createWorktree(git: Git, folder: string, name: string): Promise<ThreadWorktree> {
   let repositoryRoot: string
+  let subdir: string
   try {
     repositoryRoot = (await git(folder, ['rev-parse', '--show-toplevel'])).trim()
+    // Relative to the top level as git sees it, so symlinked paths (/tmp on macOS) do not matter.
+    subdir = (await git(folder, ['rev-parse', '--show-prefix'])).trim().replace(/\/+$/, '')
   } catch {
     throw new WorktreeError(`项目文件夹 ${folder} 不是 git 仓库，没法开 worktree。不用 worktree 再开，或者请用户先初始化仓库。`)
   }
@@ -47,11 +52,23 @@ export async function createWorktree(git: Git, folder: string, name: string): Pr
   } catch {
     throw new WorktreeError('仓库还没有任何提交，没法从 HEAD 开 worktree。')
   }
+  if (subdir.length > 0) {
+    try {
+      await git(repositoryRoot, ['cat-file', '-e', `${baseCommit}:${subdir}`])
+    } catch {
+      throw new WorktreeError(`项目文件夹 ${subdir} 还没有提交进仓库，worktree 里不会有它。不用 worktree 再开，或者请用户先提交。`)
+    }
+  }
   await preparePool(join(repositoryRoot, ...POOL))
   const branch = `${BRANCH_PREFIX}${name}`
   const path = join(repositoryRoot, ...POOL, `dsh-threads-${name}`)
   await git(repositoryRoot, ['worktree', 'add', '-b', branch, '--', path, baseCommit])
-  return { path, branch, baseCommit, repositoryRoot, removed: false }
+  return { path, subdir, branch, baseCommit, repositoryRoot, removed: false }
+}
+
+/** Where a worktree thread works: the project folder's counterpart inside its checkout. */
+export function worktreeFolder(worktree: Pick<ThreadWorktree, 'path' | 'subdir'>): string {
+  return worktree.subdir.length === 0 ? worktree.path : join(worktree.path, ...worktree.subdir.split('/'))
 }
 
 /** Create the pool with a `.gitignore` of `*` (as DSH does), keeping an existing one as it is. */

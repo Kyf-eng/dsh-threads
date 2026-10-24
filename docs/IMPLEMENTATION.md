@@ -788,6 +788,10 @@ M2c 时 DeepSeek Flash 常常不调 `thread_report`（3 个里 2 个），卡片
   - 现在开串第一步（建 worktree 和会话之前）就用 `resolveAgent` 读主对话的模式（`host.permissionOf`），读不到就拒绝，什么都不留下；会话建好后 `setPermission`，失败则讨论串记为 failed，简报不发。
   - 主对话是 `custom`（沙箱和审批开关对不上任何模式）时也拒绝：`permissionPresets.set` 只接受真实的模式名，原来这种情况会在建好会话后抛错，留下一个失败的讨论串。
   - DSH 没有 `permissionPresets` 服务时照旧开串，记一条 warn。
+- **项目是仓库子目录时，worktree 讨论串进对应的子目录**（分支 `fix/worktree-subfolder`）：
+  - worktree 从仓库根检出，原来讨论串也进 worktree 根。monorepo 里项目是 `repo/packages/app` 时，简报里的相对路径全都对不上。
+  - `createWorktree` 用 `git rev-parse --show-prefix` 记下项目文件夹在仓库里的相对路径（`ThreadWorktree.subdir`，旧记录默认 `''`），讨论串进 `worktreeFolder(worktree)`；讨论串提示写明“项目文件夹（packages/app）在你自己的 worktree 里”。用 git 算相对路径，不受 macOS `/tmp` 这类软链接影响。
+  - 项目子目录还没提交进仓库时（HEAD 里没有它），开 worktree 前就拒绝，不建分支。
 
 #### 之后
 - 发布：

@@ -31,6 +31,7 @@ const threadSchema = z.object({
   error: z.string().nullable(),
   worktree: z.object({
     path: z.string(),
+    subdir: z.string().default(''),
     branch: z.string(),
     baseCommit: z.string(),
     repositoryRoot: z.string(),

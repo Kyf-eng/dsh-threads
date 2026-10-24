@@ -1,15 +1,13 @@
-// The left sidebar, as in Claude: threads are not listed (they are reached from their main
-// conversation), and a project's main conversation row shows "↳ N" and the state of its
-// threads. DSH's session list is one closed slot with no row filter, so thread rows are hidden
-// by a generated stylesheet keyed on the rows' `data-row-key="session:<id>"`, and "↳ N" sits
-// before the row's time cell (`slot | title | time | actions`).
-import { createElement, useSyncExternalStore } from 'react'
+// The left sidebar, as in Claude: projects have their own section (SidebarProjects.tsx), so
+// DSH's workspace list shows neither a project's main conversation nor its threads, and drops a
+// workspace altogether when nothing else is in it. DSH's session list is one closed slot with no
+// row filter, so those rows are hidden by a generated stylesheet keyed on the rows'
+// `data-row-key` (`session:<id>`, `workspace:<id>`, and the `overflow:<id>` "show N more" row).
+import { useSyncExternalStore } from 'react'
 import { callHost } from './api.ts'
-import { ThreadGlyph } from './glyphs.tsx'
-import { ProjectIcon } from './icons.tsx'
 import { threadsRevision } from './threads.ts'
 
-interface MainKind {
+export interface MainKind {
   icon: string
   threads: number
   running: number
@@ -19,24 +17,62 @@ interface MainKind {
 interface Kinds {
   threads: ReadonlySet<string>
   mains: ReadonlyMap<string, MainKind>
+  /** Workspaces where DSH would show nothing but project sessions (projectOnlyWorkspaces). */
+  hiddenWorkspaces: ReadonlySet<string>
 }
 
 const SIDEBAR_STYLE_ID = '@fky/dsh-threads/sidebar'
 
-let kinds: Kinds = { threads: new Set(), mains: new Map() }
+let kinds: Kinds = { threads: new Set(), mains: new Map(), hiddenWorkspaces: new Set() }
 const listeners = new Set<() => void>()
 
-const rowSelector = (id: string) => `[data-row-key="session:${id.replace(/["\\]/g, '\\$&')}"]`
+const rowSelector = (kind: 'session' | 'workspace' | 'overflow', id: string) => `[data-row-key="${kind}:${id.replace(/["\\]/g, '\\$&')}"]`
 
-/** The generated rules: hide every thread row, add "↳ N" to main conversation rows. */
-export function sidebarCss(next: Kinds): string {
-  const rules: string[] = []
-  if (next.threads.size > 0) rules.push(`${[...next.threads].map(rowSelector).join(',')}{display:none!important}`)
-  for (const [id, main] of next.mains) {
-    if (main.threads === 0) continue
-    rules.push(`${rowSelector(id)}>span:nth-child(3)::before{content:"↳ ${main.threads}";margin-right:8px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums}`)
+/** Rows the "Projects" section shows before "Show N more". */
+export const SIDEBAR_VISIBLE = 8
+
+/** The "Projects" section's rows: active projects, pinned first, then by latest activity. */
+export function sidebarProjects<P extends { archived: boolean; pinned: boolean; lastActivity: string }>(projects: readonly P[]): P[] {
+  return projects
+    .filter((project) => !project.archived)
+    .sort((a, b) => (a.pinned !== b.pinned ? (a.pinned ? -1 : 1) : b.lastActivity.localeCompare(a.lastActivity)))
+}
+
+/** What DSH's session list knows about a session (its WorkspaceBrowser reads the same fields). */
+export interface SessionSummary {
+  blank?: boolean
+  origin?: string
+}
+
+/**
+ * Workspaces to drop from DSH's list: those holding a project session and no other session DSH
+ * would show. DSH's own rule (`sessionVisible` in dsh-client-ui-workspace) skips unknown, blank
+ * (unless current), subagent and archived sessions.
+ */
+export function projectOnlyWorkspaces(
+  workspaces: readonly { workspaceId: string; sessionIds: readonly string[] }[],
+  sessions: Readonly<Record<string, SessionSummary | undefined>>,
+  archived: ReadonlySet<string>,
+  projectSessions: ReadonlySet<string>,
+  current: string | undefined,
+): string[] {
+  const shown = (id: string) => {
+    const session = sessions[id]
+    return session !== undefined && session.origin !== 'subagent' && (session.blank !== true || id === current) && !archived.has(id)
   }
-  return rules.join('\n')
+  return workspaces
+    .filter((workspace) => workspace.sessionIds.some((id) => projectSessions.has(id))
+      && workspace.sessionIds.every((id) => projectSessions.has(id) || !shown(id)))
+    .map((workspace) => workspace.workspaceId)
+}
+
+/** The generated rule hiding project sessions and project-only workspaces in DSH's list. */
+export function sidebarCss(next: Kinds): string {
+  const hidden = [
+    ...[...next.threads, ...next.mains.keys()].map((id) => rowSelector('session', id)),
+    ...[...next.hiddenWorkspaces].flatMap((id) => [rowSelector('workspace', id), rowSelector('overflow', id)]),
+  ]
+  return hidden.length === 0 ? '' : `${hidden.join(',')}{display:none!important}`
 }
 
 function writeSidebarCss(next: Kinds): void {
@@ -69,7 +105,7 @@ export function syncKinds(status: StatusSource | undefined): () => void {
   const load = async () => {
     const next = await callHost<{ threads: string[]; mains: ({ id: string } & MainKind)[] }>('sessions.kinds').catch(() => undefined)
     if (!disposed && next !== undefined) {
-      publish({ threads: new Set(next.threads), mains: new Map(next.mains.map(({ id, ...main }) => [id, main])) })
+      publish({ ...kinds, threads: new Set(next.threads), mains: new Map(next.mains.map(({ id, ...main }) => [id, main])) })
     }
   }
   const schedule = () => {
@@ -95,26 +131,19 @@ export function syncKinds(status: StatusSource | undefined): () => void {
   }
 }
 
+/** Set by the sidebar's projects section, which reads DSH's workspace and session lists. */
+export function setHiddenWorkspaces(ids: readonly string[]): void {
+  if (ids.length === kinds.hiddenWorkspaces.size && ids.every((id) => kinds.hiddenWorkspaces.has(id))) return
+  publish({ ...kinds, hiddenWorkspaces: new Set(ids) })
+}
+
 /** Refresh after a project is created or removed in this browser. */
 export const refreshKinds = () => threadsRevision.bump()
 
-function useKinds(): Kinds {
+/** Thread counts and states per main conversation, for the sidebar's project rows. */
+export function useKinds(): Kinds {
   return useSyncExternalStore((listener) => {
     listeners.add(listener)
     return () => { listeners.delete(listener) }
   }, () => kinds)
-}
-
-/**
- * sidebar.session.row.leading entry for a main conversation: a raised hand when one of its
- * threads waits on the user, a breathing dot while any runs, otherwise the project's icon (as
- * Claude's sidebar shows it). DSH puts the row's own status dot here instead whenever the main
- * conversation itself is busy.
- */
-export function MainRowMark({ sessionId, t }: { sessionId: string; t: (key: 'badge.waiting' | 'badge.running', vars: { count: number }) => string }) {
-  const main = useKinds().mains.get(sessionId)
-  if (main === undefined) return null
-  if (main.waiting > 0) return createElement(ThreadGlyph, { state: 'waiting', label: t('badge.waiting', { count: main.waiting }) })
-  if (main.running > 0) return createElement(ThreadGlyph, { state: 'running', label: t('badge.running', { count: main.running }) })
-  return createElement('span', { className: 'dsht-row-icon' }, createElement(ProjectIcon, { id: main.icon, size: 14 }))
 }

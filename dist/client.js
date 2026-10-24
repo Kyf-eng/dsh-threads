@@ -7,6 +7,7 @@ Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
 let react_jsx_runtime = require("react/jsx-runtime");
 let react = require("react");
 let _deepseek_ai_dsh_client_ui_primitives = require("@deepseek-ai/dsh-client-ui-primitives");
+let react_dom = require("react-dom");
 // src/client/chat.ts
 const NOTICE_NODE = "dsh-threads-notice";
 const OPENED_KEY = "dsh-threads-opened";
@@ -293,6 +294,255 @@ const projectsStore = {
 function useProjects() {
 	return (0, react.useSyncExternalStore)(projectsStore.subscribe, projectsStore.getSnapshot);
 }
+// src/client/threads.ts
+/** Bumped after any change this browser makes (resolve, reopen), so panes reload. */
+let revision = 0;
+const listeners$1 = /* @__PURE__ */ new Set();
+const threadsRevision = {
+	bump() {
+		revision += 1;
+		for (const listener of listeners$1) listener();
+	},
+	subscribe(listener) {
+		listeners$1.add(listener);
+		return () => {
+			listeners$1.delete(listener);
+		};
+	},
+	get: () => revision
+};
+function useThreadsRevision() {
+	return (0, react.useSyncExternalStore)(threadsRevision.subscribe, threadsRevision.get);
+}
+/** Load a host value, reloading whenever `deps` change; keeps the last value while reloading. */
+/** Requests in flight, so the cards of one conversation refreshing together share one call. */
+const inFlight = /* @__PURE__ */ new Map();
+function sharedCall(method, payload) {
+	const key = `${method}\n${JSON.stringify(payload)}`;
+	let pending = inFlight.get(key);
+	if (pending === void 0) {
+		pending = callHost(method, payload).finally(() => inFlight.delete(key));
+		inFlight.set(key, pending);
+	}
+	return pending;
+}
+function useHostValue(method, payload, deps) {
+	const [value, setValue] = (0, react.useState)(void 0);
+	(0, react.useEffect)(() => {
+		if (method === null) {
+			setValue(void 0);
+			return;
+		}
+		let live = true;
+		sharedCall(method, payload).then((next) => {
+			if (live) setValue(next);
+		}, () => {});
+		return () => {
+			live = false;
+		};
+	}, [method, ...deps]);
+	return value;
+}
+/** Right-sidebar resource address of a thread's conversation. */
+const THREAD_ADDRESS = "dsh-resource://dsh-threads/session/";
+function threadAddress(threadId) {
+	return `${THREAD_ADDRESS}${encodeURIComponent(threadId)}`;
+}
+function parseThreadAddress(value) {
+	let url;
+	try {
+		url = new URL(value);
+	} catch {
+		return;
+	}
+	if (url.protocol !== "dsh-resource:" || url.hostname.toLowerCase() !== "dsh-threads") return void 0;
+	const parts = url.pathname.split("/").filter(Boolean);
+	if (parts.length !== 2 || parts[0] !== "session" || parts[1] === void 0) return void 0;
+	try {
+		return decodeURIComponent(parts[1]);
+	} catch {
+		return;
+	}
+}
+const THREAD_ADDRESS_PATTERN = `${THREAD_ADDRESS}**`;
+// src/client/kinds.ts
+const SIDEBAR_STYLE_ID = "@fky/dsh-threads/sidebar";
+let kinds = {
+	threads: /* @__PURE__ */ new Set(),
+	mains: /* @__PURE__ */ new Map(),
+	hiddenWorkspaces: /* @__PURE__ */ new Set()
+};
+const listeners = /* @__PURE__ */ new Set();
+const rowSelector = (kind, id) => `[data-row-key="${kind}:${id.replace(/["\\]/g, "\\$&")}"]`;
+/** The "Projects" section's rows: active projects, pinned first, then by latest activity. */
+function sidebarProjects(projects) {
+	return projects.filter((project) => !project.archived).sort((a, b) => a.pinned !== b.pinned ? a.pinned ? -1 : 1 : b.lastActivity.localeCompare(a.lastActivity));
+}
+/**
+* Workspaces to drop from DSH's list: those holding a project session and no other session DSH
+* would show. DSH's own rule (`sessionVisible` in dsh-client-ui-workspace) skips unknown, blank
+* (unless current), subagent and archived sessions.
+*/
+function projectOnlyWorkspaces(workspaces, sessions, archived, projectSessions, current) {
+	const shown = (id) => {
+		const session = sessions[id];
+		return session !== void 0 && session.origin !== "subagent" && (session.blank !== true || id === current) && !archived.has(id);
+	};
+	return workspaces.filter((workspace) => workspace.sessionIds.some((id) => projectSessions.has(id)) && workspace.sessionIds.every((id) => projectSessions.has(id) || !shown(id))).map((workspace) => workspace.workspaceId);
+}
+/** The generated rule hiding project sessions and project-only workspaces in DSH's list. */
+function sidebarCss(next) {
+	const hidden = [...[...next.threads, ...next.mains.keys()].map((id) => rowSelector("session", id)), ...[...next.hiddenWorkspaces].flatMap((id) => [rowSelector("workspace", id), rowSelector("overflow", id)])];
+	return hidden.length === 0 ? "" : `${hidden.join(",")}{display:none!important}`;
+}
+function writeSidebarCss(next) {
+	if (typeof document === "undefined") return;
+	let tag = document.querySelector(`style[data-plugin-css="${SIDEBAR_STYLE_ID}"]`);
+	if (tag === null) {
+		tag = document.createElement("style");
+		tag.dataset.plugin = "@fky/dsh-threads";
+		tag.dataset.pluginCss = SIDEBAR_STYLE_ID;
+		document.head.appendChild(tag);
+	}
+	tag.textContent = sidebarCss(next);
+}
+function publish(next) {
+	kinds = next;
+	writeSidebarCss(next);
+	for (const listener of listeners) listener();
+}
+/** Reload on start, after this browser changes something, and when any session starts or stops. */
+function syncKinds(status) {
+	let disposed = false;
+	let pending;
+	const load = async () => {
+		const next = await callHost("sessions.kinds").catch(() => void 0);
+		if (!disposed && next !== void 0) publish({
+			...kinds,
+			threads: new Set(next.threads),
+			mains: new Map(next.mains.map(({ id, ...main }) => [id, main]))
+		});
+	};
+	const schedule = () => {
+		if (pending !== void 0) clearTimeout(pending);
+		pending = setTimeout(() => {
+			load();
+		}, 300);
+	};
+	let runningKey = "";
+	const offStatus = status?.subscribe(() => {
+		const next = [...status.getSnapshot()].filter(([, state]) => state.running === true).map(([id]) => id).sort().join(",");
+		if (next !== runningKey) {
+			runningKey = next;
+			schedule();
+		}
+	});
+	const offRevision = threadsRevision.subscribe(schedule);
+	load();
+	return () => {
+		disposed = true;
+		if (pending !== void 0) clearTimeout(pending);
+		offStatus?.();
+		offRevision();
+		document.querySelector(`style[data-plugin-css="${SIDEBAR_STYLE_ID}"]`)?.remove();
+	};
+}
+/** Set by the sidebar's projects section, which reads DSH's workspace and session lists. */
+function setHiddenWorkspaces(ids) {
+	if (ids.length === kinds.hiddenWorkspaces.size && ids.every((id) => kinds.hiddenWorkspaces.has(id))) return;
+	publish({
+		...kinds,
+		hiddenWorkspaces: new Set(ids)
+	});
+}
+/** Thread counts and states per main conversation, for the sidebar's project rows. */
+function useKinds() {
+	return (0, react.useSyncExternalStore)((listener) => {
+		listeners.add(listener);
+		return () => {
+			listeners.delete(listener);
+		};
+	}, () => kinds);
+}
+// src/client/notify.ts
+/** Whether a project at `level` wants to hear that this session finished. */
+function wantsNotification(level, kind, waiting) {
+	switch (level) {
+		case "all": return true;
+		case "attention": return kind === "main" || waiting;
+		case "waiting": return kind === "thread" && waiting;
+		case "none": return false;
+	}
+}
+const STATUS_KEYS$1 = {
+	done: "status.done",
+	blocked: "status.blocked",
+	needs_decision: "status.needsDecision",
+	failed: "status.failed",
+	"no-report": "status.noReport"
+};
+function message(target, t) {
+	if (target.kind === "main") return {
+		title: target.projectTitle,
+		body: t("notifyMsg.main", { text: target.text || "…" })
+	};
+	const title = `${target.projectTitle} · #${target.n} ${target.title}`;
+	if (target.waiting) return {
+		title,
+		body: t("notifyMsg.waiting", { text: target.text || "…" })
+	};
+	return {
+		title,
+		body: `${t(STATUS_KEYS$1[target.status ?? "no-report"] ?? "status.noReport")}${target.text.length > 0 ? `：${target.text}` : ""}`
+	};
+}
+const inBackground = () => typeof document === "undefined" || document.visibilityState !== "visible" || !document.hasFocus();
+function startNotifications(deps) {
+	const { status } = deps;
+	if (status === void 0 || typeof Notification === "undefined") return () => {};
+	let running = /* @__PURE__ */ new Set();
+	let finished = /* @__PURE__ */ new Set();
+	let pending;
+	let disposed = false;
+	const flush = async () => {
+		const ids = [...finished];
+		finished = /* @__PURE__ */ new Set();
+		if (ids.length === 0 || !inBackground()) return;
+		const wanted = (await callHost("notifications.describe", { ids }).catch(() => [])).filter((target) => wantsNotification(target.level, target.kind, target.waiting));
+		if (disposed || wanted.length === 0) return;
+		if (Notification.permission === "default") await Notification.requestPermission().catch(() => "denied");
+		if (Notification.permission !== "granted") return;
+		for (const target of wanted) {
+			const { title, body } = message(target, deps.t);
+			const shown = new Notification(title, {
+				body,
+				tag: `dsh-threads:${target.sessionId}`
+			});
+			shown.onclick = () => {
+				window.focus();
+				deps.openSession(target.mainSessionId);
+				if (target.kind === "thread") deps.openThread(target.sessionId);
+				shown.close();
+			};
+		}
+	};
+	const off = status.subscribe(() => {
+		const next = new Set([...status.getSnapshot()].filter(([, state]) => state.running === true).map(([id]) => id));
+		for (const id of running) if (!next.has(id)) finished.add(id);
+		running = next;
+		if (finished.size === 0) return;
+		if (pending !== void 0) clearTimeout(pending);
+		pending = setTimeout(() => {
+			flush();
+		}, 600);
+	});
+	running = new Set([...status.getSnapshot()].filter(([, state]) => state.running === true).map(([id]) => id));
+	return () => {
+		disposed = true;
+		if (pending !== void 0) clearTimeout(pending);
+		off();
+	};
+}
 // src/client/glyphs.tsx
 /** The one place thread data turns into a state mark. */
 function glyphState(thread, running = false) {
@@ -378,255 +628,6 @@ function ThreadGlyph({ state, label }) {
 			}) })
 		});
 	}
-}
-// src/client/threads.ts
-/** Bumped after any change this browser makes (resolve, reopen), so panes reload. */
-let revision = 0;
-const listeners$1 = /* @__PURE__ */ new Set();
-const threadsRevision = {
-	bump() {
-		revision += 1;
-		for (const listener of listeners$1) listener();
-	},
-	subscribe(listener) {
-		listeners$1.add(listener);
-		return () => {
-			listeners$1.delete(listener);
-		};
-	},
-	get: () => revision
-};
-function useThreadsRevision() {
-	return (0, react.useSyncExternalStore)(threadsRevision.subscribe, threadsRevision.get);
-}
-/** Load a host value, reloading whenever `deps` change; keeps the last value while reloading. */
-/** Requests in flight, so the cards of one conversation refreshing together share one call. */
-const inFlight = /* @__PURE__ */ new Map();
-function sharedCall(method, payload) {
-	const key = `${method}\n${JSON.stringify(payload)}`;
-	let pending = inFlight.get(key);
-	if (pending === void 0) {
-		pending = callHost(method, payload).finally(() => inFlight.delete(key));
-		inFlight.set(key, pending);
-	}
-	return pending;
-}
-function useHostValue(method, payload, deps) {
-	const [value, setValue] = (0, react.useState)(void 0);
-	(0, react.useEffect)(() => {
-		if (method === null) {
-			setValue(void 0);
-			return;
-		}
-		let live = true;
-		sharedCall(method, payload).then((next) => {
-			if (live) setValue(next);
-		}, () => {});
-		return () => {
-			live = false;
-		};
-	}, [method, ...deps]);
-	return value;
-}
-/** Right-sidebar resource address of a thread's conversation. */
-const THREAD_ADDRESS = "dsh-resource://dsh-threads/session/";
-function threadAddress(threadId) {
-	return `${THREAD_ADDRESS}${encodeURIComponent(threadId)}`;
-}
-function parseThreadAddress(value) {
-	let url;
-	try {
-		url = new URL(value);
-	} catch {
-		return;
-	}
-	if (url.protocol !== "dsh-resource:" || url.hostname.toLowerCase() !== "dsh-threads") return void 0;
-	const parts = url.pathname.split("/").filter(Boolean);
-	if (parts.length !== 2 || parts[0] !== "session" || parts[1] === void 0) return void 0;
-	try {
-		return decodeURIComponent(parts[1]);
-	} catch {
-		return;
-	}
-}
-const THREAD_ADDRESS_PATTERN = `${THREAD_ADDRESS}**`;
-// src/client/kinds.ts
-const SIDEBAR_STYLE_ID = "@fky/dsh-threads/sidebar";
-let kinds = {
-	threads: /* @__PURE__ */ new Set(),
-	mains: /* @__PURE__ */ new Map()
-};
-const listeners = /* @__PURE__ */ new Set();
-const rowSelector = (id) => `[data-row-key="session:${id.replace(/["\\]/g, "\\$&")}"]`;
-/** The generated rules: hide every thread row, add "↳ N" to main conversation rows. */
-function sidebarCss(next) {
-	const rules = [];
-	if (next.threads.size > 0) rules.push(`${[...next.threads].map(rowSelector).join(",")}{display:none!important}`);
-	for (const [id, main] of next.mains) {
-		if (main.threads === 0) continue;
-		rules.push(`${rowSelector(id)}>span:nth-child(3)::before{content:"↳ ${main.threads}";margin-right:8px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums}`);
-	}
-	return rules.join("\n");
-}
-function writeSidebarCss(next) {
-	if (typeof document === "undefined") return;
-	let tag = document.querySelector(`style[data-plugin-css="${SIDEBAR_STYLE_ID}"]`);
-	if (tag === null) {
-		tag = document.createElement("style");
-		tag.dataset.plugin = "@fky/dsh-threads";
-		tag.dataset.pluginCss = SIDEBAR_STYLE_ID;
-		document.head.appendChild(tag);
-	}
-	tag.textContent = sidebarCss(next);
-}
-function publish(next) {
-	kinds = next;
-	writeSidebarCss(next);
-	for (const listener of listeners) listener();
-}
-/** Reload on start, after this browser changes something, and when any session starts or stops. */
-function syncKinds(status) {
-	let disposed = false;
-	let pending;
-	const load = async () => {
-		const next = await callHost("sessions.kinds").catch(() => void 0);
-		if (!disposed && next !== void 0) publish({
-			threads: new Set(next.threads),
-			mains: new Map(next.mains.map(({ id, ...main }) => [id, main]))
-		});
-	};
-	const schedule = () => {
-		if (pending !== void 0) clearTimeout(pending);
-		pending = setTimeout(() => {
-			load();
-		}, 300);
-	};
-	let runningKey = "";
-	const offStatus = status?.subscribe(() => {
-		const next = [...status.getSnapshot()].filter(([, state]) => state.running === true).map(([id]) => id).sort().join(",");
-		if (next !== runningKey) {
-			runningKey = next;
-			schedule();
-		}
-	});
-	const offRevision = threadsRevision.subscribe(schedule);
-	load();
-	return () => {
-		disposed = true;
-		if (pending !== void 0) clearTimeout(pending);
-		offStatus?.();
-		offRevision();
-		document.querySelector(`style[data-plugin-css="${SIDEBAR_STYLE_ID}"]`)?.remove();
-	};
-}
-function useKinds() {
-	return (0, react.useSyncExternalStore)((listener) => {
-		listeners.add(listener);
-		return () => {
-			listeners.delete(listener);
-		};
-	}, () => kinds);
-}
-/**
-* sidebar.session.row.leading entry for a main conversation: a raised hand when one of its
-* threads waits on the user, a breathing dot while any runs, otherwise the project's icon (as
-* Claude's sidebar shows it). DSH puts the row's own status dot here instead whenever the main
-* conversation itself is busy.
-*/
-function MainRowMark({ sessionId, t }) {
-	const main = useKinds().mains.get(sessionId);
-	if (main === void 0) return null;
-	if (main.waiting > 0) return (0, react.createElement)(ThreadGlyph, {
-		state: "waiting",
-		label: t("badge.waiting", { count: main.waiting })
-	});
-	if (main.running > 0) return (0, react.createElement)(ThreadGlyph, {
-		state: "running",
-		label: t("badge.running", { count: main.running })
-	});
-	return (0, react.createElement)("span", { className: "dsht-row-icon" }, (0, react.createElement)(ProjectIcon, {
-		id: main.icon,
-		size: 14
-	}));
-}
-// src/client/notify.ts
-/** Whether a project at `level` wants to hear that this session finished. */
-function wantsNotification(level, kind, waiting) {
-	switch (level) {
-		case "all": return true;
-		case "attention": return kind === "main" || waiting;
-		case "waiting": return kind === "thread" && waiting;
-		case "none": return false;
-	}
-}
-const STATUS_KEYS$1 = {
-	done: "status.done",
-	blocked: "status.blocked",
-	needs_decision: "status.needsDecision",
-	failed: "status.failed",
-	"no-report": "status.noReport"
-};
-function message(target, t) {
-	if (target.kind === "main") return {
-		title: target.projectTitle,
-		body: t("notifyMsg.main", { text: target.text || "…" })
-	};
-	const title = `${target.projectTitle} · #${target.n} ${target.title}`;
-	if (target.waiting) return {
-		title,
-		body: t("notifyMsg.waiting", { text: target.text || "…" })
-	};
-	return {
-		title,
-		body: `${t(STATUS_KEYS$1[target.status ?? "no-report"] ?? "status.noReport")}${target.text.length > 0 ? `：${target.text}` : ""}`
-	};
-}
-const inBackground = () => typeof document === "undefined" || document.visibilityState !== "visible" || !document.hasFocus();
-function startNotifications(deps) {
-	const { status } = deps;
-	if (status === void 0 || typeof Notification === "undefined") return () => {};
-	let running = /* @__PURE__ */ new Set();
-	let finished = /* @__PURE__ */ new Set();
-	let pending;
-	let disposed = false;
-	const flush = async () => {
-		const ids = [...finished];
-		finished = /* @__PURE__ */ new Set();
-		if (ids.length === 0 || !inBackground()) return;
-		const wanted = (await callHost("notifications.describe", { ids }).catch(() => [])).filter((target) => wantsNotification(target.level, target.kind, target.waiting));
-		if (disposed || wanted.length === 0) return;
-		if (Notification.permission === "default") await Notification.requestPermission().catch(() => "denied");
-		if (Notification.permission !== "granted") return;
-		for (const target of wanted) {
-			const { title, body } = message(target, deps.t);
-			const shown = new Notification(title, {
-				body,
-				tag: `dsh-threads:${target.sessionId}`
-			});
-			shown.onclick = () => {
-				window.focus();
-				deps.openSession(target.mainSessionId);
-				if (target.kind === "thread") deps.openThread(target.sessionId);
-				shown.close();
-			};
-		}
-	};
-	const off = status.subscribe(() => {
-		const next = new Set([...status.getSnapshot()].filter(([, state]) => state.running === true).map(([id]) => id));
-		for (const id of running) if (!next.has(id)) finished.add(id);
-		running = next;
-		if (finished.size === 0) return;
-		if (pending !== void 0) clearTimeout(pending);
-		pending = setTimeout(() => {
-			flush();
-		}, 600);
-	});
-	running = new Set([...status.getSnapshot()].filter(([, state]) => state.running === true).map(([id]) => id));
-	return () => {
-		disposed = true;
-		if (pending !== void 0) clearTimeout(pending);
-		off();
-	};
 }
 // src/client/ui.tsx
 function Svg({ children, size = 14, ...rest }) {
@@ -1209,7 +1210,12 @@ const zh = {
 	"proposals.dismissOne": "不要这个",
 	"proposals.worktree": "独立 worktree",
 	"badge.waiting": "{count} 个讨论串在等你回复",
-	"badge.running": "{count} 个讨论串运行中"
+	"badge.running": "{count} 个讨论串运行中",
+	"side.title": "项目",
+	"side.more": "展开其余 {count} 个",
+	"side.less": "收起",
+	"side.empty": "新建一个项目",
+	"side.mainRunning": "主对话运行中"
 };
 const en = {
 	"panel": "Projects",
@@ -1341,7 +1347,12 @@ const en = {
 	"proposals.dismissOne": "Dismiss",
 	"proposals.worktree": "Own worktree",
 	"badge.waiting": "{count} thread(s) waiting for you",
-	"badge.running": "{count} thread(s) running"
+	"badge.running": "{count} thread(s) running",
+	"side.title": "Projects",
+	"side.more": "Show {count} more",
+	"side.less": "Show less",
+	"side.empty": "Create a project",
+	"side.mainRunning": "Main conversation running"
 };
 /** Relative time like "3 天前", from an ISO timestamp. */
 function relativeTime(t, iso, now = Date.now()) {
@@ -2045,61 +2056,24 @@ function ProjectSettings({ project, open, onClose, t }) {
 		})
 	});
 }
-// src/client/ProjectsPage.tsx
-const SORT_LABELS = {
-	activity: "page.sort.activity",
-	created: "page.sort.created",
-	title: "page.sort.title"
-};
+// src/client/ProjectActions.tsx
 const NOTIFY_LEVELS = [
 	"all",
 	"attention",
 	"waiting",
 	"none"
 ];
-const sameList = (a, b) => a.length === b.length && a.every((item, index) => item.workspaceId === b[index]?.workspaceId && item.title === b[index]?.title);
-function sortProjects(projects, sort) {
-	const key = (p) => sort === "created" ? p.createdAt : p.lastActivity;
-	return [...projects].sort((a, b) => {
-		if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
-		if (sort === "title") return a.title.localeCompare(b.title);
-		return key(b).localeCompare(key(a));
-	});
-}
-function ProjectsPage({ t, useWorkspaces, useSessionStatus, openSession, pinSession, pickFolder, showProjects }) {
-	const { status, projects, error } = useProjects();
-	const [query, setQuery] = (0, react.useState)("");
-	const [sort, setSort] = (0, react.useState)("activity");
-	const [sortOpen, setSortOpen] = (0, react.useState)(false);
-	const [newOpen, setNewOpen] = (0, react.useState)(false);
-	const [creating, setCreating] = (0, react.useState)(null);
+/** The actions, plus the dialogs they open (render `dialogs` once next to the menus). */
+function useProjectActions({ projects, t, pinSession, afterArchive }) {
 	const [settingsId, setSettingsId] = (0, react.useState)(null);
 	const [deleting, setDeleting] = (0, react.useState)(null);
-	const [showArchived, setShowArchived] = (0, react.useState)(false);
-	const [actionError, setActionError] = (0, react.useState)(null);
-	const workspaces = useWorkspaces((snapshot) => snapshot.items, sameList);
-	const runningKey = useSessionStatus((statuses) => [...statuses].filter(([, state]) => state.running).map(([id]) => id).sort().join(","));
-	(0, react.useEffect)(() => {
-		projectsStore.refresh();
-	}, [runningKey]);
-	const { active, archived } = (0, react.useMemo)(() => {
-		const needle = query.trim().toLowerCase();
-		const sorted = sortProjects(needle.length === 0 ? projects : projects.filter((p) => p.title.toLowerCase().includes(needle) || p.folder.toLowerCase().includes(needle)), sort);
-		return {
-			active: sorted.filter((p) => !p.archived),
-			archived: sorted.filter((p) => p.archived)
-		};
-	}, [
-		projects,
-		query,
-		sort
-	]);
+	const [error, setError] = (0, react.useState)(null);
 	const run = async (action) => {
-		setActionError(null);
+		setError(null);
 		try {
 			await action();
 		} catch (failure) {
-			setActionError(failure instanceof Error ? failure.message : String(failure));
+			setError(failure instanceof Error ? failure.message : String(failure));
 		} finally {
 			threadsRevision.bump();
 			await projectsStore.refresh();
@@ -2120,7 +2094,7 @@ function ProjectsPage({ t, useWorkspaces, useSessionStatus, openSession, pinSess
 		openSettings: (project) => setSettingsId(project.id),
 		toggleArchive: (project) => run(async () => {
 			await callHost(project.archived ? "projects.unarchive" : "projects.archive", { id: project.id });
-			setTimeout(showProjects, 120);
+			if (afterArchive !== void 0) setTimeout(afterArchive, 120);
 		}),
 		askDelete: (project) => setDeleting(project)
 	};
@@ -2129,6 +2103,190 @@ function ProjectsPage({ t, useWorkspaces, useSessionStatus, openSession, pinSess
 		await callHost("projects.remove", { id: project.id });
 		if (project.pinned) await pinSession(project.mainSessionId, false).catch(() => {});
 	});
+	return {
+		actions,
+		dialogs: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ProjectSettings, {
+			project: projects.find((p) => p.id === settingsId) ?? null,
+			open: settingsId !== null,
+			onClose: () => setSettingsId(null),
+			t
+		}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Modal, {
+			open: deleting !== null,
+			onClose: () => setDeleting(null),
+			title: deleting === null ? "" : t("delete.title", { title: deleting.title }),
+			description: t("delete.description"),
+			closeLabel: t("common.close"),
+			footer: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: "dsht-buttons",
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
+					variant: "ghost",
+					onClick: () => setDeleting(null),
+					children: t("common.cancel")
+				}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
+					variant: "primary",
+					className: "dsht-danger",
+					onClick: () => {
+						if (deleting !== null) remove(deleting);
+					},
+					children: t("delete.confirm")
+				})]
+			})
+		})] }),
+		error
+	};
+}
+const SHORTCUTS = {
+	p: "pin",
+	s: "settings",
+	a: "archive",
+	d: "delete"
+};
+/** The "⋮" button and its menu. */
+function ProjectMenu({ project, actions, t, onOpenChange }) {
+	const [open, setOpenState] = (0, react.useState)(false);
+	const setOpen = (next) => {
+		setOpenState(next);
+		onOpenChange?.(next);
+	};
+	const act = (id) => {
+		setOpen(false);
+		if (id === "pin") actions.togglePin(project);
+		else if (id === "settings") actions.openSettings(project);
+		else if (id === "archive") actions.toggleArchive(project);
+		else if (id === "delete") actions.askDelete(project);
+		else if (id.startsWith("notify:")) actions.setNotify(project, id.slice(7));
+	};
+	(0, react.useEffect)(() => {
+		if (!open) return;
+		const onKey = (event) => {
+			if (event.metaKey || event.ctrlKey || event.altKey) return;
+			const id = SHORTCUTS[event.key.toLowerCase()];
+			if (id === void 0 || id === "pin" && project.archived) return;
+			event.preventDefault();
+			event.stopPropagation();
+			act(id);
+		};
+		document.addEventListener("keydown", onKey, true);
+		return () => document.removeEventListener("keydown", onKey, true);
+	}, [open, project]);
+	const items = [
+		...project.archived ? [] : [{
+			id: "pin",
+			label: project.pinned ? t("menu.unpin") : t("menu.pin"),
+			icon: project.pinned ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconPinFillRegular, { size: 16 }) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconPinOutlineRegular, { size: 16 }),
+			shortcut: { keys: ["P"] }
+		}],
+		{
+			id: "notify",
+			label: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+				className: "dsht-menu-aside-row",
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("menu.notify") }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+					className: "dsht-menu-aside",
+					children: t(`notify.${project.notify}.short`)
+				})]
+			}),
+			icon: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(BellIcon, { size: 16 }),
+			submenu: NOTIFY_LEVELS.map((level) => ({
+				id: `notify:${level}`,
+				icon: project.notify === level ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconCheckOutlineRegular, { size: 16 }) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: "dsht-menu-icon-space" }),
+				label: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+					className: "dsht-menu-two",
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t(`notify.${level}`) }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: "dsht-menu-sub",
+						children: t(`notify.${level}.hint`)
+					})]
+				})
+			}))
+		},
+		{
+			id: "settings",
+			label: t("menu.settings"),
+			icon: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconSettingsOutlineRegular, { size: 16 }),
+			shortcut: { keys: ["S"] }
+		},
+		{
+			type: "separator",
+			id: "separator"
+		},
+		{
+			id: "archive",
+			label: project.archived ? t("menu.unarchive") : t("menu.archive"),
+			icon: project.archived ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconUnarchiveOutlineRegular, { size: 16 }) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconArchiveOutlineRegular, { size: 16 }),
+			shortcut: { keys: ["A"] }
+		},
+		{
+			id: "delete",
+			label: t("menu.delete"),
+			icon: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconTrashOutlineRegular, { size: 16 }),
+			danger: true,
+			shortcut: { keys: ["D"] }
+		}
+	];
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Menu, {
+		open,
+		onClose: () => setOpen(false),
+		align: "end",
+		portal: true,
+		items,
+		onSelect: act,
+		anchor: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+			type: "button",
+			className: "dsht-icon-button",
+			"aria-label": t("menu.more"),
+			title: t("menu.more"),
+			"aria-haspopup": "menu",
+			"aria-expanded": open,
+			onClick: () => setOpen(!open),
+			children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconEllipsisOutlineRegular, { size: 16 })
+		})
+	});
+}
+// src/client/ProjectsPage.tsx
+const SORT_LABELS = {
+	activity: "page.sort.activity",
+	created: "page.sort.created",
+	title: "page.sort.title"
+};
+const sameList = (a, b) => a.length === b.length && a.every((item, index) => item.workspaceId === b[index]?.workspaceId && item.title === b[index]?.title);
+function sortProjects(projects, sort) {
+	const key = (p) => sort === "created" ? p.createdAt : p.lastActivity;
+	return [...projects].sort((a, b) => {
+		if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+		if (sort === "title") return a.title.localeCompare(b.title);
+		return key(b).localeCompare(key(a));
+	});
+}
+function ProjectsPage({ t, useWorkspaces, useSessionStatus, openSession, pinSession, pickFolder, showProjects }) {
+	const { status, projects, error } = useProjects();
+	const [query, setQuery] = (0, react.useState)("");
+	const [sort, setSort] = (0, react.useState)("activity");
+	const [sortOpen, setSortOpen] = (0, react.useState)(false);
+	const [newOpen, setNewOpen] = (0, react.useState)(false);
+	const [creating, setCreating] = (0, react.useState)(null);
+	const [showArchived, setShowArchived] = (0, react.useState)(false);
+	const { actions, dialogs, error: actionError } = useProjectActions({
+		projects,
+		t,
+		pinSession,
+		afterArchive: showProjects
+	});
+	const workspaces = useWorkspaces((snapshot) => snapshot.items, sameList);
+	const runningKey = useSessionStatus((statuses) => [...statuses].filter(([, state]) => state.running).map(([id]) => id).sort().join(","));
+	(0, react.useEffect)(() => {
+		projectsStore.refresh();
+	}, [runningKey]);
+	const { active, archived } = (0, react.useMemo)(() => {
+		const needle = query.trim().toLowerCase();
+		const sorted = sortProjects(needle.length === 0 ? projects : projects.filter((p) => p.title.toLowerCase().includes(needle) || p.folder.toLowerCase().includes(needle)), sort);
+		return {
+			active: sorted.filter((p) => !p.archived),
+			archived: sorted.filter((p) => p.archived)
+		};
+	}, [
+		projects,
+		query,
+		sort
+	]);
 	const newFromItems = [{
 		type: "label",
 		id: "from",
@@ -2280,119 +2438,12 @@ function ProjectsPage({ t, useWorkspaces, useSessionStatus, openSession, pinSess
 				pickFolder,
 				t
 			}),
-			/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ProjectSettings, {
-				project: projects.find((p) => p.id === settingsId) ?? null,
-				open: settingsId !== null,
-				onClose: () => setSettingsId(null),
-				t
-			}),
-			/* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Modal, {
-				open: deleting !== null,
-				onClose: () => setDeleting(null),
-				title: deleting === null ? "" : t("delete.title", { title: deleting.title }),
-				description: t("delete.description"),
-				closeLabel: t("common.close"),
-				footer: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-					className: "dsht-buttons",
-					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
-						variant: "ghost",
-						onClick: () => setDeleting(null),
-						children: t("common.cancel")
-					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
-						variant: "primary",
-						className: "dsht-danger",
-						onClick: () => {
-							if (deleting !== null) remove(deleting);
-						},
-						children: t("delete.confirm")
-					})]
-				})
-			})
+			dialogs
 		]
 	});
 }
-const SHORTCUTS = {
-	p: "pin",
-	s: "settings",
-	a: "archive",
-	d: "delete"
-};
 function ProjectCard({ project, actions, openSession, t }) {
 	const [menuOpen, setMenuOpen] = (0, react.useState)(false);
-	const act = (id) => {
-		setMenuOpen(false);
-		if (id === "pin") actions.togglePin(project);
-		else if (id === "settings") actions.openSettings(project);
-		else if (id === "archive") actions.toggleArchive(project);
-		else if (id === "delete") actions.askDelete(project);
-		else if (id.startsWith("notify:")) actions.setNotify(project, id.slice(7));
-	};
-	(0, react.useEffect)(() => {
-		if (!menuOpen) return;
-		const onKey = (event) => {
-			if (event.metaKey || event.ctrlKey || event.altKey) return;
-			const id = SHORTCUTS[event.key.toLowerCase()];
-			if (id === void 0 || id === "pin" && project.archived) return;
-			event.preventDefault();
-			event.stopPropagation();
-			act(id);
-		};
-		document.addEventListener("keydown", onKey, true);
-		return () => document.removeEventListener("keydown", onKey, true);
-	}, [menuOpen, project]);
-	const items = [
-		...project.archived ? [] : [{
-			id: "pin",
-			label: project.pinned ? t("menu.unpin") : t("menu.pin"),
-			icon: project.pinned ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconPinFillRegular, { size: 16 }) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconPinOutlineRegular, { size: 16 }),
-			shortcut: { keys: ["P"] }
-		}],
-		{
-			id: "notify",
-			label: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-				className: "dsht-menu-aside-row",
-				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("menu.notify") }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-					className: "dsht-menu-aside",
-					children: t(`notify.${project.notify}.short`)
-				})]
-			}),
-			icon: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(BellIcon, { size: 16 }),
-			submenu: NOTIFY_LEVELS.map((level) => ({
-				id: `notify:${level}`,
-				icon: project.notify === level ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconCheckOutlineRegular, { size: 16 }) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: "dsht-menu-icon-space" }),
-				label: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-					className: "dsht-menu-two",
-					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t(`notify.${level}`) }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-						className: "dsht-menu-sub",
-						children: t(`notify.${level}.hint`)
-					})]
-				})
-			}))
-		},
-		{
-			id: "settings",
-			label: t("menu.settings"),
-			icon: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconSettingsOutlineRegular, { size: 16 }),
-			shortcut: { keys: ["S"] }
-		},
-		{
-			type: "separator",
-			id: "separator"
-		},
-		{
-			id: "archive",
-			label: project.archived ? t("menu.unarchive") : t("menu.archive"),
-			icon: project.archived ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconUnarchiveOutlineRegular, { size: 16 }) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconArchiveOutlineRegular, { size: 16 }),
-			shortcut: { keys: ["A"] }
-		},
-		{
-			id: "delete",
-			label: t("menu.delete"),
-			icon: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconTrashOutlineRegular, { size: 16 }),
-			danger: true,
-			shortcut: { keys: ["D"] }
-		}
-	];
 	const open = () => {
 		if (!project.archived) openSession(project.mainSessionId);
 	};
@@ -2416,23 +2467,11 @@ function ProjectCard({ project, actions, openSession, t }) {
 				}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 					className: "dsht-project-tools",
 					onClick: (event) => event.stopPropagation(),
-					children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Menu, {
-						open: menuOpen,
-						onClose: () => setMenuOpen(false),
-						align: "end",
-						portal: true,
-						items,
-						onSelect: act,
-						anchor: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-							type: "button",
-							className: "dsht-icon-button",
-							"aria-label": t("menu.more"),
-							title: t("menu.more"),
-							"aria-haspopup": "menu",
-							"aria-expanded": menuOpen,
-							onClick: () => setMenuOpen(!menuOpen),
-							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconEllipsisOutlineRegular, { size: 16 })
-						})
+					children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ProjectMenu, {
+						project,
+						actions,
+						t,
+						onOpenChange: setMenuOpen
 					})
 				})]
 			}),
@@ -2511,6 +2550,240 @@ function syncResolved(publish, status) {
 async function setThreadResolved(threadId, resolved) {
 	await callHost(resolved ? "threads.resolve" : "threads.reopen", { id: threadId });
 	threadsRevision.bump();
+}
+// src/client/SidebarProjects.tsx
+let anchor = null;
+const anchorListeners = /* @__PURE__ */ new Set();
+function setAnchor(next) {
+	if (next?.nav === anchor?.nav && next?.wide === anchor?.wide) return;
+	anchor = next;
+	for (const listener of anchorListeners) listener();
+}
+const subscribeAnchor = (listener) => {
+	anchorListeners.add(listener);
+	return () => {
+		anchorListeners.delete(listener);
+	};
+};
+/** For our "Projects" panel icon, which DSH renders inside the sidebar's panel <nav> (16px wide, 18px as a rail). */
+function useSidebarAnchor(size) {
+	const ref = (0, react.useRef)(null);
+	(0, react.useLayoutEffect)(() => {
+		const nav = ref.current?.closest("nav");
+		if (!(nav instanceof HTMLElement)) return;
+		setAnchor({
+			nav,
+			wide: size < 18
+		});
+		return () => {
+			if (anchor?.nav === nav) setAnchor(null);
+		};
+	}, [size]);
+	return ref;
+}
+/** The session DSH highlights: the one its main view holds, unless a panel is open. */
+function useCurrentSession(props) {
+	const panelActive = props.usePanelInfo((info) => info.activePanelId !== null);
+	const held = props.useSessions((list) => Object.entries(list.byId).find(([, session]) => (session?.retainedBy?.mainView ?? 0) > 0)?.[0]);
+	return panelActive ? void 0 : held;
+}
+/** Keep DSH's workspace list free of workspaces that would show nothing but project sessions. */
+function useHideProjectWorkspaces(props) {
+	const { mains, threads } = useKinds();
+	const workspaces = props.useWorkspaces((snapshot) => snapshot.items);
+	const archived = props.useWorkspaces((snapshot) => snapshot.archivedSessionIds);
+	const sessions = props.useSessions((list) => list.byId);
+	const current = useCurrentSession(props);
+	(0, react.useEffect)(() => {
+		setHiddenWorkspaces(projectOnlyWorkspaces(workspaces, sessions, new Set(archived ?? []), /* @__PURE__ */ new Set([...mains.keys(), ...threads]), current));
+	}, [
+		workspaces,
+		archived,
+		sessions,
+		mains,
+		threads,
+		current
+	]);
+}
+/**
+* The `shell.overlay` entry: keeps the section's container right after the panel <nav>, and the
+* workspace list free of project-only workspaces.
+*/
+function SidebarProjectsHost(props) {
+	useHideProjectWorkspaces(props);
+	const current = (0, react.useSyncExternalStore)(subscribeAnchor, () => anchor);
+	const [container, setContainer] = (0, react.useState)(null);
+	(0, react.useLayoutEffect)(() => {
+		if (current === null || !current.wide) {
+			setContainer(null);
+			return;
+		}
+		const element = document.createElement("div");
+		element.className = "dsht-side";
+		current.nav.after(element);
+		setContainer(element);
+		return () => {
+			element.remove();
+		};
+	}, [current]);
+	return container === null ? null : (0, react_dom.createPortal)(/* @__PURE__ */ (0, react_jsx_runtime.jsx)(SidebarProjects, { ...props }), container);
+}
+const COLLAPSED_KEY = "dsh-threads.sidebar.projects.collapsed";
+function readCollapsed() {
+	try {
+		return localStorage.getItem(COLLAPSED_KEY) === "1";
+	} catch {
+		return false;
+	}
+}
+function SidebarProjects({ t, useWorkspaces, useSessions, useSessionStatus, usePanelInfo, openSession, pinSession, pickFolder }) {
+	const { projects } = useProjects();
+	const { mains } = useKinds();
+	const [collapsed, setCollapsed] = (0, react.useState)(readCollapsed);
+	const [expanded, setExpanded] = (0, react.useState)(false);
+	const [creating, setCreating] = (0, react.useState)(false);
+	const [menuFor, setMenuFor] = (0, react.useState)(null);
+	const { actions, dialogs } = useProjectActions({
+		projects,
+		t,
+		pinSession
+	});
+	const workspaces = useWorkspaces((snapshot) => snapshot.items, sameList);
+	const runningKey = useSessionStatus((statuses) => [...statuses].filter(([, state]) => state.running).map(([id]) => id).sort().join(","));
+	const currentId = useCurrentSession({
+		useSessions,
+		usePanelInfo
+	});
+	(0, react.useEffect)(() => {
+		projectsStore.refresh();
+	}, [runningKey]);
+	const toggle = () => {
+		const next = !collapsed;
+		setCollapsed(next);
+		try {
+			localStorage.setItem(COLLAPSED_KEY, next ? "1" : "0");
+		} catch {}
+	};
+	const rows = sidebarProjects(projects);
+	const shown = expanded ? rows : rows.slice(0, 8);
+	const running = new Set(runningKey.split(","));
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
+		/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+			className: "dsht-side-head",
+			children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+				type: "button",
+				className: "dsht-side-label",
+				"aria-expanded": !collapsed,
+				onClick: toggle,
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("side.title") }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronDownOutlineRegular, {
+					size: 14,
+					className: collapsed ? "dsht-rotate" : void 0
+				})]
+			}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+				type: "button",
+				className: "dsht-side-icon",
+				"aria-label": t("page.new"),
+				title: t("page.new"),
+				onClick: () => setCreating(true),
+				children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(PlusIcon, { size: 16 })
+			})]
+		}),
+		collapsed ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+			className: "dsht-side-list",
+			role: "tree",
+			"aria-label": t("side.title"),
+			children: [rows.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+				type: "button",
+				className: "dsht-side-more",
+				onClick: () => setCreating(true),
+				children: t("side.empty")
+			}) : shown.map((project) => {
+				const selected = currentId === project.mainSessionId;
+				const threads = mains.get(project.mainSessionId)?.threads ?? project.threads;
+				return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					role: "treeitem",
+					"aria-selected": selected,
+					tabIndex: 0,
+					className: `dsht-side-row${selected ? " is-selected" : ""}${menuFor === project.id ? " is-menu-open" : ""}`,
+					onClick: () => openSession(project.mainSessionId),
+					onKeyDown: (event) => {
+						if (event.key === "Enter" && event.target === event.currentTarget) openSession(project.mainSessionId);
+					},
+					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: "dsht-side-slot",
+							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(RowMark, {
+								project,
+								main: mains.get(project.mainSessionId),
+								mainRunning: running.has(project.mainSessionId),
+								t
+							})
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: "dsht-side-title",
+							children: project.title
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+							className: "dsht-side-meta",
+							children: [project.pinned ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconPinFillRegular, { size: 14 }) : null, threads > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", { children: ["↳ ", threads] }) : null]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: "dsht-side-actions",
+							onClick: (event) => event.stopPropagation(),
+							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ProjectMenu, {
+								project,
+								actions,
+								t,
+								onOpenChange: (open) => setMenuFor(open ? project.id : null)
+							})
+						})
+					]
+				}, project.id);
+			}), rows.length > 8 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+				type: "button",
+				className: "dsht-side-more",
+				onClick: () => setExpanded(!expanded),
+				children: expanded ? t("side.less") : t("side.more", { count: rows.length - 8 })
+			}) : null]
+		}),
+		/* @__PURE__ */ (0, react_jsx_runtime.jsx)(NewProjectDialog, {
+			open: creating,
+			initialFolder: null,
+			onClose: () => setCreating(false),
+			onCreated: (project) => {
+				threadsRevision.bump();
+				openSession(project.mainSessionId);
+			},
+			workspaces,
+			pickFolder,
+			t
+		}),
+		dialogs
+	] });
+}
+/** A raised hand when a thread waits on the user, a breathing dot while anything runs, else the project's icon. */
+function RowMark({ project, main, mainRunning, t }) {
+	const waiting = main?.waiting ?? 0;
+	const threadsRunning = main?.running ?? project.running;
+	if (waiting > 0) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ThreadGlyph, {
+		state: "waiting",
+		label: t("badge.waiting", { count: waiting })
+	});
+	if (threadsRunning > 0) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ThreadGlyph, {
+		state: "running",
+		label: t("badge.running", { count: threadsRunning })
+	});
+	if (mainRunning) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ThreadGlyph, {
+		state: "running",
+		label: t("side.mainRunning")
+	});
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+		className: "dsht-row-icon",
+		children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ProjectIcon, {
+			id: project.icon,
+			size: 14
+		})
+	});
 }
 // src/client/styles.ts
 const STYLE_ID = "@fky/dsh-threads/styles";
@@ -2729,6 +3002,31 @@ body,[class*="dsht-"]{
 .dsht-archived-toggle:hover,.dsht-archived-toggle:focus-visible{background:var(--dsht-hover);color:var(--dsw-alias-label-primary)}
 .dsht-rotate{transform:rotate(-90deg)}
 .dsht-row-icon{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;color:var(--dsw-alias-label-tertiary)}
+
+/* Sidebar "Projects" section (SidebarProjects.tsx), measured against DSH's own workspace list:
+   36px section header in tertiary 14px text, 32px rows with a 16px leading cell. */
+.dsht-panel-icon{display:inline-flex}
+.dsht-side{flex:none;display:flex;flex-direction:column;min-height:0;max-height:42%;margin-bottom:4px}
+.dsht-side-head{box-sizing:border-box;flex:none;display:flex;align-items:center;gap:4px;height:36px;margin:2px -4px 4px 0;padding-left:4px;color:var(--dsw-alias-label-tertiary)}
+.dsht-side-label{flex:1;min-width:0;display:inline-flex;align-items:center;gap:4px;height:28px;padding:0;border:0;background:none;color:inherit;font:inherit;font-size:14px;line-height:20px;text-align:left;cursor:pointer}
+.dsht-side-label svg{flex:none;opacity:0;transition:opacity .12s var(--dsht-ease),transform .15s var(--dsht-ease)}
+.dsht-side-head:hover .dsht-side-label svg,.dsht-side-label:focus-visible svg,.dsht-side-label svg.dsht-rotate{opacity:1}
+.dsht-side-label:focus-visible,.dsht-side-icon:focus-visible,.dsht-side-more:focus-visible{outline:2px solid var(--dsht-ring);outline-offset:-2px;border-radius:var(--dsw-radius-sm,6px)}
+.dsht-side-icon{flex:none;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0;border:0;border-radius:var(--dsw-radius-sm,6px);background:none;color:var(--dsw-alias-label-secondary);cursor:pointer}
+.dsht-side-icon:hover{background:var(--dsw-alias-interactive-bg-hover)}
+.dsht-side-list{display:flex;flex-direction:column;min-height:0;overflow-y:auto}
+.dsht-side-row{box-sizing:border-box;flex:none;display:flex;align-items:center;height:32px;padding:0 8px;border-radius:var(--dsw-radius-md,10px);color:var(--dsw-alias-label-primary);cursor:pointer;user-select:none}
+.dsht-side-row:hover,.dsht-side-row.is-selected,.dsht-side-row.is-menu-open{background:var(--dsw-alias-interactive-bg-hover)}
+.dsht-side-row:focus-visible{outline:2px solid var(--dsht-ring);outline-offset:-2px}
+.dsht-side-slot{flex:none;display:inline-flex;align-items:center;justify-content:center;width:16px;height:20px;color:var(--dsw-alias-label-tertiary)}
+.dsht-side-title{flex:1;min-width:0;margin:0 6px 0 4px;font-size:14px;line-height:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dsht-side-meta{flex:none;display:inline-flex;align-items:center;gap:6px;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:16px;font-variant-numeric:tabular-nums}
+.dsht-side-actions{flex:none;display:none;margin-right:-4px}
+.dsht-side-actions .dsht-icon-button{width:24px;height:24px;border-radius:6px}
+.dsht-side-row:hover .dsht-side-meta,.dsht-side-row.is-menu-open .dsht-side-meta{display:none}
+.dsht-side-row:hover .dsht-side-actions,.dsht-side-row.is-menu-open .dsht-side-actions{display:inline-flex}
+.dsht-side-more{box-sizing:border-box;flex:none;display:flex;align-items:center;height:32px;padding:0 8px 0 28px;border:0;border-radius:var(--dsw-radius-md,10px);background:none;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:13px;text-align:left;cursor:pointer}
+.dsht-side-more:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary)}
 
 /* Project settings */
 .dsht-settings.dsht-settings{width:min(820px,100%);height:min(620px,100dvh - 48px)}
@@ -3032,7 +3330,12 @@ const inject = [
 	"uiConversation"
 ];
 function PanelIcon({ size }) {
-	return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ProjectsIcon, { size });
+	const ref = useSidebarAnchor(size);
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+		ref,
+		className: "dsht-panel-icon",
+		children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ProjectsIcon, { size })
+	});
 }
 function waitForAbort(signal) {
 	if (signal.aborted) return Promise.resolve();
@@ -3079,6 +3382,16 @@ function apply(root) {
 		locale: NS,
 		label: () => t("panel")
 	}, PanelIcon));
+	ctx.slots.inject("shell.overlay", () => ctx.slots.register({
+		name: "shell.overlay",
+		id: "dsh-threads-sidebar-projects",
+		locale: NS,
+		inject: () => ({
+			openSession,
+			pinSession,
+			pickFolder
+		})
+	}, SidebarProjectsHost));
 	ctx.slots.inject("sidebar.workspaces.session.menu.item", () => ctx.slots.register({
 		name: "sidebar.workspaces.session.menu.item",
 		id: "dsh-threads-make-project",
@@ -3194,12 +3507,6 @@ function apply(root) {
 		openThread,
 		t
 	}), "dsh-threads: notifications");
-	ctx.slots.inject("sidebar.session.row.leading", () => ctx.slots.register({
-		name: "sidebar.session.row.leading",
-		id: "dsh-threads-main",
-		order: 50,
-		locale: NS
-	}, MainRowMark));
 	const publishResolved = ctx.uiSession.registerPendingInteraction(() => 0);
 	ctx.effect(() => syncResolved(publishResolved, ctx.uiSession.sessionStatus), "dsh-threads: resolved threads");
 	ctx.slots.inject("conversation.composer", () => ctx.slots.register({

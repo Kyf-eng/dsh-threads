@@ -132,6 +132,11 @@ export const zh = {
   'proposals.worktree': '独立 worktree',
   'badge.waiting': '{count} 个讨论串在等你回复',
   'badge.running': '{count} 个讨论串运行中',
+  'side.title': '项目',
+  'side.more': '展开其余 {count} 个',
+  'side.less': '收起',
+  'side.empty': '新建一个项目',
+  'side.mainRunning': '主对话运行中',
 }
 
 export const en: typeof zh = {
@@ -265,6 +270,11 @@ export const en: typeof zh = {
   'proposals.worktree': 'Own worktree',
   'badge.waiting': '{count} thread(s) waiting for you',
   'badge.running': '{count} thread(s) running',
+  'side.title': 'Projects',
+  'side.more': 'Show {count} more',
+  'side.less': 'Show less',
+  'side.empty': 'Create a project',
+  'side.mainRunning': 'Main conversation running',
 }
 
 export type MessageKey = keyof typeof zh

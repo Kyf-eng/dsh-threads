@@ -82,6 +82,15 @@ export function briefText(thread: Pick<ThreadRecord, 'n' | 'title'>, task: strin
   ].join('\n')
 }
 
+/** Sent once when a task round ended without thread_report. */
+export function reminderText(thread: Pick<ThreadRecord, 'n' | 'title'>): string {
+  return [
+    `[dsh-threads 提醒 · 讨论串 #${thread.n}「${thread.title}」]`,
+    '',
+    '你结束了这一轮，但没有调用 thread_report，主对话收不到结果。现在调用一次 thread_report 汇报这一轮的结果（status、summary、changedFiles、decisions）。不用重做任务，也不要做别的事。',
+  ].join('\n')
+}
+
 /** A follow-up instruction from the main conversation (thread_reply). */
 export function replyText(thread: Pick<ThreadRecord, 'n' | 'title'>, message: string): string {
   return [
@@ -168,6 +177,7 @@ export class ThreadManager {
       round: null, roundStartSeq: null, roundStartedAt: null,
       lastReport: null, error: null,
       worktree,
+      reminder: null,
       createdAt, updatedAt: createdAt,
     }
     this.creating.add(id)
@@ -195,7 +205,7 @@ export class ThreadManager {
   /** Start a round the main conversation asked for. The record is saved before the message is sent. */
   private async dispatch(record: ThreadRecord, agent: ThreadAgent, text: string): Promise<ThreadRecord> {
     const at = this.deps.now()
-    const next: ThreadRecord = { ...record, status: 'running', round: 'dispatch', roundStartSeq: agent.seq, roundStartedAt: at, updatedAt: at }
+    const next: ThreadRecord = { ...record, status: 'running', round: 'dispatch', roundStartSeq: agent.seq, roundStartedAt: at, reminder: null, updatedAt: at }
     await this.deps.store.putThread(next)
     agent.followup(text, noticeSummary(next, '任务'), { role: 'brief', threads: [cardOf(next)], wake: true })
     return next
@@ -218,8 +228,8 @@ export class ThreadManager {
     if (agent === undefined) throw new ThreadError(`讨论串 #${n} 现在连不上（会话可能已被归档或删除）。`)
     const at = this.deps.now()
     const next: ThreadRecord = thread.round === null
-      ? { ...thread, status: 'running', round: 'dispatch', roundStartSeq: agent.seq, roundStartedAt: at, resolved: false, updatedAt: at }
-      : { ...thread, round: 'dispatch', resolved: false, updatedAt: at }
+      ? { ...thread, status: 'running', round: 'dispatch', roundStartSeq: agent.seq, roundStartedAt: at, resolved: false, reminder: null, updatedAt: at }
+      : { ...thread, round: 'dispatch', resolved: false, reminder: null, updatedAt: at }
     await this.deps.store.putThread(next)
     agent.followup(replyText(next, text), noticeSummary(next, '追加指令'), { role: 'reply', threads: [cardOf(next)], wake: true })
     return next
@@ -260,7 +270,7 @@ export class ThreadManager {
     }
     if (thread.round !== null) return
     const at = this.deps.now()
-    await this.deps.store.putThread({ ...thread, status: 'running', round: 'user', roundStartSeq: seq, roundStartedAt: at, resolved: false, updatedAt: at })
+    await this.deps.store.putThread({ ...thread, status: 'running', round: 'user', roundStartSeq: seq, roundStartedAt: at, resolved: false, reminder: null, updatedAt: at })
   }
 
   /** The user spoke in a main conversation: automatic wake-ups may start again. */
@@ -281,6 +291,9 @@ export class ThreadManager {
       if (thread.status === 'running') await this.deps.store.putThread({ ...thread, status: 'idle', updatedAt: this.deps.now() })
       return
     }
+    // A task round that ended without thread_report: ask once, keep the round open.
+    if (thread.round === 'dispatch' && thread.reminder === null && this.deps.config.reportReminder
+      && currentReport(thread) === null && await this.remind(thread)) return
     // Until the note is queued, delivery must not mistake this thread for finished-and-reported:
     // another thread settling at the same moment would otherwise wake the main conversation alone.
     this.settling.add(thread.id)
@@ -292,9 +305,22 @@ export class ThreadManager {
     await this.flush(thread.mainSessionId)
   }
 
+  /** Send the one reminder; the thread stays `running` and the round settles on its next idle. */
+  private async remind(thread: ThreadRecord): Promise<boolean> {
+    const agent = await this.deps.host.resolve(thread.id)
+    if (agent === undefined) return false
+    // Saved now: after the reminder, the last reply is the answer to the reminder, not the work.
+    const fallback = this.deps.host.roundOutput(thread.id, thread.roundStartSeq ?? 0) ?? null
+    await this.deps.store.putThread({ ...thread, reminder: { fallback }, updatedAt: this.deps.now() })
+    agent.followup(reminderText(thread), noticeSummary(thread, '提醒回报'), { role: 'reminder', threads: [cardOf(thread)], wake: true })
+    return true
+  }
+
   private async settle(thread: ThreadRecord): Promise<void> {
     const report = currentReport(thread)
-    const fallback = report === null ? this.deps.host.roundOutput(thread.id, thread.roundStartSeq ?? 0) : undefined
+    const fallback = report !== null ? undefined
+      : thread.reminder !== null ? thread.reminder.fallback ?? undefined
+      : this.deps.host.roundOutput(thread.id, thread.roundStartSeq ?? 0)
     const note: PendingNote = {
       threadId: thread.id,
       text: composeNote(thread, report, fallback, this.deps.config.noteMaxChars),
@@ -307,7 +333,7 @@ export class ThreadManager {
         ...(report === null || report.changedFiles.length === 0 ? {} : { files: report.changedFiles.slice(0, CARD_FILES_MAX) }),
       },
     }
-    await this.deps.store.putThread({ ...thread, status: 'idle', round: null, updatedAt: this.deps.now() })
+    await this.deps.store.putThread({ ...thread, status: 'idle', round: null, reminder: null, updatedAt: this.deps.now() })
     // Start queued proposals first: the note then waits for them, and the main conversation
     // hears from the whole batch once instead of once per thread.
     await this.drainQueue(thread.mainSessionId)

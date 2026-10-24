@@ -59,7 +59,8 @@ function setup(overrides: Partial<Config> = {}, options: { slowWrites?: boolean;
   const manager = new ThreadManager({
     store,
     host,
-    config: { ...Config({}), ...overrides },
+    // The report reminder has its own tests; elsewhere a round settles on its first idle.
+    config: { ...Config({}), reportReminder: false, ...overrides },
     now: () => new Date(Date.UTC(2026, 9, 23, 0, 0, clock++)).toISOString(),
     newSessionId: () => `session-${++ids}`,
     newProposalId: () => `proposal-${++ids}`,
@@ -214,6 +215,48 @@ describe('ThreadManager.setResolved', () => {
     await t.manager.onInbox('session-1', 'user', 3)
     expect(t.store.thread('session-1')).toMatchObject({ resolved: false, round: 'user' })
     await expect(t.manager.setResolved('session-x', true)).rejects.toBeInstanceOf(ThreadError)
+  })
+})
+
+describe('report reminder', () => {
+  it('asks a thread once to report, keeps the round open, and delivers the report it then sends', async () => {
+    const t = setup({ reportReminder: true })
+    await t.manager.open('main', { title: '查依赖', task: 'x', initiation: 'user_asked' })
+    t.outputs.set('session-1', '做完了')
+    await t.manager.onIdle('session-1')
+    const thread = t.agents.get('session-1')!
+    expect(thread.followups[1]).toContain('没有调用 thread_report')
+    expect(thread.metas[1]?.role).toBe('reminder')
+    expect(t.store.thread('session-1')).toMatchObject({ status: 'running', round: 'dispatch', reminder: { fallback: '做完了' } })
+    expect(t.main.followups).toHaveLength(0)
+
+    await t.manager.recordReport('session-1', { status: 'done', summary: '有 3 个过期依赖', changedFiles: [], decisions: [] })
+    await t.manager.onIdle('session-1')
+    expect(t.main.followups[0]).toContain('有 3 个过期依赖')
+    expect(t.store.thread('session-1')).toMatchObject({ status: 'idle', round: null, reminder: null })
+  })
+
+  it('falls back to the reply from before the reminder when the thread still does not report', async () => {
+    const t = setup({ reportReminder: true })
+    await t.manager.open('main', { title: 'a', task: 'x', initiation: 'user_asked' })
+    t.outputs.set('session-1', '真正的结果')
+    await t.manager.onIdle('session-1')
+    t.outputs.set('session-1', '好的')
+    await t.manager.onIdle('session-1')
+    expect(t.agents.get('session-1')!.followups).toHaveLength(2)
+    expect(t.main.followups[0]).toContain('真正的结果')
+    expect(t.main.followups[0]).not.toContain('好的')
+  })
+
+  it('does not remind after a round the user drove in the thread', async () => {
+    const t = setup({ reportReminder: true })
+    await t.manager.open('main', { title: 'a', task: 'x', initiation: 'user_asked' })
+    await t.manager.recordReport('session-1', { status: 'done', summary: 'ok', changedFiles: [], decisions: [] })
+    await t.manager.onIdle('session-1')
+    await t.manager.onInbox('session-1', 'user', 10)
+    await t.manager.onIdle('session-1')
+    expect(t.agents.get('session-1')!.followups).toHaveLength(1)
+    expect(t.main.injects).toHaveLength(1)
   })
 })
 

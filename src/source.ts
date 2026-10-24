@@ -20,8 +20,11 @@ export interface ThreadCardInfo {
   files?: string[]
 }
 
-/** brief: the first task in a thread; reply: a follow-up; report: thread reports to the main conversation. */
-export type NoticeRole = 'brief' | 'reply' | 'report'
+/**
+ * brief: the first task in a thread; reply: a follow-up; reminder: "you did not call thread_report";
+ * report: thread reports to the main conversation.
+ */
+export type NoticeRole = 'brief' | 'reply' | 'reminder' | 'report'
 
 export interface NoticeMeta {
   role: NoticeRole

@@ -35,6 +35,7 @@ const threadSchema = z.object({
     repositoryRoot: z.string(),
     removed: z.boolean().default(false),
   }).nullable().default(null),
+  reminder: z.object({ fallback: z.string().nullable() }).nullable().default(null),
   createdAt: z.string(),
   updatedAt: z.string(),
 })

@@ -5,6 +5,6 @@
     "jsx": "react-jsx",
     "types": []
   },
-  "include": ["src/client/**/*.ts", "src/client/**/*.tsx"],
+  "include": ["src/client/**/*.ts", "src/client/**/*.tsx", "tests/client/**/*.ts"],
   "exclude": []
 }

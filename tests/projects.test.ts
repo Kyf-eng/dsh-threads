@@ -25,6 +25,14 @@ function setup() {
       return ws === undefined ? undefined : { id: ws.id, path: ws.path }
     },
     rename: (sessionId, title) => { renamed.push(`${sessionId}:${title}`) },
+    async ensureWorkspace(folder) {
+      if (folder === '/missing') throw new Error('not a directory')
+      const existing = [...workspaces.values()].find((ws) => ws.path === folder)
+      if (existing !== undefined) return { id: existing.id, path: existing.path }
+      const id = `ws-${workspaces.size + 1}`
+      workspaces.set(id, { id, path: folder, sessions: [] })
+      return { id, path: folder }
+    },
   }
   let clock = 0
   let ids = 0
@@ -50,6 +58,14 @@ describe('Projects', () => {
     expect(project).toMatchObject({ title: 'Vetoarc', folder: '/code/app', mainSessionId: 'session-main-1', pinned: false, instructions: '用中文回复' })
     expect(t.projects.ofMain('session-main-1')?.id).toBe(project.id)
     expect(t.changes()).toBe(1)
+  })
+
+  it('creates a project from a folder path, adding the workspace when needed', async () => {
+    const project = await t.projects.create({ title: 'New', folder: '/code/new' })
+    expect(project).toMatchObject({ workspaceId: 'ws-2', folder: '/code/new' })
+    expect((await t.projects.create({ title: 'Same', folder: '/code/app' })).workspaceId).toBe('ws-1')
+    await expect(t.projects.create({ title: 'x', folder: 'relative/dir' })).rejects.toBeInstanceOf(ProjectError)
+    await expect(t.projects.create({ title: 'x', folder: '/missing' })).rejects.toBeInstanceOf(ProjectError)
   })
 
   it('turns an existing conversation into a project, once', async () => {

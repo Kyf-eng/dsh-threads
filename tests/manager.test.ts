@@ -327,11 +327,11 @@ describe('thread cards on notices', () => {
     const t = setup()
     await t.manager.open('main', { title: '查依赖', task: 'x', initiation: 'user_asked' })
     expect(t.agents.get('session-1')?.metas[0]).toEqual({ role: 'brief', threads: [{ threadId: 'session-1', n: 1, title: '查依赖' }], wake: true })
-    await t.manager.recordReport('session-1', { status: 'needs_decision', summary: '要不要升级', changedFiles: [], decisions: ['升级?'] })
+    await t.manager.recordReport('session-1', { status: 'needs_decision', summary: '要不要升级', changedFiles: ['package.json'], decisions: ['升级?'] })
     await t.manager.onIdle('session-1')
     expect(t.main.metas[0]).toEqual({
       role: 'report',
-      threads: [{ threadId: 'session-1', n: 1, title: '查依赖', status: 'needs_decision', summary: '要不要升级' }],
+      threads: [{ threadId: 'session-1', n: 1, title: '查依赖', status: 'needs_decision', summary: '要不要升级', decision: '升级?', files: ['package.json'] }],
       wake: true,
     })
   })

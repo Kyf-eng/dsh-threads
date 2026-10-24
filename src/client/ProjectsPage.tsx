@@ -98,24 +98,24 @@ export function ProjectsPage({ t, useWorkspaces, useSessionStatus, openSession, 
                 {visible.map((project) => (
                   <div
                     key={project.id}
-                    className="dsht-card"
+                    className="dsht-project"
                     role="button"
                     tabIndex={0}
                     onClick={() => openSession(project.mainSessionId)}
                     onKeyDown={(event) => { if (event.key === 'Enter') openSession(project.mainSessionId) }}
                   >
-                    <span className="dsht-card-icon"><FolderIcon size={16} /></span>
-                    <div className="dsht-card-title">
+                    <span className="dsht-project-icon"><FolderIcon size={16} /></span>
+                    <div className="dsht-project-title">
                       {project.title}
                       {project.pinned ? <PinIcon size={13} filled className="dsht-pinned" /> : null}
                     </div>
-                    <div className="dsht-card-meta">
+                    <div className="dsht-project-meta">
                       <span>{relativeTime(t, project.lastActivity)}</span>
                       <span>{t('card.threads', { count: project.threads })}</span>
-                      {project.running > 0 ? <span className="dsht-running">{t('card.running', { count: project.running })}</span> : null}
+                      {project.running > 0 ? <span className="dsht-running"><span className="dsht-pulse" />{t('card.running', { count: project.running })}</span> : null}
                     </div>
-                    <div className="dsht-card-folder" title={project.folder}>{project.folder}</div>
-                    <div className="dsht-card-tools" onClick={(event) => event.stopPropagation()}>
+                    <div className="dsht-project-folder" title={project.folder}>{project.folder}</div>
+                    <div className="dsht-project-tools" onClick={(event) => event.stopPropagation()}>
                       <button type="button" className={`dsht-icon-button ${project.pinned ? '' : 'dsht-hover-only'}`}
                         title={project.pinned ? t('card.unpin') : t('card.pin')} aria-label={project.pinned ? t('card.unpin') : t('card.pin')}
                         onClick={() => { void togglePin(project) }}>

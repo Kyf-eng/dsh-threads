@@ -2,13 +2,13 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { isAbsolute, join } from "node:path";
 import { CommandDefinitionId } from "@deepseek-ai/dsh-commands/brand";
-import z$1 from "@deepseek-ai/schemastery";
-import { boundContextSummary, createUserMessage } from "@deepseek-ai/dsh-llm";
-import { finalAssistantOutput } from "@deepseek-ai/dsh-subagent";
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
+import z$1 from "@deepseek-ai/schemastery";
+import { boundContextSummary, createUserMessage } from "@deepseek-ai/dsh-llm";
+import { finalAssistantOutput } from "@deepseek-ai/dsh-subagent";
 import { defineTool } from "@deepseek-ai/dsh-tools";
 import { defineDomain, domainTable } from "@deepseek-ai/dsh-storage-domain";
 // package.json
@@ -551,6 +551,136 @@ function summaryOf(notes) {
 	const first = notes[0]?.text.split("\n", 1)[0] ?? "";
 	return notes.length === 1 ? first : `${notes.length} 个讨论串回报`;
 }
+// src/worktree.ts
+const execFileAsync = promisify(execFile);
+/** The system git, with repository hooks off (as DSH's worktree service does) and no prompts. */
+const systemGit = async (cwd, args) => {
+	const { stdout } = await execFileAsync("git", [
+		"-c",
+		"core.hooksPath=/dev/null",
+		...args
+	], {
+		cwd,
+		env: {
+			...process.env,
+			GIT_TERMINAL_PROMPT: "0"
+		},
+		maxBuffer: 1 << 20
+	});
+	return stdout;
+};
+const BRANCH_PREFIX = "dsh-threads/";
+const POOL = [".agents", "worktrees"];
+/** A refusal the model should read (not a bug). */
+var WorktreeError = class extends Error {};
+/**
+* New branch `dsh-threads/<name>` checked out at `<repo>/.agents/worktrees/dsh-threads-<name>`,
+* from the folder's current HEAD. Uncommitted files in the folder are not carried over. When the
+* folder is a subfolder of the repository (a monorepo package), `subdir` names it, and the thread
+* works in the same subfolder of its checkout (`worktreeFolder`).
+*/
+async function createWorktree(git, folder, name) {
+	let repositoryRoot;
+	let subdir;
+	try {
+		repositoryRoot = (await git(folder, ["rev-parse", "--show-toplevel"])).trim();
+		subdir = (await git(folder, ["rev-parse", "--show-prefix"])).trim().replace(/\/+$/, "");
+	} catch {
+		throw new WorktreeError(`项目文件夹 ${folder} 不是 git 仓库，没法开 worktree。不用 worktree 再开，或者请用户先初始化仓库。`);
+	}
+	let baseCommit;
+	try {
+		baseCommit = (await git(repositoryRoot, [
+			"rev-parse",
+			"--verify",
+			"HEAD^{commit}"
+		])).trim();
+	} catch {
+		throw new WorktreeError("仓库还没有任何提交，没法从 HEAD 开 worktree。");
+	}
+	if (subdir.length > 0) try {
+		await git(repositoryRoot, [
+			"cat-file",
+			"-e",
+			`${baseCommit}:${subdir}`
+		]);
+	} catch {
+		throw new WorktreeError(`项目文件夹 ${subdir} 还没有提交进仓库，worktree 里不会有它。不用 worktree 再开，或者请用户先提交。`);
+	}
+	await preparePool(join(repositoryRoot, ...POOL));
+	const branch = `${BRANCH_PREFIX}${name}`;
+	const path = join(repositoryRoot, ...POOL, `dsh-threads-${name}`);
+	await git(repositoryRoot, [
+		"worktree",
+		"add",
+		"-b",
+		branch,
+		"--",
+		path,
+		baseCommit
+	]);
+	return {
+		path,
+		subdir,
+		branch,
+		baseCommit,
+		repositoryRoot,
+		removed: false
+	};
+}
+/** Where a worktree thread works: the project folder's counterpart inside its checkout. */
+function worktreeFolder(worktree) {
+	return worktree.subdir.length === 0 ? worktree.path : join(worktree.path, ...worktree.subdir.split("/"));
+}
+/** Create the pool with a `.gitignore` of `*` (as DSH does), keeping an existing one as it is. */
+async function preparePool(pool) {
+	await mkdir(join(pool, ".."), { recursive: true });
+	try {
+		await mkdir(pool);
+	} catch (error) {
+		if (error.code === "EEXIST") return;
+		throw error;
+	}
+	await writeFile(join(pool, ".gitignore"), "*\n", { flag: "wx" });
+}
+/** Remove a thread's checkout, then its branch if it is fully merged. Never forces either. */
+async function removeWorktree(git, worktree) {
+	const { repositoryRoot, path, branch } = worktree;
+	let outcome = "removed";
+	if (existsSync(path)) try {
+		await git(repositoryRoot, [
+			"worktree",
+			"remove",
+			"--",
+			path
+		]);
+	} catch {
+		return {
+			outcome: "dirty",
+			branchKept: true
+		};
+	}
+	else {
+		outcome = "missing";
+		await git(repositoryRoot, ["worktree", "prune"]);
+	}
+	try {
+		await git(repositoryRoot, [
+			"branch",
+			"-d",
+			branch
+		]);
+		return {
+			outcome,
+			branchKept: false
+		};
+	} catch {
+		return {
+			outcome,
+			branchKept: true
+		};
+	}
+}
 // src/manager.ts
 /** Longest report summary carried on a transcript card. */
 const CARD_SUMMARY_MAX = 160;
@@ -698,7 +828,7 @@ var ThreadManager = class {
 		try {
 			await store.putThread(record);
 			const agent = await host.createSession(mainSessionId, id);
-			if (worktree !== null) await host.enterDirectory(id, worktree.path);
+			if (worktree !== null) await host.enterDirectory(id, worktreeFolder(worktree));
 			const threadModel = store.projectOfMain(mainSessionId)?.threadModel ?? null;
 			if (threadModel !== null) await host.applyModel(id, threadModel).catch((error) => {
 				this.deps.warn(`dsh-threads: thread ${id} keeps the default model: ${String(error)}`);
@@ -1215,118 +1345,6 @@ function optional(ctx, name) {
 // src/source.ts
 /** Message source kind for everything this plugin puts into a session inbox. */
 const SOURCE_KIND = "dsh-threads";
-// src/worktree.ts
-const execFileAsync = promisify(execFile);
-/** The system git, with repository hooks off (as DSH's worktree service does) and no prompts. */
-const systemGit = async (cwd, args) => {
-	const { stdout } = await execFileAsync("git", [
-		"-c",
-		"core.hooksPath=/dev/null",
-		...args
-	], {
-		cwd,
-		env: {
-			...process.env,
-			GIT_TERMINAL_PROMPT: "0"
-		},
-		maxBuffer: 1 << 20
-	});
-	return stdout;
-};
-const BRANCH_PREFIX = "dsh-threads/";
-const POOL = [".agents", "worktrees"];
-/** A refusal the model should read (not a bug). */
-var WorktreeError = class extends Error {};
-/**
-* New branch `dsh-threads/<name>` checked out at `<repo>/.agents/worktrees/dsh-threads-<name>`,
-* from the folder's current HEAD. Uncommitted files in the folder are not carried over.
-*/
-async function createWorktree(git, folder, name) {
-	let repositoryRoot;
-	try {
-		repositoryRoot = (await git(folder, ["rev-parse", "--show-toplevel"])).trim();
-	} catch {
-		throw new WorktreeError(`项目文件夹 ${folder} 不是 git 仓库，没法开 worktree。不用 worktree 再开，或者请用户先初始化仓库。`);
-	}
-	let baseCommit;
-	try {
-		baseCommit = (await git(repositoryRoot, [
-			"rev-parse",
-			"--verify",
-			"HEAD^{commit}"
-		])).trim();
-	} catch {
-		throw new WorktreeError("仓库还没有任何提交，没法从 HEAD 开 worktree。");
-	}
-	await preparePool(join(repositoryRoot, ...POOL));
-	const branch = `${BRANCH_PREFIX}${name}`;
-	const path = join(repositoryRoot, ...POOL, `dsh-threads-${name}`);
-	await git(repositoryRoot, [
-		"worktree",
-		"add",
-		"-b",
-		branch,
-		"--",
-		path,
-		baseCommit
-	]);
-	return {
-		path,
-		branch,
-		baseCommit,
-		repositoryRoot,
-		removed: false
-	};
-}
-/** Create the pool with a `.gitignore` of `*` (as DSH does), keeping an existing one as it is. */
-async function preparePool(pool) {
-	await mkdir(join(pool, ".."), { recursive: true });
-	try {
-		await mkdir(pool);
-	} catch (error) {
-		if (error.code === "EEXIST") return;
-		throw error;
-	}
-	await writeFile(join(pool, ".gitignore"), "*\n", { flag: "wx" });
-}
-/** Remove a thread's checkout, then its branch if it is fully merged. Never forces either. */
-async function removeWorktree(git, worktree) {
-	const { repositoryRoot, path, branch } = worktree;
-	let outcome = "removed";
-	if (existsSync(path)) try {
-		await git(repositoryRoot, [
-			"worktree",
-			"remove",
-			"--",
-			path
-		]);
-	} catch {
-		return {
-			outcome: "dirty",
-			branchKept: true
-		};
-	}
-	else {
-		outcome = "missing";
-		await git(repositoryRoot, ["worktree", "prune"]);
-	}
-	try {
-		await git(repositoryRoot, [
-			"branch",
-			"-d",
-			branch
-		]);
-		return {
-			outcome,
-			branchKept: false
-		};
-	} catch {
-		return {
-			outcome,
-			branchKept: true
-		};
-	}
-}
 // src/host.ts
 /**
 * Every message this plugin puts into an inbox: tagged with our source, shown as a compact
@@ -1547,12 +1565,13 @@ function projectPrompt(project, options) {
 	return lines.join("\n");
 }
 function threadPrompt(summaryMaxChars, worktree) {
+	const where = worktree === null ? "" : worktree.subdir.length === 0 ? `your own git worktree, ${JSON.stringify(worktree.path)}` : `${JSON.stringify(worktreeFolder(worktree))}: the project folder (${worktree.subdir}) inside your own git worktree ${JSON.stringify(worktree.path)}`;
 	return `# You are a thread (dsh-threads)
 
 A main conversation opened this session to do one task; its first message is the brief. The user may also talk to you here directly.
 - Do the task in this session and keep the details here.
 - Your reply text does not reach the main conversation; only thread_report does. Right before you finish every reply, call thread_report exactly once, even for a short task and even if the brief says to do nothing else: a status (done | blocked | needs_decision | failed), a summary of at most ${summaryMaxChars} characters saying what is now true and what is not done or not verified, the files you changed, and any decisions the user must make.
-${worktree === null ? "- Other threads may be working in the same folder at the same time. Change only the files your task needs and leave changes you did not make alone. Do not commit, switch branches, stash, reset, or run tree-wide rewrites (formatters, codemods) unless the brief asks for it." : `- You work in your own git worktree, ${JSON.stringify(worktree.path)}, on branch ${worktree.branch}; the project folder is not touched. Before you report, commit your changes to this branch with clear messages. Do not push, merge, rebase, switch branches, or delete the branch: the user decides what happens to it. Dependencies (node_modules and the like) are not installed in a fresh worktree; install them here if the task needs them.`}
+${worktree === null ? "- Other threads may be working in the same folder at the same time. Change only the files your task needs and leave changes you did not make alone. Do not commit, switch branches, stash, reset, or run tree-wide rewrites (formatters, codemods) unless the brief asks for it." : `- You work in ${where}, on branch ${worktree.branch}; the project folder is not touched. Before you report, commit your changes to this branch with clear messages. Do not push, merge, rebase, switch branches, or delete the branch: the user decides what happens to it. Dependencies (node_modules and the like) are not installed in a fresh worktree; install them here if the task needs them.`}
 - If you need the user to decide something, put it in decisions, report needs_decision, and stop.
 - If the brief asks you to offer options first, write each option out in your reply with enough detail to choose, list them in decisions, report needs_decision, and build nothing until the user picks.
 - You cannot open threads yourself.`;
@@ -2013,6 +2032,7 @@ const threadSchema = z.object({
 	error: z.string().nullable(),
 	worktree: z.object({
 		path: z.string(),
+		subdir: z.string().default(""),
 		branch: z.string(),
 		baseCommit: z.string(),
 		repositoryRoot: z.string(),

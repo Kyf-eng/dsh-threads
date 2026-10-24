@@ -5,7 +5,7 @@ import { composeNote, currentReport, normalizeReport, noticeSummary, plainLine, 
 import type { ThreadCardInfo } from './source.ts'
 import type { ThreadStore } from './store.ts'
 import type { Initiation, ModelChoice, PendingNote, ProposalRecord, ThreadRecord, ThreadReport, ThreadWorktree } from './types.ts'
-import type { RemoveResult } from './worktree.ts'
+import { type RemoveResult, worktreeFolder } from './worktree.ts'
 
 /** Longest report summary carried on a transcript card. */
 const CARD_SUMMARY_MAX = 160
@@ -213,7 +213,7 @@ export class ThreadManager {
     try {
       await store.putThread(record)
       const agent = await host.createSession(mainSessionId, id)
-      if (worktree !== null) await host.enterDirectory(id, worktree.path)
+      if (worktree !== null) await host.enterDirectory(id, worktreeFolder(worktree))
       // The project's thread model; a model DSH cannot use leaves the thread on the default.
       const threadModel = store.projectOfMain(mainSessionId)?.threadModel ?? null
       if (threadModel !== null) {

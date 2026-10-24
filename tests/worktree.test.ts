@@ -1,9 +1,9 @@
 import { existsSync } from 'node:fs'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { createWorktree, type Git, removeWorktree, systemGit, WorktreeError } from '../src/worktree.ts'
+import { createWorktree, type Git, removeWorktree, systemGit, WorktreeError, worktreeFolder } from '../src/worktree.ts'
 
 // Real git in throwaway repositories: these are git's rules we rely on, not ours.
 const git: Git = (cwd, args) => systemGit(cwd, ['-c', 'user.name=test', '-c', 'user.email=test@example.com', ...args])
@@ -42,6 +42,28 @@ describe('createWorktree', () => {
     expect(await readFile(join(worktree.repositoryRoot, '.agents', 'worktrees', '.gitignore'), 'utf8')).toBe('*\n')
     // The pool does not show up as a change in the project folder.
     expect((await git(root, ['status', '--porcelain'])).trim()).toBe('?? draft.txt')
+  })
+
+  it('maps a project in a subfolder of the repository to the same subfolder of the checkout', async () => {
+    const root = await repo()
+    await mkdir(join(root, 'packages', 'app'), { recursive: true })
+    await writeFile(join(root, 'packages', 'app', 'b.txt'), 'b\n')
+    await git(root, ['add', '.'])
+    await git(root, ['commit', '-qm', 'package'])
+
+    const worktree = await createWorktree(git, join(root, 'packages', 'app'), '2-sub')
+
+    expect(worktree.subdir).toBe('packages/app')
+    expect(worktree.path.endsWith(join('.agents', 'worktrees', 'dsh-threads-2-sub'))).toBe(true)
+    expect(existsSync(join(worktreeFolder(worktree), 'b.txt'))).toBe(true)
+    expect((await createWorktree(git, root, '2-root')).subdir).toBe('')
+  })
+
+  it('refuses a subfolder that is not committed yet, creating nothing', async () => {
+    const root = await repo()
+    await mkdir(join(root, 'fresh'))
+    await expect(createWorktree(git, join(root, 'fresh'), '1-y')).rejects.toBeInstanceOf(WorktreeError)
+    expect((await git(root, ['branch', '--list', 'dsh-threads/*'])).trim()).toBe('')
   })
 
   it('refuses a folder that is not a repository, or one without commits', async () => {

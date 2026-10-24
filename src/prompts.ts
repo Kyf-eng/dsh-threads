@@ -1,6 +1,7 @@
 // System-prompt sections, adapted from Claude's own rules for sessions it starts
 // (docs/IMPLEMENTATION.md §一). Model-facing, so written in English; models answer
 // in the user's language regardless.
+import { worktreeFolder } from './worktree.ts'
 
 /** After the built-in subagent section (2800), before the deployment persona suffix (10200). */
 export const SECTION_ORDER = 2850
@@ -63,10 +64,13 @@ export function projectPrompt(
   return lines.join('\n')
 }
 
-export function threadPrompt(summaryMaxChars: number, worktree: { path: string; branch: string } | null): string {
+export function threadPrompt(summaryMaxChars: number, worktree: { path: string; subdir: string; branch: string } | null): string {
+  const where = worktree === null ? '' : worktree.subdir.length === 0
+    ? `your own git worktree, ${JSON.stringify(worktree.path)}`
+    : `${JSON.stringify(worktreeFolder(worktree))}: the project folder (${worktree.subdir}) inside your own git worktree ${JSON.stringify(worktree.path)}`
   const folder = worktree === null
     ? '- Other threads may be working in the same folder at the same time. Change only the files your task needs and leave changes you did not make alone. Do not commit, switch branches, stash, reset, or run tree-wide rewrites (formatters, codemods) unless the brief asks for it.'
-    : `- You work in your own git worktree, ${JSON.stringify(worktree.path)}, on branch ${worktree.branch}; the project folder is not touched. Before you report, commit your changes to this branch with clear messages. Do not push, merge, rebase, switch branches, or delete the branch: the user decides what happens to it. Dependencies (node_modules and the like) are not installed in a fresh worktree; install them here if the task needs them.`
+    : `- You work in ${where}, on branch ${worktree.branch}; the project folder is not touched. Before you report, commit your changes to this branch with clear messages. Do not push, merge, rebase, switch branches, or delete the branch: the user decides what happens to it. Dependencies (node_modules and the like) are not installed in a fresh worktree; install them here if the task needs them.`
   return `# You are a thread (dsh-threads)
 
 A main conversation opened this session to do one task; its first message is the brief. The user may also talk to you here directly.

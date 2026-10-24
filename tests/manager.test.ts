@@ -1,3 +1,4 @@
+import { join } from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { Config } from '../src/config.ts'
 import { type ThreadAgent, type ThreadHost, ThreadError, ThreadManager } from '../src/manager.ts'
@@ -25,6 +26,7 @@ function setup(overrides: Partial<Config> = {}, options: { slowWrites?: boolean;
   let failCreate = false
   let notARepo = false
   let unreachableMain = false
+  let subdir = ''
   const entered: string[] = []
   const models: string[] = []
   const removals = new Map<string, { outcome: 'removed' | 'missing' | 'dirty'; branchKept: boolean }>()
@@ -48,7 +50,7 @@ function setup(overrides: Partial<Config> = {}, options: { slowWrites?: boolean;
     roundOutput(id) { return outputs.get(id) },
     async createWorktree(_main, name) {
       if (notARepo) throw new WorktreeError('not a git repository')
-      return { path: `/repo/.agents/worktrees/dsh-threads-${name}`, branch: `dsh-threads/${name}`, baseCommit: 'abc1234def', repositoryRoot: '/repo', removed: false }
+      return { path: `/repo/.agents/worktrees/dsh-threads-${name}`, subdir, branch: `dsh-threads/${name}`, baseCommit: 'abc1234def', repositoryRoot: '/repo', removed: false }
     },
     async enterDirectory(id, path) { entered.push(`${id}:${path}`) },
     async removeWorktree(worktree: ThreadWorktree) { return removals.get(worktree.branch) ?? { outcome: 'removed', branchKept: false } },
@@ -82,7 +84,7 @@ function setup(overrides: Partial<Config> = {}, options: { slowWrites?: boolean;
     pinned: false, instructions: '', icon: 'folder', goal: '', archived: false, notify: 'attention',
     mainModel: null, threadModel: null, createdAt: '', updatedAt: '',
   })
-  return { manager, store, main, agents, outputs, renamed, inherited, entered, removals, models, failCreate: () => { failCreate = true }, notARepo: () => { notARepo = true }, unreachableMain: () => { unreachableMain = true } }
+  return { manager, store, main, agents, outputs, renamed, inherited, entered, removals, models, failCreate: () => { failCreate = true }, notARepo: () => { notARepo = true }, unreachableMain: () => { unreachableMain = true }, subdir: (value: string) => { subdir = value } }
 }
 
 describe('ThreadManager', () => {
@@ -383,6 +385,13 @@ describe('worktrees', () => {
 
     await t.manager.onIdle('session-1')
     expect(t.main.followups[0]).toContain('分支：dsh-threads/1-1')
+  })
+
+  it('works in the project\'s subfolder of the checkout when the project is part of a larger repository', async () => {
+    const t = setup()
+    t.subdir('packages/app')
+    await t.manager.open('main', { title: 'a', task: 'x', initiation: 'user_asked', worktree: true })
+    expect(t.entered).toEqual([`session-1:${join('/repo/.agents/worktrees/dsh-threads-1-1', 'packages', 'app')}`])
   })
 
   it('refuses without creating a session when the folder is not a repository', async () => {

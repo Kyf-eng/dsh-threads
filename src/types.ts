@@ -26,7 +26,10 @@ export type RoundOrigin = 'dispatch' | 'user'
 
 /** A thread's own git checkout (M3b): it works and commits on its own branch. */
 export interface ThreadWorktree {
+  /** The checkout's root. */
   path: string
+  /** The project folder relative to the repository root, `/`-separated; '' when it is the root. */
+  subdir: string
   branch: string
   /** Commit the branch started from. */
   baseCommit: string

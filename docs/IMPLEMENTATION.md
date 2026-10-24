@@ -613,6 +613,8 @@ M2c 时 DeepSeek Flash 常常不调 `thread_report`（3 个里 2 个），卡片
   - 审批继承还是没法在这里验证：隔离环境没有模型登录，需要用户自己登录后再测。
 - 发布：合并后在 `main` 上打 `v0.1.0-rc.1` 标签，`gh release create --prerelease`，附 `npm pack` 出来的 `fky-dsh-threads-0.1.0-rc.1.tgz`，说明取自 CHANGELOG。
 
+- **v0.1.0-rc.2**（同日，用户确认后发布）：只加 rc.1 之后合并的两个修复（唤醒计数清零的竞态 #10、主题颜色变量失效 #11）和对应的界面小改动；版本号、README 安装地址、CHANGELOG 跟着改。
+
 #### 完整流程实测（2026-10-24，v0.1.0-rc.1）
 
 在 playground 仓库（push 已关）的 Playground 项目里，像普通用户一样提了一个两件事的真实请求：修 `plainLine` 对 markdown 链接和表格的处理并补测试；审查 `src/delivery.ts` 的唤醒规则（只读）。

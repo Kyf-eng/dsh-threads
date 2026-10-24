@@ -6,6 +6,7 @@ DeepSeek Harness (DSH) plugin: the main conversation dispatches work into real t
 - `npm run check` — typecheck (host + client), vitest, build. Run before every commit.
 - `npm run build` — `tsdown` writes `dist/index.js` (host, ESM) and `dist/client.js` (browser, CJS wrapped in `window.__ModuleLoader__.load`).
 - `npm run dev:install` — link this checkout into the Desktop profile. DSH must be fully quit first.
+- Release: a `chore: release vX` PR bumps `package.json` (and the lockfile), names the CHANGELOG section `## X — <date>` and points both READMEs' install addresses at `vX`; after it merges, push the tag `vX` on `main`. `.github/workflows/release.yml` checks they agree (`scripts/release.ts`), packs, and publishes the GitHub Release (a pre-release for `-rc` versions).
 
 ## Conventions
 - Developed against DSH `0.2.1-rc.2`; `engines.dsh` (`>=0.2.1-rc.2 <0.3.0`) decides compatibility. `@deepseek-ai/*` packages are devDependencies pinned to that version for types and tests; runtime imports must also be listed in `peerDependencies`, with the same range as `engines.dsh`, so DSH resolves them to its own copies. Never bundle them (`deps.neverBundle`).

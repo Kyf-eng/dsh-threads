@@ -1,0 +1,41 @@
+name: Release
+
+# Push a tag `v<version>` on main after the release commit: this checks that the tag,
+# package.json, CHANGELOG.md and both READMEs agree, builds and packs the plugin, and publishes
+# the GitHub Release with the .tgz (a pre-release when the version has a `-` suffix).
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - name: dist/ is up to date
+        run: git diff --exit-code -- dist
+      - name: package contents
+        run: node scripts/check-pack.mjs
+      - name: version, CHANGELOG and READMEs agree; release notes
+        id: release
+        run: echo "info=$(node scripts/release.ts "$GITHUB_REF_NAME" notes.md)" >> "$GITHUB_OUTPUT"
+      - run: npm pack
+      - name: GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          TARBALL: ${{ fromJSON(steps.release.outputs.info).tarball }}
+          PRERELEASE: ${{ fromJSON(steps.release.outputs.info).prerelease }}
+        run: |
+          flags=()
+          if [ "$PRERELEASE" = true ]; then flags+=(--prerelease); fi
+          gh release create "$TAG" "$TARBALL" --verify-tag --title "$TAG" --notes-file notes.md "${flags[@]}"

@@ -5,20 +5,25 @@
 const STYLE_ID = '@fky/dsh-threads/styles'
 
 const css = `
+/* Fixed colors can live on :root. Tokens built from DSH's theme variables must be computed where
+   those are defined (DSH sets them on body, not :root), so they are declared on body and again on
+   our own elements, which may sit in a differently themed subtree. */
 :root{
-  --dsht-running:var(--dsw-alias-state-business-primary,#4d6bfe);
   --dsht-waiting:#e9a23b;
   --dsht-success:#2ea56f;
   --dsht-branch:#8a63d2;
   --dsht-file-doc:#2ea56f;
   --dsht-file-code:#4a8cf0;
   --dsht-file-data:#d9a13b;
-  --dsht-line:color-mix(in srgb,var(--dsw-alias-label-primary) 9%,transparent);
+  --dsht-ease:cubic-bezier(.2,.7,.2,1);
+}
+body,[class*="dsht-"]{
+  --dsht-running:var(--dsw-alias-state-business-primary,#4d6bfe);
+  --dsht-line:color-mix(in srgb,var(--dsw-alias-label-primary) 10%,transparent);
   --dsht-hover:color-mix(in srgb,var(--dsw-alias-label-primary) 4.5%,transparent);
   --dsht-press:color-mix(in srgb,var(--dsw-alias-label-primary) 8%,transparent);
-  --dsht-fill:color-mix(in srgb,var(--dsw-alias-label-primary) 11%,transparent);
-  --dsht-ring:var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));
-  --dsht-ease:cubic-bezier(.2,.7,.2,1);
+  --dsht-fill:color-mix(in srgb,var(--dsw-alias-label-primary) 10%,transparent);
+  --dsht-ring:var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary,#4d6bfe));
 }
 
 /* State marks (glyphs.tsx) */
@@ -85,7 +90,7 @@ const css = `
 
 /* Cards in the transcript and above the composer */
 .dsht-card{box-sizing:border-box;max-width:640px;margin:8px 0;padding:4px;border:1px solid var(--dsht-line);border-radius:14px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 1px 2px rgba(0,0,0,.04);font-size:13px}
-.dsht-replies{margin-top:10px}
+.dsht-replies{margin-top:10px;width:fit-content;min-width:min(100%,300px)}
 .dsht-card-foot{display:flex;justify-content:flex-end;gap:6px;margin-top:2px;padding:8px 8px 6px;border-top:1px solid var(--dsht-line)}
 .dsht-brief{padding-bottom:8px}
 .dsht-brief-text{display:block;width:100%;padding:2px 10px;border:0;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:13px;line-height:20px;text-align:left;white-space:pre-wrap;overflow-wrap:anywhere;cursor:pointer;border-radius:8px}
@@ -145,7 +150,7 @@ const css = `
 .dsht-search svg{position:absolute;left:11px;top:10px;color:var(--dsw-alias-label-tertiary)}
 .dsht-search .dsht-text{padding-left:34px;height:38px;border-radius:11px}
 .dsht-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
-.dsht-project{position:relative;box-sizing:border-box;display:flex;flex-direction:column;gap:10px;min-height:124px;padding:16px;border:1px solid var(--dsht-line);border-radius:16px;background:var(--dsw-alias-bg-layer-1);cursor:pointer;outline:none;transition:border-color .15s var(--dsht-ease),box-shadow .2s var(--dsht-ease),transform .2s var(--dsht-ease)}
+.dsht-project{position:relative;box-sizing:border-box;display:flex;flex-direction:column;gap:10px;min-height:124px;padding:16px;border:1px solid var(--dsht-line);border-radius:16px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 1px 2px rgba(0,0,0,.04);cursor:pointer;outline:none;transition:border-color .15s var(--dsht-ease),box-shadow .2s var(--dsht-ease),transform .2s var(--dsht-ease)}
 .dsht-project:hover{border-color:color-mix(in srgb,var(--dsw-alias-label-primary) 16%,transparent);box-shadow:0 6px 20px rgba(0,0,0,.08);transform:translateY(-1px)}
 .dsht-project:focus-visible{outline:2px solid var(--dsht-ring);outline-offset:-2px}
 .dsht-project-icon{width:30px;height:30px;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;background:var(--dsht-fill);color:var(--dsw-alias-label-secondary)}

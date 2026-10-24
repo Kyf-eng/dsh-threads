@@ -39,7 +39,7 @@ export function installPerAgent(ctx: Context, manager: ThreadManager, projects: 
       disposers.push(scope.systemPrompt.section({
         name: PROJECT_SECTION_NAME,
         order: SECTION_ORDER - 1,
-        text: () => projectPrompt(projects.ofSession(agent.id)),
+        text: () => projectPrompt(projects.ofSession(agent.id), { goal: role === 'dispatcher' }),
       }))
       if (role === 'thread') {
         disposers.push(scope.tools.register(threadReportTool(manager, config.summaryMaxChars)))

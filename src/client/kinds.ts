@@ -6,9 +6,11 @@
 import { createElement, useSyncExternalStore } from 'react'
 import { callHost } from './api.ts'
 import { ThreadGlyph } from './glyphs.tsx'
+import { ProjectIcon } from './icons.tsx'
 import { threadsRevision } from './threads.ts'
 
 interface MainKind {
+  icon: string
   threads: number
   running: number
   waiting: number
@@ -105,13 +107,14 @@ function useKinds(): Kinds {
 
 /**
  * sidebar.session.row.leading entry for a main conversation: a raised hand when one of its
- * threads waits on the user, a breathing dot while any runs, nothing otherwise. (DSH puts the
- * row's own status dot here instead whenever the main conversation itself is busy.)
+ * threads waits on the user, a breathing dot while any runs, otherwise the project's icon (as
+ * Claude's sidebar shows it). DSH puts the row's own status dot here instead whenever the main
+ * conversation itself is busy.
  */
 export function MainRowMark({ sessionId, t }: { sessionId: string; t: (key: 'badge.waiting' | 'badge.running', vars: { count: number }) => string }) {
   const main = useKinds().mains.get(sessionId)
   if (main === undefined) return null
   if (main.waiting > 0) return createElement(ThreadGlyph, { state: 'waiting', label: t('badge.waiting', { count: main.waiting }) })
   if (main.running > 0) return createElement(ThreadGlyph, { state: 'running', label: t('badge.running', { count: main.running }) })
-  return null
+  return createElement('span', { className: 'dsht-row-icon' }, createElement(ProjectIcon, { id: main.icon, size: 14 }))
 }

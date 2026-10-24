@@ -69,7 +69,8 @@ function setup(overrides: Partial<Config> = {}, options: { slowWrites?: boolean;
   // 'main' is a project's main conversation; only those dispatch threads.
   void store.putProject({
     id: 'project-1', title: 'P', workspaceId: 'ws', folder: '/tmp/p', mainSessionId: 'main',
-    pinned: false, instructions: '', createdAt: '', updatedAt: '',
+    pinned: false, instructions: '', icon: 'folder', goal: '', archived: false, notify: 'attention',
+    mainModel: null, threadModel: null, createdAt: '', updatedAt: '',
   })
   return { manager, store, main, agents, outputs, renamed, inherited, entered, removals, failCreate: () => { failCreate = true }, notARepo: () => { notARepo = true } }
 }

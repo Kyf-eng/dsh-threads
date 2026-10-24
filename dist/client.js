@@ -148,15 +148,6 @@ function FolderIcon(props) {
 		children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", { d: "M3.5 7.5a2 2 0 0 1 2-2h3.6l2 2h7.4a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z" })
 	});
 }
-function PinIcon({ filled, ...props }) {
-	return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Svg$2, {
-		...props,
-		children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
-			d: "M14.5 3.5 20.5 9.5 17 11l-3.5 3.5.5 4-1.5 1.5-4-4-4.5 4.5M8.5 11.5 4 7l1.5-1.5 4 .5L13 2.5z",
-			fill: filled ? "currentColor" : "none"
-		})
-	});
-}
 function PlusIcon(props) {
 	return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Svg$2, {
 		...props,
@@ -186,12 +177,6 @@ function ThreadsIcon(props) {
 		]
 	});
 }
-function TrashIcon(props) {
-	return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Svg$2, {
-		...props,
-		children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", { d: "M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 12.5h9l1-12.5M10.5 11v5M13.5 11v5" })
-	});
-}
 function SearchIcon(props) {
 	return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Svg$2, {
 		...props,
@@ -200,6 +185,49 @@ function SearchIcon(props) {
 			cy: "11",
 			r: "6.5"
 		}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", { d: "m20 20-4.2-4.2" })]
+	});
+}
+/**
+* The icons a project can wear (Claude lets a project pick one). Ids are stored on the project;
+* an unknown id falls back to the folder.
+*/
+const PROJECT_ICON_PATHS = {
+	folder: "M3.5 7.5a2 2 0 0 1 2-2h3.6l2 2h7.4a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z",
+	scale: "M12 4.5v15M8 19.5h8M5 7.5h14M5 7.5l-2.5 5.5a2.5 2.5 0 0 0 5 0zM19 7.5l-2.5 5.5a2.5 2.5 0 0 0 5 0zM12 4.5v.01",
+	code: "m9 7.5-4.5 4.5 4.5 4.5M15 7.5l4.5 4.5-4.5 4.5",
+	terminal: "M4 5.5h16v13H4zM7.5 10l2.5 2-2.5 2M12.5 14.5h4",
+	rocket: "M12 3c3 2.2 4.8 5.7 4.8 9.6L15 16H9l-1.8-3.4C7.2 8.7 9 5.2 12 3zM12 9.3v.01M9 16l-2.2 4M15 16l2.2 4M12 16v3.5",
+	book: "M6.5 4H18v14H7a2 2 0 0 0-2 2V5.5A1.5 1.5 0 0 1 6.5 4zM5 20a2 2 0 0 1 2-2h11v2.5H7a2 2 0 0 1-2-2",
+	flask: "M9.5 3.5h5M10.5 3.5v5.7L5.4 18.1a1.6 1.6 0 0 0 1.4 2.4h10.4a1.6 1.6 0 0 0 1.4-2.4l-5.1-8.9V3.5M7.6 14.5h8.8",
+	globe: "M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17zM3.5 12h17M12 3.5c2.6 2.8 2.6 14.2 0 17M12 3.5c-2.6 2.8-2.6 14.2 0 17",
+	palette: "M12 3.5a8.5 8.5 0 1 0 0 17c1.2 0 1.8-.9 1.4-2l-.4-1a2 2 0 0 1 1.9-2.6H17a3.5 3.5 0 0 0 3.5-3.5c0-4.4-3.8-7.9-8.5-7.9zM7.8 11.5v.01M10 7.6v.01M14.6 7.6v.01",
+	star: "m12 3.8 2.5 5.1 5.6.8-4 3.9 1 5.6-5.1-2.6-5.1 2.6 1-5.6-4-3.9 5.6-.8z",
+	bolt: "M13 3 5 13.5h6L10 21l8-10.5h-6z",
+	chart: "M4 20h16M7 16.5v-5M12 16.5V8M17 16.5V5",
+	shield: "M12 3.5 5 6.2v5.6c0 4.1 2.9 7.5 7 8.7 4.1-1.2 7-4.6 7-8.7V6.2z",
+	cube: "m12 3.5 8 4.5v8l-8 4.5-8-4.5V8zM4 8l8 4.5L20 8M12 12.5v8",
+	layers: "m12 4 8.5 4.5L12 13 3.5 8.5zM3.5 12.5 12 17l8.5-4.5M3.5 16.5 12 21l8.5-4.5",
+	leaf: "M5 19c0-8.6 5.2-14 14-14 0 8.8-5.4 14-14 14zM5 19l8-8",
+	heart: "M12 20s-7.5-4.6-7.5-10.2A4.2 4.2 0 0 1 12 7.4a4.2 4.2 0 0 1 7.5 2.4C19.5 15.4 12 20 12 20z",
+	music: "M9 17.5v-12l10-2v12M9 17.5a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0zM19 15.5a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z",
+	camera: "M4 8.5h3.5L9 6h6l1.5 2.5H20v10H4zM12 10.2a3 3 0 1 0 0 6 3 3 0 0 0 0-6z",
+	gamepad: "M7 8h10a4 4 0 0 1 4 4v1.6a2.9 2.9 0 0 1-5.2 1.7L14.6 14H9.4l-1.2 1.3A2.9 2.9 0 0 1 3 13.6V12a4 4 0 0 1 4-4zM7.5 10.3v3M6 11.8h3M15.6 11.2v.01M17.4 12.8v.01",
+	briefcase: "M4 8h16v11H4zM9 8V5.5h6V8M4 13h16",
+	bulb: "M9.5 18h5M10.5 21h3M12 3.5a5.5 5.5 0 0 0-3.2 10c.7.5 1.2 1.3 1.2 2.2v.3h4v-.3c0-.9.5-1.7 1.2-2.2A5.5 5.5 0 0 0 12 3.5z",
+	compass: "M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17zM15.5 8.5l-2 5-5 2 2-5z",
+	target: "M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17zM12 7.5a4.5 4.5 0 1 0 0 9 4.5 4.5 0 0 0 0-9zM12 11.5v1"
+};
+const PROJECT_ICON_IDS = Object.keys(PROJECT_ICON_PATHS);
+function ProjectIcon({ id, ...props }) {
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Svg$2, {
+		...props,
+		children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", { d: PROJECT_ICON_PATHS[id] ?? PROJECT_ICON_PATHS.folder })
+	});
+}
+function BellIcon(props) {
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Svg$2, {
+		...props,
+		children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", { d: "M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15zM10 20.5a2 2 0 0 0 4 0" })
 	});
 }
 // src/client/api.ts
@@ -501,8 +529,9 @@ function useKinds() {
 }
 /**
 * sidebar.session.row.leading entry for a main conversation: a raised hand when one of its
-* threads waits on the user, a breathing dot while any runs, nothing otherwise. (DSH puts the
-* row's own status dot here instead whenever the main conversation itself is busy.)
+* threads waits on the user, a breathing dot while any runs, otherwise the project's icon (as
+* Claude's sidebar shows it). DSH puts the row's own status dot here instead whenever the main
+* conversation itself is busy.
 */
 function MainRowMark({ sessionId, t }) {
 	const main = useKinds().mains.get(sessionId);
@@ -515,7 +544,10 @@ function MainRowMark({ sessionId, t }) {
 		state: "running",
 		label: t("badge.running", { count: main.running })
 	});
-	return null;
+	return (0, react.createElement)("span", { className: "dsht-row-icon" }, (0, react.createElement)(ProjectIcon, {
+		id: main.icon,
+		size: 14
+	}));
 }
 // src/client/ui.tsx
 function Svg({ children, size = 14, ...rest }) {
@@ -971,36 +1003,70 @@ const NS = "dshThreads";
 const zh = {
 	"panel": "项目",
 	"page.title": "项目",
-	"page.subtitle": "一个项目 = 一个文件夹 + 一个主对话。主对话可以把任务派给讨论串。",
 	"page.new": "新建项目",
+	"page.newFrom": "用已有工作区新建",
 	"page.search": "搜索项目…",
+	"page.sortBy": "排序方式",
 	"page.sort.activity": "最近活动",
 	"page.sort.created": "创建时间",
 	"page.sort.title": "名称",
-	"page.empty": "还没有项目。新建一个，或者在左侧会话的\"…\"菜单里选\"设为项目\"。",
+	"page.empty": "还没有项目。一个项目 = 一个文件夹 + 一个主对话，主对话可以把任务派给讨论串。点\"新建项目\"，或者在左侧会话的\"…\"菜单里选\"设为项目\"。",
 	"page.noMatch": "没有匹配的项目。",
 	"page.loadFailed": "读取项目失败：{error}",
+	"page.archived": "已归档 · {count}",
 	"card.threads": "{count} 个讨论串",
 	"card.running": "{count} 个运行中",
-	"card.pin": "置顶",
-	"card.unpin": "取消置顶",
-	"card.remove": "移除项目",
-	"remove.title": "移除项目「{title}」？",
-	"remove.description": "只移除项目记录。主对话和讨论串会保留为普通会话。",
-	"remove.confirm": "移除",
+	"menu.more": "更多操作",
+	"menu.pin": "置顶",
+	"menu.unpin": "取消置顶",
+	"menu.notify": "通知",
+	"menu.settings": "设置",
+	"menu.archive": "归档",
+	"menu.unarchive": "取消归档",
+	"menu.delete": "删除",
+	"notify.all": "所有新消息",
+	"notify.all.hint": "包含每个讨论串的回报",
+	"notify.all.short": "全部",
+	"notify.attention": "主对话与需要你处理的",
+	"notify.attention.hint": "主对话的回复，以及等你决定的讨论串",
+	"notify.attention.short": "主对话",
+	"notify.waiting": "仅需要你处理的",
+	"notify.waiting.hint": "只在讨论串等你决定时",
+	"notify.waiting.short": "需处理",
+	"notify.none": "无",
+	"notify.none.hint": "不发通知",
+	"notify.none.short": "关",
+	"delete.title": "删除项目「{title}」？",
+	"delete.description": "只删除项目记录。主对话和讨论串会保留为普通会话。",
+	"delete.confirm": "删除",
 	"common.cancel": "取消",
 	"common.close": "关闭",
 	"new.title": "新建项目",
-	"new.name": "项目名",
+	"new.name": "名称",
 	"new.namePlaceholder": "例如：Vetoarc",
-	"new.folder": "文件夹（工作区）",
-	"new.otherFolder": "其他文件夹…",
+	"new.folder": "文件夹",
+	"new.recent": "最近的文件夹",
+	"new.chooseFolder": "选择文件夹…",
+	"new.change": "更改",
 	"new.pathPlaceholder": "/Users/me/code/app",
 	"new.pathHint": "写文件夹的完整路径；还不是工作区的话会自动添加。",
-	"new.instructions": "项目说明（可选）",
-	"new.instructionsPlaceholder": "会加进主对话和所有讨论串的系统提示，例如代码规范、回复语言。",
-	"new.create": "创建并打开",
+	"new.create": "新建项目",
 	"new.failed": "创建失败：{error}",
+	"new.pickFailed": "没能打开文件夹选择器：{error}",
+	"settings.title": "项目设置",
+	"settings.general": "通用",
+	"settings.memory": "记忆",
+	"settings.nameIcon": "名称和图标",
+	"settings.chooseIcon": "选择图标",
+	"settings.goal": "目标",
+	"settings.goalHint": "你希望协调者努力实现的结果。只加进主对话的系统提示。",
+	"settings.goalPlaceholder": "例如：把整个 API 的 p95 延迟降到 200 毫秒以内",
+	"settings.folder": "文件夹",
+	"settings.folderHint": "主对话和讨论串都在这个文件夹里工作。",
+	"settings.instructions": "项目说明",
+	"settings.instructionsHint": "会加进主对话和所有讨论串的系统提示，例如代码规范、回复语言、要避开的目录。",
+	"settings.instructionsPlaceholder": "例如：用中文回复；不要改 vendor/ 下的文件；提交信息用 Conventional Commits。",
+	"settings.saveFailed": "保存失败：{error}",
 	"menu.makeProject": "设为项目",
 	"time.justNow": "刚刚",
 	"time.minutes": "{count} 分钟前",
@@ -1049,36 +1115,70 @@ const zh = {
 const en = {
 	"panel": "Projects",
 	"page.title": "Projects",
-	"page.subtitle": "A project is one folder and one main conversation. The main conversation can hand tasks to threads.",
 	"page.new": "New project",
+	"page.newFrom": "New from a workspace",
 	"page.search": "Search projects…",
+	"page.sortBy": "Sort by",
 	"page.sort.activity": "Recent activity",
 	"page.sort.created": "Date created",
 	"page.sort.title": "Name",
-	"page.empty": "No projects yet. Create one, or choose \"Make project\" in a conversation's \"…\" menu.",
+	"page.empty": "No projects yet. A project is one folder and one main conversation that can hand tasks to threads. Choose \"New project\", or \"Make project\" in a conversation's \"…\" menu.",
 	"page.noMatch": "No matching projects.",
 	"page.loadFailed": "Could not load projects: {error}",
+	"page.archived": "Archived · {count}",
 	"card.threads": "{count} threads",
 	"card.running": "{count} running",
-	"card.pin": "Pin",
-	"card.unpin": "Unpin",
-	"card.remove": "Remove project",
-	"remove.title": "Remove project \"{title}\"?",
-	"remove.description": "Only the project record is removed. Its main conversation and threads stay as ordinary conversations.",
-	"remove.confirm": "Remove",
+	"menu.more": "More actions",
+	"menu.pin": "Pin",
+	"menu.unpin": "Unpin",
+	"menu.notify": "Notifications",
+	"menu.settings": "Settings",
+	"menu.archive": "Archive",
+	"menu.unarchive": "Unarchive",
+	"menu.delete": "Delete",
+	"notify.all": "All new messages",
+	"notify.all.hint": "Including every thread's report",
+	"notify.all.short": "All",
+	"notify.attention": "Main conversation and what needs you",
+	"notify.attention.hint": "Main conversation replies and threads waiting for you",
+	"notify.attention.short": "Main",
+	"notify.waiting": "Only what needs you",
+	"notify.waiting.hint": "Only when a thread waits for your decision",
+	"notify.waiting.short": "Needs you",
+	"notify.none": "None",
+	"notify.none.hint": "No notifications",
+	"notify.none.short": "Off",
+	"delete.title": "Delete project \"{title}\"?",
+	"delete.description": "Only the project record is deleted. Its main conversation and threads stay as ordinary conversations.",
+	"delete.confirm": "Delete",
 	"common.cancel": "Cancel",
 	"common.close": "Close",
 	"new.title": "New project",
 	"new.name": "Name",
 	"new.namePlaceholder": "e.g. Vetoarc",
-	"new.folder": "Folder (workspace)",
-	"new.otherFolder": "Other folder…",
+	"new.folder": "Folder",
+	"new.recent": "Recent folders",
+	"new.chooseFolder": "Choose a folder…",
+	"new.change": "Change",
 	"new.pathPlaceholder": "/Users/me/code/app",
 	"new.pathHint": "The folder's full path; it is added as a workspace if it is not one yet.",
-	"new.instructions": "Project instructions (optional)",
-	"new.instructionsPlaceholder": "Added to the system prompt of the main conversation and every thread: conventions, reply language, …",
-	"new.create": "Create and open",
+	"new.create": "Create project",
 	"new.failed": "Could not create the project: {error}",
+	"new.pickFailed": "Could not open the folder picker: {error}",
+	"settings.title": "Project settings",
+	"settings.general": "General",
+	"settings.memory": "Memory",
+	"settings.nameIcon": "Name and icon",
+	"settings.chooseIcon": "Choose an icon",
+	"settings.goal": "Goal",
+	"settings.goalHint": "The outcome you want the coordinator to work towards. Only the main conversation sees it.",
+	"settings.goalPlaceholder": "e.g. Bring the whole API's p95 latency under 200 ms",
+	"settings.folder": "Folder",
+	"settings.folderHint": "The main conversation and its threads work in this folder.",
+	"settings.instructions": "Project instructions",
+	"settings.instructionsHint": "Added to the system prompt of the main conversation and every thread: code style, reply language, folders to leave alone.",
+	"settings.instructionsPlaceholder": "e.g. Reply in English; do not touch vendor/; use Conventional Commits.",
+	"settings.saveFailed": "Could not save: {error}",
 	"menu.makeProject": "Make project",
 	"time.justNow": "just now",
 	"time.minutes": "{count} min ago",
@@ -1166,31 +1266,56 @@ function MakeProjectMenuItem({ sessionId, displayTitle, useMenuOpenState, t, sho
 	});
 }
 // src/client/NewProjectDialog.tsx
-const OTHER = "__dsh-threads-other-folder__";
-function NewProjectDialog({ open, onClose, onCreated, workspaces, t }) {
+const basename = (path) => path.split(/[\\/]/).filter((part) => part.length > 0).pop() ?? path;
+function NewProjectDialog({ open, initialFolder, onClose, onCreated, workspaces, pickFolder, t }) {
 	const [title, setTitle] = (0, react.useState)("");
-	const [workspaceId, setWorkspaceId] = (0, react.useState)("");
-	const [path, setPath] = (0, react.useState)("");
-	const [instructions, setInstructions] = (0, react.useState)("");
+	/** The user typed the name; picking a folder no longer overwrites it. */
+	const [named, setNamed] = (0, react.useState)(false);
+	const [folder, setFolder] = (0, react.useState)(null);
+	const [typing, setTyping] = (0, react.useState)(false);
+	const [recentOpen, setRecentOpen] = (0, react.useState)(false);
 	const [error, setError] = (0, react.useState)(null);
 	const [busy, setBusy] = (0, react.useState)(false);
-	const choice = workspaceId || workspaces[0]?.workspaceId || OTHER;
-	const byPath = choice === OTHER;
-	const ready = title.trim().length > 0 && (byPath ? path.trim().length > 0 : choice.length > 0);
+	(0, react.useEffect)(() => {
+		if (!open) return;
+		setFolder(initialFolder ?? null);
+		setTitle(initialFolder === null || initialFolder === void 0 ? "" : basename(initialFolder));
+		setNamed(false);
+		setTyping(false);
+		setError(null);
+	}, [open, initialFolder]);
+	const choose = (path) => {
+		setFolder(path);
+		if (!named) setTitle(basename(path));
+	};
+	const pick = async () => {
+		setError(null);
+		let picked;
+		try {
+			picked = await pickFolder();
+		} catch (failure) {
+			setError(t("new.pickFailed", { error: failure instanceof Error ? failure.message : String(failure) }));
+			return;
+		}
+		if (picked === "unavailable") setTyping(true);
+		else if (picked !== null) choose(picked);
+	};
+	const close = () => {
+		setRecentOpen(false);
+		onClose();
+	};
+	const ready = title.trim().length > 0 && (folder ?? "").trim().length > 0;
 	const submit = async () => {
+		if (!ready || busy) return;
 		setBusy(true);
 		setError(null);
 		try {
-			const target = byPath ? { folder: path.trim() } : { workspaceId: choice };
 			const project = await callHost("projects.create", {
 				title,
-				...target,
-				instructions
+				folder: (folder ?? "").trim()
 			});
 			await projectsStore.refresh();
-			setTitle("");
-			setPath("");
-			setInstructions("");
+			close();
 			onCreated(project);
 		} catch (failure) {
 			setError(t("new.failed", { error: failure instanceof Error ? failure.message : String(failure) }));
@@ -1200,103 +1325,386 @@ function NewProjectDialog({ open, onClose, onCreated, workspaces, t }) {
 	};
 	return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Modal, {
 		open,
-		onClose,
+		onClose: close,
 		title: t("new.title"),
-		closeLabel: t("common.close"),
-		footer: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-			className: "dsht-buttons",
-			children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
-				variant: "ghost",
-				onClick: onClose,
-				children: t("common.cancel")
-			}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
-				variant: "primary",
-				disabled: busy || !ready,
-				onClick: () => {
-					submit();
-				},
-				children: t("new.create")
-			})]
-		}),
+		headless: true,
+		className: "dsht-dialog dsht-np",
 		children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("form", {
-			className: "dsht-form",
+			className: "dsht-np-body",
 			onSubmit: (event) => {
 				event.preventDefault();
 				submit();
 			},
 			children: [
-				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-					className: "dsht-field",
-					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-						className: "dsht-field-label",
-						children: t("new.name")
-					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-						className: "dsht-text",
-						value: title,
-						placeholder: t("new.namePlaceholder"),
-						"data-modal-autofocus": true,
-						onChange: (event) => setTitle(event.target.value),
-						maxLength: 60
+				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					className: "dsht-dialog-head",
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", {
+						className: "dsht-dialog-title",
+						children: t("new.title")
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+						type: "button",
+						className: "dsht-icon-button",
+						"aria-label": t("common.close"),
+						title: t("common.close"),
+						onClick: close,
+						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CloseIcon, {})
 					})]
 				}),
 				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-					className: "dsht-field",
-					children: [
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-							className: "dsht-field-label",
-							children: t("new.folder")
-						}),
-						workspaces.length === 0 ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
-							className: "dsht-select",
-							value: choice,
-							onChange: (event) => setWorkspaceId(event.target.value),
-							children: [workspaces.map((workspace) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("option", {
-								value: workspace.workspaceId,
-								children: [
-									workspace.title,
-									" — ",
-									workspace.path
-								]
-							}, workspace.workspaceId)), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
-								value: OTHER,
-								children: t("new.otherFolder")
-							})]
-						}),
-						byPath ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-							className: "dsht-text dsht-mono",
-							value: path,
-							placeholder: t("new.pathPlaceholder"),
-							spellCheck: false,
-							onChange: (event) => setPath(event.target.value)
-						}) : null,
-						byPath ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-							className: "dsht-hint",
-							children: t("new.pathHint")
-						}) : null
-					]
-				}),
-				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-					className: "dsht-field",
+					className: "dsht-np-field",
 					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-						className: "dsht-field-label",
-						children: t("new.instructions")
-					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("textarea", {
-						className: "dsht-textarea",
-						value: instructions,
-						placeholder: t("new.instructionsPlaceholder"),
-						onChange: (event) => setInstructions(event.target.value),
-						maxLength: 4e3
+						className: "dsht-np-label",
+						children: t("new.name")
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+						className: "dsht-np-input",
+						value: title,
+						placeholder: t("new.namePlaceholder"),
+						maxLength: 60,
+						"data-modal-autofocus": true,
+						onChange: (event) => {
+							setTitle(event.target.value);
+							setNamed(event.target.value.length > 0);
+						}
+					})]
+				}),
+				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					className: "dsht-np-field",
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: "dsht-np-label-row",
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: "dsht-np-label",
+							children: t("new.folder")
+						}), workspaces.length === 0 ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Menu, {
+							open: recentOpen,
+							onClose: () => setRecentOpen(false),
+							align: "end",
+							portal: true,
+							anchor: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+								type: "button",
+								className: "dsht-np-link",
+								onClick: () => setRecentOpen(!recentOpen),
+								children: [t("new.recent"), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronDownOutlineRegular, { size: 14 })]
+							}),
+							children: workspaces.map((workspace) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.MenuItemButton, {
+								icon: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(FolderIcon, { size: 16 }),
+								onSelect: () => {
+									choose(workspace.path);
+									setTyping(false);
+									setRecentOpen(false);
+								},
+								children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+									className: "dsht-menu-two",
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: workspace.title }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "dsht-menu-sub",
+										children: workspace.path
+									})]
+								})
+							}, workspace.workspaceId))
+						})]
+					}), typing ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+						className: "dsht-np-input dsht-mono",
+						value: folder ?? "",
+						placeholder: t("new.pathPlaceholder"),
+						spellCheck: false,
+						onChange: (event) => setFolder(event.target.value),
+						onBlur: () => {
+							if (!named && (folder ?? "").trim().length > 0) setTitle(basename(folder ?? ""));
+						}
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: "dsht-hint",
+						children: t("new.pathHint")
+					})] }) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+						type: "button",
+						className: `dsht-np-folder${folder === null ? " dsht-np-folder-empty" : ""}`,
+						onClick: () => {
+							pick();
+						},
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)(FolderIcon, { size: 18 }),
+							folder === null ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "dsht-np-folder-text",
+								children: t("new.chooseFolder")
+							}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+								className: "dsht-np-folder-text",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "dsht-np-folder-name",
+									children: basename(folder)
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "dsht-np-folder-path",
+									children: folder
+								})]
+							}),
+							folder === null ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "dsht-np-change",
+								children: t("new.change")
+							})
+						]
 					})]
 				}),
 				error === null ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 					className: "dsht-error",
 					children: error
+				}),
+				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					className: "dsht-dialog-actions",
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
+						variant: "ghost",
+						type: "button",
+						onClick: close,
+						children: t("common.cancel")
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
+						variant: "primary",
+						type: "submit",
+						disabled: busy || !ready,
+						children: t("new.create")
+					})]
 				})
 			]
 		})
 	});
 }
+// src/client/ProjectSettings.tsx
+const GOAL_MAX = 8e3;
+const MEMORY_MAX = 4e3;
+const SECTIONS = [{
+	id: "general",
+	label: "settings.general",
+	icon: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconSettingsOutlineRegular, { size: 16 })
+}, {
+	id: "memory",
+	label: "settings.memory",
+	icon: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ProjectIcon, {
+		id: "book",
+		size: 16
+	})
+}];
+function ProjectSettings({ project, open, onClose, t }) {
+	const [section, setSection] = (0, react.useState)("general");
+	const [title, setTitle] = (0, react.useState)("");
+	const [goal, setGoal] = (0, react.useState)("");
+	const [memory, setMemory] = (0, react.useState)("");
+	const [picking, setPicking] = (0, react.useState)(false);
+	const [error, setError] = (0, react.useState)(null);
+	(0, react.useEffect)(() => {
+		if (!open || project === null) return;
+		setTitle(project.title);
+		setGoal(project.goal);
+		setMemory(project.instructions);
+		setPicking(false);
+		setError(null);
+	}, [open, project?.id]);
+	if (project === null) return null;
+	const save = async (patch) => {
+		if (!Object.entries(patch).some(([key, value]) => project[key] !== value)) return;
+		setError(null);
+		try {
+			await callHost("projects.update", {
+				id: project.id,
+				...patch
+			});
+			await projectsStore.refresh();
+		} catch (failure) {
+			setError(t("settings.saveFailed", { error: failure instanceof Error ? failure.message : String(failure) }));
+		}
+	};
+	const close = () => {
+		save({
+			title: title.trim().length > 0 ? title : project.title,
+			goal,
+			instructions: memory
+		});
+		onClose();
+	};
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Modal, {
+		open,
+		onClose: close,
+		title: t("settings.title"),
+		headless: true,
+		className: "dsht-dialog dsht-settings",
+		children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+			className: "dsht-settings-layout",
+			children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("nav", {
+				className: "dsht-settings-nav",
+				"aria-label": t("settings.title"),
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+					className: "dsht-settings-nav-title",
+					children: t("settings.title")
+				}), SECTIONS.map((item) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+					type: "button",
+					className: `dsht-settings-nav-item${section === item.id ? " is-active" : ""}`,
+					"aria-current": section === item.id ? "page" : void 0,
+					onClick: () => setSection(item.id),
+					children: [item.icon, /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t(item.label) })]
+				}, item.id))]
+			}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: "dsht-settings-main",
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					className: "dsht-settings-head",
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", {
+						className: "dsht-dialog-title",
+						children: t(section === "general" ? "settings.general" : "settings.memory")
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+						type: "button",
+						className: "dsht-icon-button",
+						"aria-label": t("common.close"),
+						title: t("common.close"),
+						onClick: close,
+						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CloseIcon, {})
+					})]
+				}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					className: "dsht-settings-body",
+					children: [error === null ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: "dsht-error",
+						children: error
+					}), section === "general" ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: "dsht-setting-row",
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								className: "dsht-setting-text",
+								children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									className: "dsht-setting-title",
+									children: t("settings.nameIcon")
+								})
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: "dsht-name-field",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+									type: "button",
+									className: "dsht-icon-pick",
+									"aria-label": t("settings.chooseIcon"),
+									title: t("settings.chooseIcon"),
+									"aria-expanded": picking,
+									onClick: () => setPicking(!picking),
+									children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ProjectIcon, {
+										id: project.icon,
+										size: 18
+									})
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+									className: "dsht-name-input",
+									value: title,
+									maxLength: 60,
+									onChange: (event) => setTitle(event.target.value),
+									onBlur: () => {
+										if (title.trim().length > 0) save({ title });
+									}
+								})]
+							})]
+						}),
+						picking ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+							className: "dsht-icon-grid",
+							role: "listbox",
+							"aria-label": t("settings.chooseIcon"),
+							children: PROJECT_ICON_IDS.map((id) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								role: "option",
+								"aria-selected": project.icon === id,
+								className: `dsht-icon-cell${project.icon === id ? " is-active" : ""}`,
+								onClick: () => {
+									save({ icon: id });
+									setPicking(false);
+								},
+								children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ProjectIcon, {
+									id,
+									size: 18
+								})
+							}, id))
+						}) : null,
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: "dsht-setting-block",
+							children: [
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									className: "dsht-setting-title",
+									children: t("settings.goal")
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									className: "dsht-setting-hint",
+									children: t("settings.goalHint")
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("textarea", {
+									className: "dsht-setting-textarea",
+									value: goal,
+									maxLength: GOAL_MAX,
+									placeholder: t("settings.goalPlaceholder"),
+									onChange: (event) => setGoal(event.target.value),
+									onBlur: () => {
+										save({ goal });
+									}
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									className: "dsht-counter",
+									children: [
+										goal.length.toLocaleString(),
+										" / ",
+										GOAL_MAX.toLocaleString()
+									]
+								})
+							]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: "dsht-setting-block",
+							children: [
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									className: "dsht-setting-title",
+									children: t("settings.folder")
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									className: "dsht-setting-hint",
+									children: t("settings.folderHint")
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									className: "dsht-setting-path dsht-mono",
+									title: project.folder,
+									children: project.folder
+								})
+							]
+						})
+					] }) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: "dsht-setting-block",
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								className: "dsht-setting-title",
+								children: t("settings.instructions")
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								className: "dsht-setting-hint",
+								children: t("settings.instructionsHint")
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("textarea", {
+								className: "dsht-setting-textarea dsht-setting-textarea-tall",
+								value: memory,
+								maxLength: MEMORY_MAX,
+								placeholder: t("settings.instructionsPlaceholder"),
+								onChange: (event) => setMemory(event.target.value),
+								onBlur: () => {
+									save({ instructions: memory });
+								}
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: "dsht-counter",
+								children: [
+									memory.length.toLocaleString(),
+									" / ",
+									MEMORY_MAX.toLocaleString()
+								]
+							})
+						]
+					})]
+				})]
+			})]
+		})
+	});
+}
 // src/client/ProjectsPage.tsx
+const SORT_LABELS = {
+	activity: "page.sort.activity",
+	created: "page.sort.created",
+	title: "page.sort.title"
+};
+const NOTIFY_LEVELS = [
+	"all",
+	"attention",
+	"waiting",
+	"none"
+];
 const sameList = (a, b) => a.length === b.length && a.every((item, index) => item.workspaceId === b[index]?.workspaceId && item.title === b[index]?.title);
 function sortProjects(projects, sort) {
 	const key = (p) => sort === "created" ? p.createdAt : p.lastActivity;
@@ -1306,40 +1714,78 @@ function sortProjects(projects, sort) {
 		return key(b).localeCompare(key(a));
 	});
 }
-function ProjectsPage({ t, useWorkspaces, useSessionStatus, openSession, pinSession }) {
+function ProjectsPage({ t, useWorkspaces, useSessionStatus, openSession, pinSession, pickFolder, showProjects }) {
 	const { status, projects, error } = useProjects();
 	const [query, setQuery] = (0, react.useState)("");
 	const [sort, setSort] = (0, react.useState)("activity");
-	const [creating, setCreating] = (0, react.useState)(false);
-	const [removing, setRemoving] = (0, react.useState)(null);
+	const [sortOpen, setSortOpen] = (0, react.useState)(false);
+	const [newOpen, setNewOpen] = (0, react.useState)(false);
+	const [creating, setCreating] = (0, react.useState)(null);
+	const [settingsId, setSettingsId] = (0, react.useState)(null);
+	const [deleting, setDeleting] = (0, react.useState)(null);
+	const [showArchived, setShowArchived] = (0, react.useState)(false);
+	const [actionError, setActionError] = (0, react.useState)(null);
 	const workspaces = useWorkspaces((snapshot) => snapshot.items, sameList);
 	const runningKey = useSessionStatus((statuses) => [...statuses].filter(([, state]) => state.running).map(([id]) => id).sort().join(","));
 	(0, react.useEffect)(() => {
 		projectsStore.refresh();
 	}, [runningKey]);
-	const visible = (0, react.useMemo)(() => {
+	const { active, archived } = (0, react.useMemo)(() => {
 		const needle = query.trim().toLowerCase();
-		return sortProjects(needle.length === 0 ? projects : projects.filter((p) => p.title.toLowerCase().includes(needle) || p.folder.toLowerCase().includes(needle)), sort);
+		const sorted = sortProjects(needle.length === 0 ? projects : projects.filter((p) => p.title.toLowerCase().includes(needle) || p.folder.toLowerCase().includes(needle)), sort);
+		return {
+			active: sorted.filter((p) => !p.archived),
+			archived: sorted.filter((p) => p.archived)
+		};
 	}, [
 		projects,
 		query,
 		sort
 	]);
-	const togglePin = async (project) => {
-		await callHost("projects.pin", {
-			id: project.id,
-			pinned: !project.pinned
-		});
-		await pinSession(project.mainSessionId, !project.pinned).catch(() => {});
-		await projectsStore.refresh();
+	const run = async (action) => {
+		setActionError(null);
+		try {
+			await action();
+		} catch (failure) {
+			setActionError(failure instanceof Error ? failure.message : String(failure));
+		} finally {
+			threadsRevision.bump();
+			await projectsStore.refresh();
+		}
 	};
-	const remove = async (project) => {
+	const actions = {
+		togglePin: (project) => run(async () => {
+			await callHost("projects.pin", {
+				id: project.id,
+				pinned: !project.pinned
+			});
+			await pinSession(project.mainSessionId, !project.pinned).catch(() => {});
+		}),
+		setNotify: (project, notify) => run(() => callHost("projects.update", {
+			id: project.id,
+			notify
+		})),
+		openSettings: (project) => setSettingsId(project.id),
+		toggleArchive: (project) => run(async () => {
+			await callHost(project.archived ? "projects.unarchive" : "projects.archive", { id: project.id });
+			setTimeout(showProjects, 120);
+		}),
+		askDelete: (project) => setDeleting(project)
+	};
+	const remove = (project) => run(async () => {
+		setDeleting(null);
 		await callHost("projects.remove", { id: project.id });
 		if (project.pinned) await pinSession(project.mainSessionId, false).catch(() => {});
-		setRemoving(null);
-		threadsRevision.bump();
-		await projectsStore.refresh();
-	};
+	});
+	const newFromItems = [{
+		type: "label",
+		id: "from",
+		text: t("page.newFrom")
+	}, ...workspaces.map((workspace) => ({
+		id: workspace.workspaceId,
+		label: workspace.title,
+		icon: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(FolderIcon, { size: 16 })
+	}))];
 	return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 		className: "dsht-page",
 		children: [
@@ -1348,37 +1794,73 @@ function ProjectsPage({ t, useWorkspaces, useSessionStatus, openSession, pinSess
 				children: [
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: "dsht-head",
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h1", {
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h1", {
 							className: "dsht-title",
 							children: t("page.title")
-						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-							className: "dsht-subtitle",
-							children: t("page.subtitle")
-						})] }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 							className: "dsht-actions",
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
-								className: "dsht-select",
-								value: sort,
-								onChange: (event) => setSort(event.target.value),
-								children: [
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
-										value: "activity",
-										children: t("page.sort.activity")
-									}),
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
-										value: "created",
-										children: t("page.sort.created")
-									}),
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
-										value: "title",
-										children: t("page.sort.title")
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Menu, {
+								open: sortOpen,
+								onClose: () => setSortOpen(false),
+								align: "end",
+								portal: true,
+								selection: "check",
+								selectedId: sort,
+								items: [
+									"activity",
+									"created",
+									"title"
+								].map((id) => ({
+									id,
+									label: t(SORT_LABELS[id])
+								})),
+								onSelect: (id) => {
+									setSort(id);
+									setSortOpen(false);
+								},
+								anchor: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+									type: "button",
+									className: "dsht-select-button",
+									"aria-haspopup": "menu",
+									"aria-expanded": sortOpen,
+									onClick: () => setSortOpen(!sortOpen),
+									children: [
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "dsht-select-label",
+											children: t("page.sortBy")
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t(SORT_LABELS[sort]) }),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronDownOutlineRegular, { size: 14 })
+									]
+								})
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: "dsht-split",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
+									variant: "primary",
+									icon: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(PlusIcon, { size: 14 }),
+									onClick: () => setCreating({ folder: null }),
+									children: t("page.new")
+								}), workspaces.length === 0 ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Menu, {
+									open: newOpen,
+									onClose: () => setNewOpen(false),
+									align: "end",
+									portal: true,
+									items: newFromItems,
+									onSelect: (id) => {
+										setNewOpen(false);
+										const workspace = workspaces.find((item) => item.workspaceId === id);
+										if (workspace !== void 0) setCreating({ folder: workspace.path });
+									},
+									anchor: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
+										variant: "primary",
+										className: "dsht-split-more",
+										"aria-label": t("page.newFrom"),
+										"aria-haspopup": "menu",
+										"aria-expanded": newOpen,
+										onClick: () => setNewOpen(!newOpen),
+										icon: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronDownOutlineRegular, { size: 14 })
 									})
-								]
-							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
-								variant: "primary",
-								icon: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(PlusIcon, { size: 14 }),
-								onClick: () => setCreating(true),
-								children: t("page.new")
+								})]
 							})]
 						})]
 					}),
@@ -1395,108 +1877,233 @@ function ProjectsPage({ t, useWorkspaces, useSessionStatus, openSession, pinSess
 						className: "dsht-error",
 						children: t("page.loadFailed", { error })
 					}) : null,
-					visible.length === 0 ? status === "ready" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+					actionError === null ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: "dsht-error",
+						children: actionError
+					}),
+					active.length === 0 ? status === "ready" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						className: "dsht-empty",
 						children: projects.length === 0 ? t("page.empty") : t("page.noMatch")
 					}) : null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						className: "dsht-grid",
-						children: visible.map((project) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							className: "dsht-project",
-							role: "button",
-							tabIndex: 0,
-							onClick: () => openSession(project.mainSessionId),
-							onKeyDown: (event) => {
-								if (event.key === "Enter") openSession(project.mainSessionId);
-							},
-							children: [
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: "dsht-project-icon",
-									children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(FolderIcon, { size: 16 })
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-									className: "dsht-project-title",
-									children: [project.title, project.pinned ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(PinIcon, {
-										size: 13,
-										filled: true,
-										className: "dsht-pinned"
-									}) : null]
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-									className: "dsht-project-meta",
-									children: [
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: relativeTime(t, project.lastActivity) }),
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("card.threads", { count: project.threads }) }),
-										project.running > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-											className: "dsht-running",
-											children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: "dsht-pulse" }), t("card.running", { count: project.running })]
-										}) : null
-									]
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-									className: "dsht-project-folder",
-									title: project.folder,
-									children: project.folder
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-									className: "dsht-project-tools",
-									onClick: (event) => event.stopPropagation(),
-									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-										type: "button",
-										className: `dsht-icon-button ${project.pinned ? "" : "dsht-hover-only"}`,
-										title: project.pinned ? t("card.unpin") : t("card.pin"),
-										"aria-label": project.pinned ? t("card.unpin") : t("card.pin"),
-										onClick: () => {
-											togglePin(project);
-										},
-										children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(PinIcon, {
-											size: 14,
-											filled: project.pinned
-										})
-									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-										type: "button",
-										className: "dsht-icon-button dsht-hover-only",
-										title: t("card.remove"),
-										"aria-label": t("card.remove"),
-										onClick: () => setRemoving(project),
-										children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(TrashIcon, { size: 14 })
-									})]
-								})
-							]
+						children: active.map((project) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ProjectCard, {
+							project,
+							actions,
+							openSession,
+							t
 						}, project.id))
+					}),
+					archived.length === 0 ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
+						className: "dsht-archived",
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+							type: "button",
+							className: "dsht-archived-toggle",
+							"aria-expanded": showArchived,
+							onClick: () => setShowArchived(!showArchived),
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronDownOutlineRegular, {
+								size: 14,
+								className: showArchived ? "" : "dsht-rotate"
+							}), t("page.archived", { count: archived.length })]
+						}), showArchived ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+							className: "dsht-grid",
+							children: archived.map((project) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ProjectCard, {
+								project,
+								actions,
+								openSession,
+								t
+							}, project.id))
+						}) : null]
 					})
 				]
 			}),
 			/* @__PURE__ */ (0, react_jsx_runtime.jsx)(NewProjectDialog, {
-				open: creating,
-				onClose: () => setCreating(false),
+				open: creating !== null,
+				initialFolder: creating?.folder ?? null,
+				onClose: () => setCreating(null),
 				onCreated: (project) => {
-					setCreating(false);
 					threadsRevision.bump();
 					openSession(project.mainSessionId);
 				},
 				workspaces,
+				pickFolder,
+				t
+			}),
+			/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ProjectSettings, {
+				project: projects.find((p) => p.id === settingsId) ?? null,
+				open: settingsId !== null,
+				onClose: () => setSettingsId(null),
 				t
 			}),
 			/* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Modal, {
-				open: removing !== null,
-				onClose: () => setRemoving(null),
-				title: removing === null ? "" : t("remove.title", { title: removing.title }),
-				description: t("remove.description"),
+				open: deleting !== null,
+				onClose: () => setDeleting(null),
+				title: deleting === null ? "" : t("delete.title", { title: deleting.title }),
+				description: t("delete.description"),
 				closeLabel: t("common.close"),
 				footer: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 					className: "dsht-buttons",
 					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
 						variant: "ghost",
-						onClick: () => setRemoving(null),
+						onClick: () => setDeleting(null),
 						children: t("common.cancel")
 					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
 						variant: "primary",
+						className: "dsht-danger",
 						onClick: () => {
-							if (removing !== null) remove(removing);
+							if (deleting !== null) remove(deleting);
 						},
-						children: t("remove.confirm")
+						children: t("delete.confirm")
 					})]
 				})
+			})
+		]
+	});
+}
+const SHORTCUTS = {
+	p: "pin",
+	s: "settings",
+	a: "archive",
+	d: "delete"
+};
+function ProjectCard({ project, actions, openSession, t }) {
+	const [menuOpen, setMenuOpen] = (0, react.useState)(false);
+	const act = (id) => {
+		setMenuOpen(false);
+		if (id === "pin") actions.togglePin(project);
+		else if (id === "settings") actions.openSettings(project);
+		else if (id === "archive") actions.toggleArchive(project);
+		else if (id === "delete") actions.askDelete(project);
+		else if (id.startsWith("notify:")) actions.setNotify(project, id.slice(7));
+	};
+	(0, react.useEffect)(() => {
+		if (!menuOpen) return;
+		const onKey = (event) => {
+			if (event.metaKey || event.ctrlKey || event.altKey) return;
+			const id = SHORTCUTS[event.key.toLowerCase()];
+			if (id === void 0 || id === "pin" && project.archived) return;
+			event.preventDefault();
+			event.stopPropagation();
+			act(id);
+		};
+		document.addEventListener("keydown", onKey, true);
+		return () => document.removeEventListener("keydown", onKey, true);
+	}, [menuOpen, project]);
+	const items = [
+		...project.archived ? [] : [{
+			id: "pin",
+			label: project.pinned ? t("menu.unpin") : t("menu.pin"),
+			icon: project.pinned ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconPinFillRegular, { size: 16 }) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconPinOutlineRegular, { size: 16 }),
+			shortcut: { keys: ["P"] }
+		}],
+		{
+			id: "notify",
+			label: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+				className: "dsht-menu-aside-row",
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("menu.notify") }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+					className: "dsht-menu-aside",
+					children: t(`notify.${project.notify}.short`)
+				})]
+			}),
+			icon: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(BellIcon, { size: 16 }),
+			submenu: NOTIFY_LEVELS.map((level) => ({
+				id: `notify:${level}`,
+				icon: project.notify === level ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconCheckOutlineRegular, { size: 16 }) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: "dsht-menu-icon-space" }),
+				label: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+					className: "dsht-menu-two",
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t(`notify.${level}`) }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: "dsht-menu-sub",
+						children: t(`notify.${level}.hint`)
+					})]
+				})
+			}))
+		},
+		{
+			id: "settings",
+			label: t("menu.settings"),
+			icon: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconSettingsOutlineRegular, { size: 16 }),
+			shortcut: { keys: ["S"] }
+		},
+		{
+			type: "separator",
+			id: "separator"
+		},
+		{
+			id: "archive",
+			label: project.archived ? t("menu.unarchive") : t("menu.archive"),
+			icon: project.archived ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconUnarchiveOutlineRegular, { size: 16 }) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconArchiveOutlineRegular, { size: 16 }),
+			shortcut: { keys: ["A"] }
+		},
+		{
+			id: "delete",
+			label: t("menu.delete"),
+			icon: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconTrashOutlineRegular, { size: 16 }),
+			danger: true,
+			shortcut: { keys: ["D"] }
+		}
+	];
+	const open = () => {
+		if (!project.archived) openSession(project.mainSessionId);
+	};
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+		className: `dsht-project${menuOpen ? " is-menu-open" : ""}${project.archived ? " is-archived" : ""}`,
+		role: "button",
+		tabIndex: 0,
+		onClick: open,
+		onKeyDown: (event) => {
+			if (event.key === "Enter" && event.target === event.currentTarget) open();
+		},
+		children: [
+			/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: "dsht-project-top",
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+					className: "dsht-project-icon",
+					children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ProjectIcon, {
+						id: project.icon,
+						size: 16
+					})
+				}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+					className: "dsht-project-tools",
+					onClick: (event) => event.stopPropagation(),
+					children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Menu, {
+						open: menuOpen,
+						onClose: () => setMenuOpen(false),
+						align: "end",
+						portal: true,
+						items,
+						onSelect: act,
+						anchor: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+							type: "button",
+							className: "dsht-icon-button",
+							"aria-label": t("menu.more"),
+							title: t("menu.more"),
+							"aria-haspopup": "menu",
+							"aria-expanded": menuOpen,
+							onClick: () => setMenuOpen(!menuOpen),
+							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconEllipsisOutlineRegular, { size: 16 })
+						})
+					})
+				})]
+			}),
+			/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: "dsht-project-title",
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+					className: "dsht-project-name",
+					children: project.title
+				}), project.pinned ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconPinFillRegular, {
+					size: 14,
+					className: "dsht-pin-on"
+				}) : null]
+			}),
+			/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: "dsht-project-meta",
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: relativeTime(t, project.lastActivity) }),
+					project.threads > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("card.threads", { count: project.threads }) }) : null,
+					project.running > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+						className: "dsht-running",
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: "dsht-pulse" }), t("card.running", { count: project.running })]
+					}) : null
+				]
 			})
 		]
 	});
@@ -1560,6 +2167,7 @@ const css = `
    those are defined (DSH sets them on body, not :root), so they are declared on body and again on
    our own elements, which may sit in a differently themed subtree. */
 :root{
+  --dsht-folder:#5b8def;
   --dsht-waiting:#e9a23b;
   --dsht-success:#2ea56f;
   --dsht-branch:#8a63d2;
@@ -1574,6 +2182,10 @@ body,[class*="dsht-"]{
   --dsht-hover:color-mix(in srgb,var(--dsw-alias-label-primary) 4.5%,transparent);
   --dsht-press:color-mix(in srgb,var(--dsw-alias-label-primary) 8%,transparent);
   --dsht-fill:color-mix(in srgb,var(--dsw-alias-label-primary) 10%,transparent);
+  --dsht-line-strong:color-mix(in srgb,var(--dsw-alias-label-primary) 15%,transparent);
+  --dsht-line-hover:color-mix(in srgb,var(--dsw-alias-label-primary) 24%,transparent);
+  --dsht-field:color-mix(in srgb,var(--dsw-alias-label-primary) 3%,transparent);
+  --dsht-ring-soft:color-mix(in srgb,var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary,#4d6bfe)) 18%,transparent);
   --dsht-ring:var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary,#4d6bfe));
 }
 
@@ -1684,45 +2296,121 @@ body,[class*="dsht-"]{
 .dsht-list{display:flex;flex-direction:column;gap:4px;padding:6px 8px}
 .dsht-list-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 10px 6px;font-size:12px;color:var(--dsw-alias-label-tertiary)}
 
+.dsht-error{font-size:13px;line-height:19px;color:var(--dsw-alias-state-error-primary)}
+.dsht-hint{font-size:12px;line-height:17px;color:var(--dsw-alias-label-tertiary)}
+.dsht-buttons{display:flex;justify-content:flex-end;gap:8px}
+.dsht-danger.dsht-danger{background:var(--dsw-alias-state-error-primary,#e5484d);color:#fff}
+.dsht-icon-button{width:28px;height:28px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--dsw-alias-label-tertiary);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:background .15s var(--dsht-ease),color .15s var(--dsht-ease)}
+.dsht-icon-button:hover,.dsht-icon-button:focus-visible,.dsht-icon-button[aria-expanded="true"]{background:var(--dsht-press);color:var(--dsw-alias-label-primary)}
+.dsht-icon-button:focus-visible{outline:2px solid var(--dsht-ring);outline-offset:-2px}
+
+/* Menus (Menu items with two lines, or a value on the right) */
+.dsht-menu-two{display:flex;flex-direction:column;gap:1px;min-width:0;text-align:left}
+.dsht-menu-sub{max-width:320px;font-size:11.5px;line-height:16px;color:var(--dsw-alias-label-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dsht-menu-aside-row{display:flex;align-items:center;justify-content:space-between;gap:18px;width:100%}
+.dsht-menu-aside{font-size:12px;color:var(--dsw-alias-label-tertiary)}
+.dsht-menu-icon-space{display:inline-block;width:16px;height:16px}
+
+/* Dialogs: headless Modals; a doubled class beats the Modal defaults, as DSH's own dialogs do */
+.dsht-dialog.dsht-dialog{gap:0;padding:0;overflow:hidden}
+.dsht-dialog-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.dsht-dialog-title{margin:0;font-size:18px;line-height:26px;font-weight:600;letter-spacing:-.01em;color:var(--dsw-alias-label-primary)}
+.dsht-dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:4px}
+.dsht-np.dsht-np{width:min(480px,100%)}
+.dsht-np-body{display:flex;flex-direction:column;gap:18px;padding:22px 24px 20px}
+.dsht-np-field{display:flex;flex-direction:column;gap:8px}
+.dsht-np-label-row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.dsht-np-label{font-size:13px;line-height:18px;font-weight:500;color:var(--dsw-alias-label-secondary)}
+.dsht-np-input{box-sizing:border-box;width:100%;height:42px;padding:0 14px;border:1px solid var(--dsht-line-strong);border-radius:10px;background:var(--dsht-field);color:var(--dsw-alias-label-primary);font:inherit;font-size:14px;outline:none;transition:border-color .15s var(--dsht-ease),box-shadow .15s var(--dsht-ease)}
+.dsht-np-input::placeholder{color:var(--dsw-alias-label-tertiary)}
+.dsht-np-input:focus{border-color:var(--dsht-ring);box-shadow:0 0 0 3px var(--dsht-ring-soft)}
+.dsht-np-link{display:inline-flex;align-items:center;gap:3px;padding:2px 6px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:12.5px;cursor:pointer}
+.dsht-np-link:hover,.dsht-np-link:focus-visible{background:var(--dsht-hover);color:var(--dsw-alias-label-primary)}
+.dsht-np-folder{box-sizing:border-box;display:flex;align-items:center;gap:12px;width:100%;min-height:58px;padding:10px 14px;border:1px solid var(--dsht-line-strong);border-radius:12px;background:var(--dsht-field);color:var(--dsw-alias-label-secondary);font:inherit;text-align:left;cursor:pointer;transition:background .15s var(--dsht-ease),border-color .15s var(--dsht-ease)}
+.dsht-np-folder:hover{background:var(--dsht-hover);border-color:var(--dsht-line-hover)}
+.dsht-np-folder:focus-visible{outline:2px solid var(--dsht-ring);outline-offset:1px}
+.dsht-np-folder>svg{flex:none;color:var(--dsht-folder)}
+.dsht-np-folder-empty{justify-content:center;border-style:dashed}
+.dsht-np-folder-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;font-size:14px}
+.dsht-np-folder-empty .dsht-np-folder-text{flex:0 1 auto}
+.dsht-np-folder-name{font-weight:550;color:var(--dsw-alias-label-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dsht-np-folder-path{font-size:12px;color:var(--dsw-alias-label-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dsht-np-change{flex:none;font-size:12.5px;color:var(--dsw-alias-label-tertiary)}
+
 /* Projects page */
 .dsht-page{box-sizing:border-box;height:100%;overflow:auto;padding:calc(var(--dsh-frame-top-clearance,0px) + 36px) 40px 48px;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-base)}
 .dsht-inner{max-width:1040px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
-.dsht-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px}
-.dsht-title{margin:0;font-size:26px;line-height:34px;font-weight:600;letter-spacing:-.01em}
-.dsht-subtitle{margin:4px 0 0;font-size:13px;line-height:19px;color:var(--dsw-alias-label-tertiary)}
+.dsht-head{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.dsht-title{margin:0;font-size:28px;line-height:36px;font-weight:600;letter-spacing:-.015em}
 .dsht-actions{display:flex;gap:8px;align-items:center;flex:none}
-.dsht-select,.dsht-text,.dsht-textarea{box-sizing:border-box;border:1px solid color-mix(in srgb,var(--dsw-alias-label-primary) 15%,transparent);border-radius:9px;background:color-mix(in srgb,var(--dsw-alias-label-primary) 3%,transparent);color:inherit;font:inherit;font-size:13px;transition:border-color .15s var(--dsht-ease)}
-.dsht-select:hover,.dsht-text:hover,.dsht-textarea:hover{border-color:color-mix(in srgb,var(--dsw-alias-label-primary) 24%,transparent)}
-.dsht-select{height:32px;padding:0 8px}
-.dsht-text{height:34px;padding:0 10px;width:100%}
-.dsht-textarea{min-height:96px;padding:8px 10px;resize:vertical;width:100%;line-height:19px}
-.dsht-select:focus-visible,.dsht-text:focus-visible,.dsht-textarea:focus-visible{outline:2px solid var(--dsht-ring);outline-offset:-1px}
+.dsht-select-button{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 10px;border:1px solid var(--dsht-line-strong);border-radius:9px;background:var(--dsht-field);color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;cursor:pointer;transition:background .15s var(--dsht-ease)}
+.dsht-select-button:hover,.dsht-select-button[aria-expanded="true"]{background:var(--dsht-hover)}
+.dsht-select-label{color:var(--dsw-alias-label-tertiary)}
+.dsht-split{display:inline-flex;align-items:stretch}
+.dsht-split>button:first-child{border-top-right-radius:0;border-bottom-right-radius:0}
+.dsht-split-more.dsht-split-more{margin-left:1px;padding-left:8px;padding-right:8px;border-top-left-radius:0;border-bottom-left-radius:0}
+.dsht-text{box-sizing:border-box;width:100%;height:34px;padding:0 10px;border:1px solid var(--dsht-line-strong);border-radius:9px;background:var(--dsht-field);color:inherit;font:inherit;font-size:13px;transition:border-color .15s var(--dsht-ease)}
+.dsht-text:hover{border-color:var(--dsht-line-hover)}
+.dsht-text:focus-visible{outline:none;border-color:var(--dsht-ring);box-shadow:0 0 0 3px var(--dsht-ring-soft)}
 .dsht-search{position:relative}
-.dsht-search svg{position:absolute;left:11px;top:10px;color:var(--dsw-alias-label-tertiary)}
-.dsht-search .dsht-text{padding-left:34px;height:38px;border-radius:11px}
+.dsht-search svg{position:absolute;left:12px;top:11px;color:var(--dsw-alias-label-tertiary)}
+.dsht-search .dsht-text{padding-left:36px;height:40px;border-radius:11px}
 .dsht-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
-.dsht-project{position:relative;box-sizing:border-box;display:flex;flex-direction:column;gap:10px;min-height:124px;padding:16px;border:1px solid var(--dsht-line);border-radius:16px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 1px 2px rgba(0,0,0,.04);cursor:pointer;outline:none;transition:border-color .15s var(--dsht-ease),box-shadow .2s var(--dsht-ease),transform .2s var(--dsht-ease)}
-.dsht-project:hover{border-color:color-mix(in srgb,var(--dsw-alias-label-primary) 16%,transparent);box-shadow:0 6px 20px rgba(0,0,0,.08);transform:translateY(-1px)}
+.dsht-project{position:relative;box-sizing:border-box;display:flex;flex-direction:column;gap:8px;min-height:118px;padding:14px 12px 16px 16px;border:1px solid var(--dsht-line);border-radius:16px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 1px 2px rgba(0,0,0,.04);cursor:pointer;outline:none;transition:border-color .15s var(--dsht-ease),box-shadow .2s var(--dsht-ease),transform .2s var(--dsht-ease)}
+.dsht-project:hover{border-color:var(--dsht-line-hover);box-shadow:0 6px 20px rgba(0,0,0,.08);transform:translateY(-1px)}
 .dsht-project:focus-visible{outline:2px solid var(--dsht-ring);outline-offset:-2px}
+.dsht-project.is-archived{cursor:default;opacity:.72}
+.dsht-project.is-archived:hover{transform:none;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+.dsht-project-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:4px}
 .dsht-project-icon{width:30px;height:30px;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;background:var(--dsht-fill);color:var(--dsw-alias-label-secondary)}
-.dsht-project-title{display:flex;align-items:center;gap:6px;font-size:15px;line-height:21px;font-weight:600;padding-right:56px;overflow-wrap:anywhere}
+.dsht-project-tools{display:flex;opacity:0;transition:opacity .15s var(--dsht-ease)}
+.dsht-project-tools .dsht-icon-button svg{transform:rotate(90deg)}
+.dsht-project:hover .dsht-project-tools,.dsht-project:focus-within .dsht-project-tools,.dsht-project.is-menu-open .dsht-project-tools{opacity:1}
+.dsht-project-title{display:flex;align-items:center;gap:6px;min-width:0;padding-right:4px;font-size:15px;line-height:21px;font-weight:600}
+.dsht-project-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dsht-pin-on{flex:none;color:var(--dsht-running)}
 .dsht-project-meta{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;font-size:12px;line-height:17px;color:var(--dsw-alias-label-tertiary)}
-.dsht-project-folder{font-size:11px;line-height:15px;color:var(--dsw-alias-label-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.dsht-project-tools{position:absolute;top:12px;right:12px;display:flex;gap:2px}
-.dsht-icon-button{width:26px;height:26px;padding:0;border:0;border-radius:7px;background:transparent;color:var(--dsw-alias-label-tertiary);display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
-.dsht-icon-button:hover,.dsht-icon-button:focus-visible{background:var(--dsht-press);color:var(--dsw-alias-label-primary)}
-.dsht-project:not(:hover):not(:focus-within) .dsht-hover-only{visibility:hidden}
-.dsht-pinned{color:var(--dsw-alias-label-secondary)}
 .dsht-running{display:inline-flex;align-items:center;gap:5px;color:var(--dsht-running)}
-.dsht-empty{padding:56px 16px;text-align:center;font-size:13px;line-height:20px;color:var(--dsw-alias-label-tertiary);border:1px dashed var(--dsht-line);border-radius:16px}
-.dsht-error{font-size:13px;line-height:19px;color:var(--dsw-alias-state-error-primary)}
-.dsht-form{display:flex;flex-direction:column;gap:14px}
-.dsht-field{display:flex;flex-direction:column;gap:6px;font-size:13px}
-.dsht-field-label{color:var(--dsw-alias-label-secondary)}
-.dsht-hint{font-size:12px;line-height:17px;color:var(--dsw-alias-label-tertiary)}
-.dsht-buttons{display:flex;justify-content:flex-end;gap:8px}
+.dsht-empty{padding:56px 24px;text-align:center;font-size:13px;line-height:20px;color:var(--dsw-alias-label-tertiary);border:1px dashed var(--dsht-line-strong);border-radius:16px}
+.dsht-archived{display:flex;flex-direction:column;gap:12px;margin-top:8px}
+.dsht-archived-toggle{align-self:flex-start;display:inline-flex;align-items:center;gap:6px;padding:4px 8px 4px 6px;border:0;border-radius:8px;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:13px;cursor:pointer}
+.dsht-archived-toggle:hover,.dsht-archived-toggle:focus-visible{background:var(--dsht-hover);color:var(--dsw-alias-label-primary)}
+.dsht-rotate{transform:rotate(-90deg)}
+.dsht-row-icon{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;color:var(--dsw-alias-label-tertiary)}
 
-@media (max-width:640px){.dsht-page{padding-left:16px;padding-right:16px}.dsht-head{flex-direction:column;align-items:flex-start}.dsht-card{max-width:none}}
+/* Project settings */
+.dsht-settings.dsht-settings{width:min(820px,100%);height:min(620px,100dvh - 48px)}
+.dsht-settings-layout{display:flex;height:100%;min-height:0}
+.dsht-settings-nav{box-sizing:border-box;flex:none;width:200px;padding:18px 10px;display:flex;flex-direction:column;gap:2px;border-right:1px solid var(--dsht-line);background:var(--dsht-field)}
+.dsht-settings-nav-title{padding:2px 10px 12px;font-size:13px;color:var(--dsw-alias-label-tertiary)}
+.dsht-settings-nav-item{display:flex;align-items:center;gap:10px;height:34px;padding:0 10px;border:0;border-radius:9px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:14px;text-align:left;cursor:pointer;transition:background .15s var(--dsht-ease)}
+.dsht-settings-nav-item:hover,.dsht-settings-nav-item:focus-visible{background:var(--dsht-hover);color:var(--dsw-alias-label-primary)}
+.dsht-settings-nav-item.is-active{background:var(--dsht-press);color:var(--dsw-alias-label-primary);font-weight:550}
+.dsht-settings-main{flex:1;min-width:0;display:flex;flex-direction:column}
+.dsht-settings-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 18px 6px 32px}
+.dsht-settings-body{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;padding:4px 32px 28px}
+.dsht-setting-row{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:16px 0;border-bottom:1px solid var(--dsht-line)}
+.dsht-setting-text{min-width:0;display:flex;flex-direction:column;gap:3px}
+.dsht-setting-title{font-size:14px;line-height:20px;font-weight:500;color:var(--dsw-alias-label-primary)}
+.dsht-setting-hint{font-size:12.5px;line-height:18px;color:var(--dsw-alias-label-tertiary)}
+.dsht-setting-block{display:flex;flex-direction:column;gap:4px;padding:16px 0;border-bottom:1px solid var(--dsht-line)}
+.dsht-setting-textarea{box-sizing:border-box;width:100%;min-height:112px;margin-top:8px;padding:10px 12px;border:1px solid var(--dsht-line-strong);border-radius:10px;background:var(--dsht-field);color:inherit;font:inherit;font-size:13.5px;line-height:20px;resize:vertical;outline:none;transition:border-color .15s var(--dsht-ease),box-shadow .15s var(--dsht-ease)}
+.dsht-setting-textarea::placeholder{color:var(--dsw-alias-label-tertiary)}
+.dsht-setting-textarea:focus{border-color:var(--dsht-ring);box-shadow:0 0 0 3px var(--dsht-ring-soft)}
+.dsht-setting-textarea-tall{min-height:240px}
+.dsht-counter{align-self:flex-end;font-size:12px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums}
+.dsht-setting-path{box-sizing:border-box;margin-top:8px;padding:9px 12px;border:1px solid var(--dsht-line);border-radius:10px;background:var(--dsht-field);font-size:12.5px;color:var(--dsw-alias-label-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dsht-name-field{display:flex;align-items:center;flex:none;width:min(340px,100%);height:40px;border:1px solid var(--dsht-line-strong);border-radius:10px;background:var(--dsht-field);overflow:hidden;transition:border-color .15s var(--dsht-ease),box-shadow .15s var(--dsht-ease)}
+.dsht-name-field:focus-within{border-color:var(--dsht-ring);box-shadow:0 0 0 3px var(--dsht-ring-soft)}
+.dsht-icon-pick{flex:none;display:inline-flex;align-items:center;justify-content:center;width:40px;height:100%;border:0;border-right:1px solid var(--dsht-line);background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer}
+.dsht-icon-pick:hover,.dsht-icon-pick[aria-expanded="true"]{background:var(--dsht-hover);color:var(--dsw-alias-label-primary)}
+.dsht-name-input{flex:1;min-width:0;height:100%;padding:0 12px;border:0;background:transparent;color:inherit;font:inherit;font-size:14px;outline:none}
+.dsht-icon-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(40px,1fr));gap:6px;margin:12px 0 4px;padding:12px;border:1px solid var(--dsht-line);border-radius:12px;background:var(--dsht-field)}
+.dsht-icon-cell{display:inline-flex;align-items:center;justify-content:center;height:40px;border:0;border-radius:9px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;transition:background .15s var(--dsht-ease)}
+.dsht-icon-cell:hover,.dsht-icon-cell:focus-visible{background:var(--dsht-hover);color:var(--dsw-alias-label-primary)}
+.dsht-icon-cell.is-active{background:var(--dsht-press);color:var(--dsw-alias-label-primary);box-shadow:inset 0 0 0 1.5px var(--dsht-ring)}
+
+@media (max-width:640px){.dsht-page{padding-left:16px;padding-right:16px}.dsht-head{flex-direction:column;align-items:flex-start}.dsht-card{max-width:none}.dsht-settings-layout{flex-direction:column}.dsht-settings-nav{width:auto;flex-direction:row;border-right:0;border-bottom:1px solid var(--dsht-line)}.dsht-settings-nav-title{display:none}.dsht-settings-head,.dsht-settings-body{padding-left:20px;padding-right:20px}}
 `;
 /** Add the stylesheet; returns a disposer that removes it. */
 function injectStyles() {
@@ -1993,6 +2681,16 @@ function apply(root) {
 	const openSession = (sessionId) => ctx.uiWorkspace.openSession(sessionId);
 	const pinSession = (sessionId, pinned) => pinned ? ctx.workspaces.pinSession(sessionId) : ctx.workspaces.unpinSession(sessionId);
 	const showProjects = () => ctx.layout.selectPanel(PANEL_ID);
+	const pickFolder = async () => {
+		const desktop = globalThis.__DSH_DIRECTORY_PICKER__;
+		if (desktop !== void 0) return desktop.pick();
+		try {
+			return await ctx.uiWorkspace.pickDirectory();
+		} catch (error) {
+			if (String(error?.code ?? error).includes("unavailable")) return "unavailable";
+			throw error;
+		}
+	};
 	const openThread = (threadId) => ctx.sidebarRight.openResource(threadAddress(threadId), { kind: CHAT_TAB_KIND });
 	const openThreadsList = () => ctx.sidebarRight.openTab(LIST_TAB_KIND);
 	ctx.slots.inject("main", () => ctx.slots.register({
@@ -2001,7 +2699,9 @@ function apply(root) {
 		locale: NS,
 		inject: () => ({
 			openSession,
-			pinSession
+			pinSession,
+			pickFolder,
+			showProjects
 		})
 	}, ProjectsPage));
 	ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({

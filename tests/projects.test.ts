@@ -8,6 +8,8 @@ function setup() {
   const created: string[] = []
   const renamed: string[] = []
   const threads = new Set<string>()
+  const archived = new Set<string>()
+  const busy = new Set<string>()
   const workspaces = new Map([['ws-1', { id: 'ws-1', path: '/code/app', sessions: ['existing'] }]])
   const host: ProjectHost = {
     async createMainSession(workspaceId, title) {
@@ -25,6 +27,11 @@ function setup() {
       return ws === undefined ? undefined : { id: ws.id, path: ws.path }
     },
     rename: (sessionId, title) => { renamed.push(`${sessionId}:${title}`) },
+    async archiveSession(sessionId) {
+      if (busy.has(sessionId)) throw new Error('workspace/session-active')
+      archived.add(sessionId)
+    },
+    async unarchiveSession(sessionId) { archived.delete(sessionId) },
     async ensureWorkspace(folder) {
       if (folder === '/missing') throw new Error('not a directory')
       const existing = [...workspaces.values()].find((ws) => ws.path === folder)
@@ -45,7 +52,15 @@ function setup() {
   })
   let changes = 0
   projects.onChange(() => { changes += 1 })
-  return { store, projects, created, renamed, threads, changes: () => changes }
+  return { store, projects, created, renamed, threads, archived, busy, changes: () => changes }
+}
+
+function threadOf(mainSessionId: string, id: string, status: 'idle' | 'running') {
+  return {
+    id, mainSessionId, n: 1, title: 't', task: 'x', initiation: 'user_asked' as const, status, resolved: false,
+    round: status === 'running' ? 'dispatch' as const : null, roundStartSeq: 0, roundStartedAt: null,
+    lastReport: null, error: null, worktree: null, reminder: null, createdAt: '', updatedAt: '',
+  }
 }
 
 describe('Projects', () => {
@@ -92,6 +107,37 @@ describe('Projects', () => {
     await t.projects.remove(project.id)
     expect(t.store.projects()).toEqual([])
     expect(t.changes()).toBe(4)
+  })
+
+  it('gives new projects defaults and updates icon, goal and notifications', async () => {
+    const project = await t.projects.create({ title: 'A', workspaceId: 'ws-1' })
+    expect(project).toMatchObject({ icon: 'folder', goal: '', archived: false, notify: 'attention', mainModel: null, threadModel: null })
+    const next = await t.projects.update(project.id, { icon: 'scale', goal: '  把 p95 降到 200ms  ', notify: 'waiting' })
+    expect(next).toMatchObject({ icon: 'scale', goal: '把 p95 降到 200ms', notify: 'waiting' })
+    expect((await t.projects.update(project.id, { icon: ' ' })).icon).toBe('folder')
+  })
+
+  it('archives the main conversation and its threads, and unarchives them back', async () => {
+    const project = await t.projects.create({ title: 'A', workspaceId: 'ws-1' })
+    await t.projects.setPinned(project.id, true)
+    await t.store.putThread(threadOf('session-main-1', 'session-t1', 'idle'))
+    const archived = await t.projects.archive(project.id)
+    expect(archived).toMatchObject({ archived: true, pinned: false })
+    expect([...t.archived].sort()).toEqual(['session-main-1', 'session-t1'])
+
+    expect((await t.projects.unarchive(project.id)).archived).toBe(false)
+    expect(t.archived.size).toBe(0)
+  })
+
+  it('refuses to archive while a thread runs or the main conversation is busy', async () => {
+    const project = await t.projects.create({ title: 'A', workspaceId: 'ws-1' })
+    await t.store.putThread(threadOf('session-main-1', 'session-t1', 'running'))
+    await expect(t.projects.archive(project.id)).rejects.toBeInstanceOf(ProjectError)
+    await t.store.putThread(threadOf('session-main-1', 'session-t1', 'idle'))
+    t.busy.add('session-main-1')
+    await expect(t.projects.archive(project.id)).rejects.toBeInstanceOf(ProjectError)
+    expect(t.archived.size).toBe(0)
+    expect(t.store.project(project.id)?.archived).toBe(false)
   })
 
   it('summarizes thread counts and the latest activity', async () => {

@@ -69,6 +69,8 @@ const proposalSchema = z.object({
   expiresAt: z.string(),
 })
 
+const modelSchema = z.object({ provider: z.string(), model: z.string(), reasoningEffort: z.string().optional() })
+
 const projectSchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -77,6 +79,12 @@ const projectSchema = z.object({
   mainSessionId: z.string(),
   pinned: z.boolean(),
   instructions: z.string(),
+  icon: z.string().default('folder'),
+  goal: z.string().default(''),
+  archived: z.boolean().default(false),
+  notify: z.enum(['all', 'attention', 'waiting', 'none']).default('attention'),
+  mainModel: modelSchema.nullable().default(null),
+  threadModel: modelSchema.nullable().default(null),
   createdAt: z.string(),
   updatedAt: z.string(),
 })

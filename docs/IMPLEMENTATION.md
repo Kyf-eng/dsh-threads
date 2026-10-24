@@ -792,6 +792,13 @@ M2c 时 DeepSeek Flash 常常不调 `thread_report`（3 个里 2 个），卡片
   - worktree 从仓库根检出，原来讨论串也进 worktree 根。monorepo 里项目是 `repo/packages/app` 时，简报里的相对路径全都对不上。
   - `createWorktree` 用 `git rev-parse --show-prefix` 记下项目文件夹在仓库里的相对路径（`ThreadWorktree.subdir`，旧记录默认 `''`），讨论串进 `worktreeFolder(worktree)`；讨论串提示写明“项目文件夹（packages/app）在你自己的 worktree 里”。用 git 算相对路径，不受 macOS `/tmp` 这类软链接影响。
   - 项目子目录还没提交进仓库时（HEAD 里没有它），开 worktree 前就拒绝，不建分支。
+- **补测试**（分支 `test/tools-command-storage`）：
+  - `tests/tools.test.ts`：五个 `thread_*` 工具走 `defineTool` 自带的参数校验（错的 `initiation`、缺 `task`、`status` 不在列表里都抛 `ToolArgsError`），`offer` 的三种回答和没有 `userQuestions` 的退路，拒绝以文字返回给模型。
+  - `tests/command.test.ts`：`/thread` 的标题取首行、`-w` / `--worktree`（`-wat` 不算选项）、空任务给用法、非项目会话报错、上限报错、`cleanup` 只列不删、`cleanup confirm` 才删。
+  - `tests/install.test.ts`：按角色装工具和提示段；删除项目后主对话和讨论串的工具被收回，重新设为项目后装回；会话销毁和插件卸载时清理。
+  - `tests/storage.test.ts`：用 git 历史里最早的记录形状（M1 的讨论串和 mains、M2a 的项目、M2c 的提议、没有 `subdir` 的 worktree）过一遍 `valueSchema`，确认新字段都有默认值。
+  - `ThreadManager` 的假宿主挪到 `tests/fixtures.ts`，几份测试共用。跑真 `defineTool` 和 storage-domain 需要 `@deepseek-ai/dsh-scope`、`dsh-sandbox`、`dsh-storage`，作为 devDependencies 精确锁 `0.2.1-rc.2`（只给测试用，运行时仍是宿主那份）。
+  - 写测试时注意到：`maxProposalsPerTurn` 实际是“每次调用”的上限，一轮里调两次 `thread_propose` 不会被拦。提示词要求“每轮最多几个”，暂不改。
 
 #### 之后
 - 发布：

@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.1.0-rc.4 — 2026-10-24
+
+Projects get their own section in the sidebar, after Claude's, and the running mark breathes in place.
 
 - The running mark breathes in place, dim to bright, instead of a spreading blue ring.
 - The sidebar has its own "Projects" section, after Claude's: one row per project (a raised hand, a breathing dot or the project icon; ↳N; the "⋮" menu on hover), pinned first, then by latest activity. A row opens the project's main conversation. "+" creates a project.

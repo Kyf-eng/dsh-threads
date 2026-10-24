@@ -601,7 +601,19 @@ M2c 时 DeepSeek Flash 常常不调 `thread_report`（3 个里 2 个），卡片
 - 测试：提醒后回报正常送达；提醒后仍不回报时用提醒前的回复兜底；用户轮不提醒。
 - 实机：这次怎么也没让模型漏掉回报（简报和追加里都明确说"不要调用 thread_report"，它两轮都还是调了），说明 M2c 之后加强的提示已经很有效；提醒这条路径由单元测试覆盖，完整流程测试时继续观察。
 
-#### M4 发布
+#### M4 发布 v0.1.0-rc.1（2026-10-24，分支 `release/v0.1.0-rc.1`）
+
+- 用户确认：公开发 `v0.1.0-rc.1` 预发布版；awesome-dsh-plugin 收录等稳定版 `v0.1.0` 再提交。npm 没登录，先只发 GitHub Release（Plan.md 也是这个顺序）。
+- `package.json`：版本 `0.1.0-rc.1`，补 `keywords`（含 `dsh-plugin`）、`homepage`、`repository`、`bugs`；`files` 加上 `README.zh.md`、`CHANGELOG.md`。仓库话题早就有 `dsh-plugin`。
+- README（中英）：功能、安装（Release 的 `.tgz` 地址或 `github:` 地址）、使用、配置表、已知限制。
+- **用打包出来的 `.tgz` 在官方原版 DSH 上验证过**：
+  - 隔离环境 `DSH_HOME=~/dsh-clean`，`npx @deepseek-ai/dsh@0.2.1-rc.2 plugin --profile web add <tgz>`；本机没有 `pnpm`，用一个小脚本指向桌面版自带的 pnpm 11.28.5。
+  - pnpm 只装了插件本身（peer 依赖没有被另装一份），宿主照样把 `@deepseek-ai/*` 解析到自己的那份。
+  - `dsh web` 打开后：左侧有"项目"，项目页走 `POST /api/dsh-threads` 正常读出空列表，新建项目会打开主对话，`/thread` 命令（带新的 `-w` / `cleanup` 说明）在命令列表里。
+  - 审批继承还是没法在这里验证：隔离环境没有模型登录，需要用户自己登录后再测。
+- 发布：合并后在 `main` 上打 `v0.1.0-rc.1` 标签，`gh release create --prerelease`，附 `npm pack` 出来的 `fky-dsh-threads-0.1.0-rc.1.tgz`，说明取自 CHANGELOG。
+
+#### 之后
 - 发布：
   - GitHub Release 附 `.tgz`；
   - npm 用作用域包。

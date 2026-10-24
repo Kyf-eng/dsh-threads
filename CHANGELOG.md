@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.1.0-rc.5 — 2026-10-24
+
+Fixes from a full run of the test prompts: the main conversation knows when a change was the user's own request, and choices go to threads.
 
 - A report from a round the user drove in the thread says so and quotes the user's words, so the main conversation treats the change as the user's decision instead of something the thread did on its own. Words the user adds during a dispatched round are quoted too.
 - The coordinator hands choices to the thread: when a task starts with options for the user to pick, the thread presents them and waits (raised hand) instead of the main conversation drafting and asking first. When a thread waits on the user, the main conversation says so in a line instead of asking again with a question box.

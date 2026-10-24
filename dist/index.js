@@ -13,7 +13,7 @@ import { defineTool } from "@deepseek-ai/dsh-tools";
 import { defineDomain, domainTable } from "@deepseek-ai/dsh-storage-domain";
 // package.json
 var name$1 = "@fky/dsh-threads";
-var version = "0.1.0-rc.4";
+var version = "0.1.0-rc.5";
 // src/report.ts
 const ELLIPSIS = "…";
 /** Longest quote of one user message in a report. */

@@ -55,6 +55,19 @@ const css = `
 .dsht-row-summary{font-size:12px;line-height:17px;color:var(--dsw-alias-label-secondary);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .dsht-row-meta{font-size:11px;line-height:15px;color:var(--dsw-alias-label-tertiary)}
 .dsht-resolved{box-sizing:border-box;display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;margin:0 auto 12px;padding:12px 16px;border:1px solid var(--dsw-alias-border-l2);border-radius:16px;background:var(--dsw-alias-bg-layer-1);font-size:13px;line-height:19px;color:var(--dsw-alias-label-secondary)}
+.dsht-chat-card{box-sizing:border-box;display:flex;flex-direction:column;gap:2px;margin:6px 0;padding:8px 10px;border:1px solid var(--dsw-alias-border-l2);border-radius:14px;background:var(--dsw-alias-bg-layer-1);font-size:13px}
+.dsht-chat-card-head{display:flex;align-items:center;gap:6px;padding:2px 2px 4px;font-size:12px;line-height:17px;color:var(--dsw-alias-label-tertiary)}
+.dsht-card-row{display:flex;align-items:flex-start;gap:10px;padding:6px 2px}
+.dsht-card-row .dsht-row-body{padding-top:1px}
+.dsht-row-status{font-weight:400;color:var(--dsw-alias-label-tertiary)}
+.dsht-chat-card-text{display:block;width:100%;padding:2px;border:0;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:13px;line-height:19px;text-align:left;white-space:pre-wrap;overflow-wrap:anywhere;cursor:pointer}
+.dsht-clamped{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.dsht-turn-card{margin-top:8px}
+.dsht-proposals{box-sizing:border-box;display:flex;flex-direction:column;gap:6px;margin:0 0 8px;padding:10px 12px;border:1px solid var(--dsw-alias-border-l2);border-radius:16px;background:var(--dsw-alias-bg-layer-1);font-size:13px}
+.dsht-proposal{display:flex;flex-direction:column;gap:2px;padding:2px 0}
+.dsht-proposal .dsht-row-summary{padding-left:24px}
+.dsht-proposal-queued{flex-direction:row;justify-content:space-between;gap:8px}
+.dsht-badge{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;color:var(--dsw-alias-label-tertiary)}
 @media (max-width:640px){.dsht-page{padding-left:16px;padding-right:16px}.dsht-head{flex-direction:column}}
 `
 

@@ -1,10 +1,15 @@
 // Browser half. dist/client.js is wrapped in window.__ModuleLoader__.load by tsdown.config.ts.
 // M2a: the "Projects" sidebar entry and page, and "Make project" in the session menu.
+// M2c: thread cards in the transcript, "N 条回复", proposals above the composer, sidebar badges.
 // M2b: threads open in the right sidebar with their own composer; a thread list tab;
 // "讨论串 · N" / "回到主对话" in the conversation header; resolved threads lock their composer.
 import type { Context } from '@deepseek-ai/cordis'
 import type { ComponentType } from 'react'
+import { NOTICE_NODE, noticeDefinition, OPENED_KEY, openedDefinition } from './chat.ts'
 import { ProjectsIcon } from './icons.tsx'
+import { SessionBadge, syncKinds } from './kinds.ts'
+import { ProposalsDock } from './ProposalsDock.tsx'
+import { NoticeCard, TurnThreadsCard } from './ThreadCards.tsx'
 import { en, NS, type Translate, zh } from './locale.ts'
 import { MakeProjectMenuItem } from './MakeProjectMenuItem.tsx'
 import { ProjectsPage } from './ProjectsPage.tsx'
@@ -22,7 +27,7 @@ const LIST_TAB_KIND = 'dsh-threads'
 const CHAT_TAB_ID = '@fky/dsh-threads/chat'
 const CHAT_TAB_KIND = 'dsh-threads.chat'
 
-export const inject = ['slots', 'locale', 'layout', 'uiWorkspace', 'workspaces', 'sessions', 'resources', 'sidebarRight', 'sidebarRightTabs', 'uiSession']
+export const inject = ['slots', 'locale', 'layout', 'uiWorkspace', 'workspaces', 'sessions', 'resources', 'sidebarRight', 'sidebarRightTabs', 'uiSession', 'uiConversation']
 
 type Disposer = () => void
 
@@ -65,6 +70,7 @@ interface ClientContext {
       guide?: readonly { id: string; order: number; title: () => string; description: () => string }[]
     }): Disposer
   }
+  uiConversation: { events: { register(definition: object): unknown } }
   uiSession: {
     registerPendingInteraction(precedence: (interaction: ResolvedInteraction) => number):
       (interaction: ResolvedInteraction, delegate: () => void) => () => void
@@ -166,6 +172,28 @@ export function apply(root: Context): void {
   ctx.slots.inject('conversation.session.header.actions', () => ctx.slots.register(
     { name: 'conversation.session.header.actions', id: 'dsh-threads', order: 15, locale: NS, inject: () => ({ openThreadsList, openSession }) },
     ThreadsHeaderAction as ComponentType<never>,
+  ))
+
+  // Transcript cards (M2c): our notices become thread cards; a turn that opened threads ends
+  // with an "N 条回复" card; proposals wait above the composer; sidebar rows get a small badge.
+  ctx.uiConversation.events.register(noticeDefinition)
+  ctx.uiConversation.events.register(openedDefinition)
+  ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
+    { name: 'conversation.chat.node', key: NOTICE_NODE, locale: NS, inject: () => ({ openThread }) },
+    NoticeCard as ComponentType<never>,
+  ))
+  ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register(
+    { name: 'conversation.chat.turnTail', id: OPENED_KEY, order: 25, locale: NS, inject: (sessionId: string) => ({ sessionId, openThread }) },
+    TurnThreadsCard as ComponentType<never>,
+  ))
+  ctx.slots.inject('conversation.input.dock', () => ctx.slots.register(
+    { name: 'conversation.input.dock', id: 'dsh-threads-proposals', order: 15, locale: NS, inject: (sessionId: string) => ({ sessionId }) },
+    ProposalsDock as ComponentType<never>,
+  ))
+  ctx.effect(() => syncKinds(ctx.uiSession.sessionStatus), 'dsh-threads: session kinds')
+  ctx.slots.inject('sidebar.session.row.leading', () => ctx.slots.register(
+    { name: 'sidebar.session.row.leading', id: 'dsh-threads-kind', order: 50, locale: NS },
+    SessionBadge as ComponentType<never>,
   ))
 
   // Resolved threads: a pending interaction per thread selects ResolvedComposer.

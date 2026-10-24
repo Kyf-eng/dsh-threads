@@ -425,10 +425,10 @@ dsh-thread/                    # 本地目录名不变；GitHub 仓库叫 dsh-th
 | 置顶 | 项目记录存在插件表里，置顶时同时 `ctx.workspaces.pinSession(main)` | ui-workspace-controller 381-437 |
 | 右侧讨论串面板（M2b） | 注册自己的资源协议 `dsh-threads` 和标签页；正文是 `SessionProvider` 包住 `renderFactorySlot('conversation.content', { variant: 'embedded', phase: 'active' })`。**不复用 `subagentchat`** | `R/dsh-client-ui-subagent/lib/client.js:699-839` |
 | 回报渲染成讨论串卡片（M2c） | `ctx.uiConversation.events.register` 注册独占的事件解释器，把我们的消息变成自己的节点类型，再用 `conversation.chat.node` 渲染 | `R/dsh-client-ui-user-questions/lib/client.js:1349-1402` |
-| "N 条回复"（M2c） | 按轮建事件解释器，节点设 `groupTree: 'turn'`、`anchorSeq = 用户消息 seq + 0.5` | schedule 2301-2358 |
+| "N 条回复"（M2c） | 按轮建事件解释器，把本轮 `thread_open` 打开的讨论串发布成轮数据，用 `conversation.chat.turnTail` 显示在这一轮的末尾 | schedule 2301-2358 |
 | 提议卡片（M2c） | 输入框上方的 `conversation.input.dock` | goal 604-651 |
 | 已解决后锁输入框（M2b） | `conversation.composer` 插槽链里加一个条目 | user-questions 1905-1925 |
-| 左侧会话列表 | 不能把讨论串折叠或隐藏到主对话下；只能加小标记（`sidebar.session.row.leading`）、悬停卡片（`row.hover`）、菜单项（`session.menu.item`） | ui-workspace 964-974、2254-2368 |
+| 左侧会话列表 | 不能把讨论串折叠或隐藏到主对话下；只能加小标记（`sidebar.session.row.leading`）、悬停卡片（`row.hover`）、菜单项（`session.menu.item`）。M2c 只做了小标记 | ui-workspace 964-974、2254-2368 |
 
 **排期**
 - **M2a（PR `feat/projects`）**：项目骨架、`thread_reply`、重启恢复、左侧"项目"入口和项目页、"设为项目"菜单。
@@ -489,6 +489,35 @@ dsh-thread/                    # 本地目录名不变；GitHub 仓库叫 dsh-th
 - "标记已解决"后，输入框换成锁定栏；"重新打开"后恢复。左侧列表没有多余标记。
 - "在主区域打开"让讨论串占据中间区域，标题栏出现"回到主对话"；点回去后，主对话的右侧标签（列表 + #1）都还在。
 - 没有新的崩溃日志。
+
+#### M2c 落地情况（2026-10-23，分支 `feat/thread-cards`）
+
+主对话里的卡片：
+- 我们发进收件箱的每条消息（简报、追加、回报）在来源上带 `role`、`threads`（`threadId`、`n`、`title`，回报还有状态和摘要）和 `wake`（是开了新一轮，还是只进上下文）。
+- 浏览器端用 `ctx.uiConversation.events.register` 注册 `noticeDefinition`：独占匹配 `source.kind === 'dsh-threads'` 的 `user/message`，生成节点 `dsh-threads-notice`，`conversation.chat.node` 渲染成卡片：
+  - 回报："讨论串回报（N）"，每个讨论串一行：状态点、`#n 标题 · 状态`、摘要（去掉 markdown 标记）、"查看讨论串"；
+  - 简报和追加："来自主对话的任务 / 追加指令 · #n 标题"，正文折叠显示。
+- **踩到的坑**：没有 `groupTree` 的节点在已结束的轮里会被过滤掉（`dsh-client-ui-chat` 的 client.js:188），第一版卡片因此看不见。现在照 Chat 自己的 turn-trigger：`wake` 的消息设 `groupTree: 'input'`（坐在这一轮的输入位置），其他设 `'turn'`。M2c 之前的旧消息没有这些字段，显示成通用卡片。
+- "N 条回复"：`openedDefinition` 按轮收集 `thread_open` 的工具结果（`presentationMeta` 带 `{ threadId, n, title }`），用 `buildLocationData` 发布成轮数据；`conversation.chat.turnTail`（order 25）在这一轮末尾显示"N 条回复"，每行的状态实时取 `threads.list`。没有用小数 `anchorSeq`，因为 turnTail 更稳，也不会和正文抢位置。
+
+提议：
+- 新工具 `thread_propose { items: [{ title, task }] }`，只装给项目主对话；调度员提示改成"自己想到的事用 `thread_propose`，不要直接开"。
+- 提议存在 `proposals` 表：每次最多 `maxProposalsPerTurn`（3）个，`proposalTtlDays`（7）天后过期。
+- 输入框上方的 `conversation.input.dock`（order 15）显示勾选卡片："都不要" / "开始 N 个讨论串"。点开始走 `proposals.start`：先全部标成 `queued`，再在 `maxRunning` 以内依次开；排不上的显示"排队中：有讨论串结束后自动开始"。
+- 讨论串结束时**先开排队的提议，再投递回报**：这样这条回报会等排队的那个也做完，主对话一次收到整批，而不是每个讨论串各唤醒一次。
+
+左侧标记：`sidebar.session.row.leading` 给讨论串行加讨论串图标、给项目主对话加项目图标（`sessions.kinds` 接口）。悬停卡片没做。
+
+实机测试（桌面版，接管屏幕）全部通过：
+- 回报显示成"讨论串回报（1）· 已完成"卡片，"查看讨论串"在右侧打开它。
+- 用户消息那一轮末尾出现"1 条回复"，状态点跟着讨论串变化。
+- 讨论串面板里的第一条是"来自主对话的任务 · #2 …"卡片。
+- 左侧讨论串行和主对话行有各自的图标。
+- 提议：主对话调 `thread_propose` 提两个，输入框上方出现勾选卡片；点"开始 2 个讨论串"，第一个立即开，第二个显示"排队中"，第一个结束后自动开始。
+- 第一轮测试发现两条回报分两次唤醒了主对话（第一个结束时第二个还没开）；改成先开排队再投递后重测：第一个的回报等到第二个结束，主对话只被唤醒一次，卡片是"讨论串回报（2）"。
+- 没有新的崩溃日志。
+
+已知问题：DeepSeek Flash 经常不调 `thread_report`（这次 3 个里有 2 个没调），卡片显示"没有回报"，内容来自兜底的最后一条回复。之后考虑在没回报时提醒讨论串补一次。
 
 ### M3 并行与隔离；M4 发布
 - 按 Plan.md 原样，补充以下细节：

@@ -2,6 +2,7 @@ import { MenuItemButton } from '@deepseek-ai/dsh-client-ui-primitives'
 import { useEffect, useState } from 'react'
 import { callHost, projectsStore } from './api.ts'
 import { ProjectsIcon } from './icons.tsx'
+import { threadsRevision } from './threads.ts'
 import type { Translate } from './locale.ts'
 
 /** "设为项目" in a session's "…" menu; hidden for threads and sessions that already are projects. */
@@ -31,7 +32,7 @@ export function MakeProjectMenuItem({ sessionId, displayTitle, useMenuOpenState,
       onSelect={() => {
         setMenuOpen(false)
         void callHost('projects.create', { title: displayTitle, fromSessionId: sessionId })
-          .then(() => projectsStore.refresh())
+          .then(() => { threadsRevision.bump(); return projectsStore.refresh() })
           .then(showProjects)
       }}
     >

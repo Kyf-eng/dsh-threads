@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { Config } from '../src/config.ts'
 import { type ThreadAgent, type ThreadHost, ThreadError, ThreadManager } from '../src/manager.ts'
+import type { NoticeMeta } from '../src/source.ts'
 import { memoryStore, type ThreadStore } from '../src/store.ts'
 
 class FakeAgent implements ThreadAgent {
@@ -8,9 +9,10 @@ class FakeAgent implements ThreadAgent {
   seq = 0
   followups: string[] = []
   injects: string[] = []
+  metas: (NoticeMeta | undefined)[] = []
   constructor(readonly id: string) {}
-  followup(text: string) { this.followups.push(text) }
-  inject(text: string) { this.injects.push(text) }
+  followup(text: string, _summary: string, meta?: NoticeMeta) { this.followups.push(text); this.metas.push(meta) }
+  inject(text: string, _summary: string, meta?: NoticeMeta) { this.injects.push(text); this.metas.push(meta) }
 }
 
 function setup(overrides: Partial<Config> = {}) {
@@ -42,6 +44,7 @@ function setup(overrides: Partial<Config> = {}) {
     config: { ...Config({}), ...overrides },
     now: () => new Date(Date.UTC(2026, 9, 23, 0, 0, clock++)).toISOString(),
     newSessionId: () => `session-${++ids}`,
+    newProposalId: () => `proposal-${++ids}`,
     warn: () => {},
   })
   // 'main' is a project's main conversation; only those dispatch threads.
@@ -211,5 +214,57 @@ describe('ThreadManager.recover', () => {
     expect(t.store.thread('session-1')).toMatchObject({ status: 'idle' })
     expect(t.store.thread('session-2')).toMatchObject({ status: 'failed', round: null })
     expect(t.main.followups.join('\n')).toContain('完成了 a')
+  })
+})
+
+describe('thread cards on notices', () => {
+  it('tags the brief and the report with the thread card', async () => {
+    const t = setup()
+    await t.manager.open('main', { title: '查依赖', task: 'x', initiation: 'user_asked' })
+    expect(t.agents.get('session-1')?.metas[0]).toEqual({ role: 'brief', threads: [{ threadId: 'session-1', n: 1, title: '查依赖' }], wake: true })
+    await t.manager.recordReport('session-1', { status: 'needs_decision', summary: '要不要升级', changedFiles: [], decisions: ['升级?'] })
+    await t.manager.onIdle('session-1')
+    expect(t.main.metas[0]).toEqual({
+      role: 'report',
+      threads: [{ threadId: 'session-1', n: 1, title: '查依赖', status: 'needs_decision', summary: '要不要升级' }],
+      wake: true,
+    })
+  })
+})
+
+describe('proposals', () => {
+  it('stores up to maxProposalsPerTurn proposals, only for a project main conversation', async () => {
+    const t = setup({ maxProposalsPerTurn: 2 })
+    const created = await t.manager.propose('main', [{ title: 'A', task: 'do a' }, { title: '', task: 'do b\nmore' }])
+    expect(created.map((p) => [p.title, p.state])).toEqual([['A', 'pending'], ['do b', 'pending']])
+    expect(t.manager.proposals('main')).toHaveLength(2)
+    await expect(t.manager.propose('main', [{ title: 'a', task: 'a' }, { title: 'b', task: 'b' }, { title: 'c', task: 'c' }])).rejects.toBeInstanceOf(ThreadError)
+    await expect(t.manager.propose('other', [{ title: 'a', task: 'a' }])).rejects.toBeInstanceOf(ThreadError)
+  })
+
+  it('starts what fits under maxRunning and queues the rest until a thread finishes', async () => {
+    const t = setup({ maxRunning: 1 })
+    const [a, b] = await t.manager.propose('main', [{ title: 'A', task: 'do a' }, { title: 'B', task: 'do b' }])
+    const result = await t.manager.startProposals('main', [a!.id, b!.id])
+    expect(result.map((p) => p.state)).toEqual(['started', 'queued'])
+    expect(t.store.thread('session-3')).toMatchObject({ initiation: 'proposal', title: 'A' })
+
+    await t.manager.onIdle('session-3')
+    expect(t.store.proposal(b!.id)).toMatchObject({ state: 'started' })
+    expect(t.manager.runningCount('main')).toBe(1)
+    // A's report waits for B, which the queue started, so the batch arrives as one wake-up.
+    expect(t.main.followups).toHaveLength(0)
+    await t.manager.onIdle('session-4')
+    expect(t.main.followups).toHaveLength(1)
+    expect(t.main.metas[0]?.threads.map((card) => card.title)).toEqual(['A', 'B'])
+  })
+
+  it('dismisses proposals and drops expired ones from the list', async () => {
+    const t = setup({ proposalTtlDays: 1 })
+    const [a, b] = await t.manager.propose('main', [{ title: 'A', task: 'a' }, { title: 'B', task: 'b' }])
+    await t.manager.dismissProposals('main', [a!.id])
+    expect(t.manager.proposals('main').map((p) => p.id)).toEqual([b!.id])
+    await t.store.putProposal({ ...b!, expiresAt: '2000-01-01T00:00:00.000Z' })
+    expect(t.manager.proposals('main')).toEqual([])
   })
 })

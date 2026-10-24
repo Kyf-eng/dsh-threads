@@ -10,11 +10,32 @@ export interface ThreadView {
   title: string
   status: 'starting' | 'running' | 'idle' | 'failed'
   resolved: boolean
-  initiation: 'user_asked' | 'offer'
+  initiation: 'user_asked' | 'offer' | 'proposal'
   lastReport: { status: 'done' | 'blocked' | 'needs_decision' | 'failed'; summary: string; changedFiles: string[]; decisions: string[]; at: string } | null
   error: string | null
   createdAt: string
   updatedAt: string
+}
+
+/** Mirrors ThreadCardInfo in src/source.ts (carried on our message sources and tool meta). */
+export interface ThreadCardInfo {
+  threadId: string
+  n: number
+  title: string
+  status?: string
+  summary?: string
+}
+
+/** Mirrors ProposalRecord in src/types.ts. */
+export interface ProposalView {
+  id: string
+  mainSessionId: string
+  title: string
+  task: string
+  state: 'pending' | 'queued' | 'started' | 'dismissed'
+  threadId: string | null
+  createdAt: string
+  expiresAt: string
 }
 
 export interface ThreadDetail extends ThreadView {

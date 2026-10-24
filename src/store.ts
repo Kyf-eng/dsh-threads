@@ -1,4 +1,4 @@
-import type { MainRecord, ProjectRecord, ThreadRecord } from './types.ts'
+import type { MainRecord, ProjectRecord, ProposalRecord, ThreadRecord } from './types.ts'
 
 /** Durable plugin state: projects, threads and per-main-conversation delivery state. Backed by src/storage.ts in DSH. */
 export interface ThreadStore {
@@ -16,6 +16,14 @@ export interface ThreadStore {
   projectOfMain(mainSessionId: string): ProjectRecord | undefined
   putProject(record: ProjectRecord): Promise<void>
   removeProject(id: string): Promise<void>
+  proposal(id: string): ProposalRecord | undefined
+  /** A main conversation's proposals, oldest first. */
+  proposalsOf(mainSessionId: string): ProposalRecord[]
+  putProposal(record: ProposalRecord): Promise<void>
+}
+
+export function byCreated(a: { createdAt: string }, b: { createdAt: string }): number {
+  return a.createdAt.localeCompare(b.createdAt)
 }
 
 export function emptyMain(id: string): MainRecord {
@@ -31,7 +39,11 @@ export function memoryStore(): ThreadStore {
   const threads = new Map<string, ThreadRecord>()
   const mains = new Map<string, MainRecord>()
   const projects = new Map<string, ProjectRecord>()
+  const proposals = new Map<string, ProposalRecord>()
   return {
+    proposal: (id) => proposals.get(id),
+    proposalsOf: (mainSessionId) => [...proposals.values()].filter((p) => p.mainSessionId === mainSessionId).sort(byCreated),
+    putProposal: async (record) => { proposals.set(record.id, record) },
     thread: (id) => threads.get(id),
     threads: () => [...threads.values()],
     threadsOf: (mainSessionId) => [...threads.values()].filter((t) => t.mainSessionId === mainSessionId).sort(byNumber),

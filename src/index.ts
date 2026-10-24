@@ -30,6 +30,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     now,
     // Same shape DSH mints itself (dsh-api-session-controller: `session-${randomUUID()}`).
     newSessionId: () => `session-${randomUUID()}`,
+    newProposalId: () => `proposal-${randomUUID()}`,
     warn,
   })
   const projects = new Projects({

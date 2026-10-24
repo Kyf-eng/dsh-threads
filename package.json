@@ -1,16 +1,25 @@
 {
   "name": "@fky/dsh-threads",
-  "version": "0.0.0",
+  "version": "0.1.0-rc.1",
   "description": "DeepSeek Harness plugin: the main conversation dispatches work into real thread sessions and gets short summaries back.",
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "threads",
+    "agents"
+  ],
+  "homepage": "https://github.com/Kyf-eng/dsh-threads#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Kyf-eng/dsh-threads.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Kyf-eng/dsh-threads/issues"
+  },
   "type": "module",
   "license": "MIT",
   "icon": "./icon.svg",
-  "keywords": [
-    "dsh",
-    "dsh-plugin",
-    "deepseek-harness",
-    "threads"
-  ],
   "main": "./dist/index.js",
   "exports": {
     ".": "./dist/index.js",
@@ -25,7 +34,9 @@
     "locale/*.json",
     "icon.svg",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "CHANGELOG.md",
+    "README.zh.md"
   ],
   "engines": {
     "dsh": ">=0.2.1-rc.2 <0.3.0",

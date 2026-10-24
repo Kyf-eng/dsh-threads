@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.1.0-rc.1 — 2026-10-24
+
+First pre-release, for DeepSeek Harness 0.2.1-rc.2.
 
 - Report reminder: when a task round ends without `thread_report`, the thread is asked once to report (`reportReminder`, on by default); if it still does not, its reply from before the reminder is used.
 

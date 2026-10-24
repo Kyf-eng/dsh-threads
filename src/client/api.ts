@@ -19,6 +19,16 @@ export async function callHost<T>(method: string, payload: unknown = {}): Promis
   return body.result as T
 }
 
+/** Mirrors NotifyLevel in src/types.ts. */
+export type NotifyLevel = 'all' | 'attention' | 'waiting' | 'none'
+
+/** Mirrors ModelChoice in src/types.ts. */
+export interface ModelChoice {
+  provider: string
+  model: string
+  reasoningEffort?: string
+}
+
 /** Mirrors ProjectSummary in src/projects.ts. */
 export interface ProjectView {
   id: string
@@ -28,6 +38,12 @@ export interface ProjectView {
   mainSessionId: string
   pinned: boolean
   instructions: string
+  icon: string
+  goal: string
+  archived: boolean
+  notify: NotifyLevel
+  mainModel: ModelChoice | null
+  threadModel: ModelChoice | null
   createdAt: string
   updatedAt: string
   threads: number

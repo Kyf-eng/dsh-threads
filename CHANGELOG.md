@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Projects page and dialogs after Claude's:
+  - "New project" picks the folder with the system folder chooser (a typed path only where no chooser exists), fills the name from the folder, and offers recent folders.
+  - Project cards: icon, blue pin, a "⋮" menu with Pin (P), Notifications (four levels), Settings (S), Archive (A) and Delete (D).
+  - Archive / unarchive a project together with its main conversation and threads.
+  - Project settings: name and icon (24 icons), goal (main conversation only), folder, and project instructions ("Memory").
+  - The main conversation's sidebar row shows the project icon.
+
 ## 0.1.0-rc.2 — 2026-10-24
 
 Fixes found after rc.1, in an end-to-end run and a pass over every surface in dark and light mode.

@@ -44,7 +44,11 @@ interface ClientContext {
     bind(ns: string): (key: string, params?: Record<string, string | number>) => string
   }
   layout: { selectPanel(id: string | null): void }
-  uiWorkspace: { openSession(sessionId: string): void }
+  uiWorkspace: {
+    openSession(sessionId: string): void
+    /** The host's folder chooser; throws `directory-picker/unavailable` where folders are browsed in-page. */
+    pickDirectory(): Promise<string | null>
+  }
   workspaces: { pinSession(sessionId: string): Promise<void>; unpinSession(sessionId: string): Promise<void> }
   sessions: {
     retain(sessionId: string, options: { source: string; signal: AbortSignal }): { release(): void }
@@ -100,12 +104,24 @@ export function apply(root: Context): void {
   const pinSession = (sessionId: string, pinned: boolean) =>
     (pinned ? ctx.workspaces.pinSession(sessionId) : ctx.workspaces.unpinSession(sessionId))
   const showProjects = () => ctx.layout.selectPanel(PANEL_ID)
+  // The folder chooser DSH's own "add workspace" uses (dsh-client-ui-directory-picker-native):
+  // Electron's dialog on Desktop, the host's picker otherwise.
+  const pickFolder = async (): Promise<string | null | 'unavailable'> => {
+    const desktop = (globalThis as { __DSH_DIRECTORY_PICKER__?: { pick(): Promise<string | null> } }).__DSH_DIRECTORY_PICKER__
+    if (desktop !== undefined) return desktop.pick()
+    try {
+      return await ctx.uiWorkspace.pickDirectory()
+    } catch (error) {
+      if (String((error as { code?: unknown })?.code ?? error).includes('unavailable')) return 'unavailable'
+      throw error
+    }
+  }
   const openThread = (threadId: string) => ctx.sidebarRight.openResource(threadAddress(threadId), { kind: CHAT_TAB_KIND })
   const openThreadsList = () => ctx.sidebarRight.openTab(LIST_TAB_KIND)
 
   // Projects page and its sidebar entry (M2a).
   ctx.slots.inject('main', () => ctx.slots.register(
-    { name: 'main', key: PANEL_ID, locale: NS, inject: () => ({ openSession, pinSession }) },
+    { name: 'main', key: PANEL_ID, locale: NS, inject: () => ({ openSession, pinSession, pickFolder, showProjects }) },
     ProjectsPage as ComponentType<never>,
   ))
   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register(

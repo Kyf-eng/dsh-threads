@@ -105,10 +105,34 @@ export interface ProjectRecord {
   folder: string
   mainSessionId: string
   pinned: boolean
-  /** Added to the system prompt of the main conversation and its threads. */
+  /** Added to the system prompt of the main conversation and its threads ("记忆" in its settings). */
   instructions: string
+  /** Icon id from the browser's project icon set. */
+  icon: string
+  /** What the coordinator works towards (Claude's project goal); only the main conversation sees it. */
+  goal: string
+  /** Archived projects leave the page's main list; their sessions are archived in DSH. */
+  archived: boolean
+  /** Which events raise a desktop notification. */
+  notify: NotifyLevel
+  /** Model for the main conversation; null follows DSH's default. */
+  mainModel: ModelChoice | null
+  /** Model for new threads; null follows DSH's default. */
+  threadModel: ModelChoice | null
   createdAt: string
   updatedAt: string
+}
+
+/**
+ * Notification levels, after Claude's: every new message; the main conversation and whatever
+ * needs the user (Claude's "coordinator and @mentions"); only what needs the user; nothing.
+ */
+export type NotifyLevel = 'all' | 'attention' | 'waiting' | 'none'
+
+export interface ModelChoice {
+  provider: string
+  model: string
+  reasoningEffort?: string
 }
 
 export interface MainRecord {

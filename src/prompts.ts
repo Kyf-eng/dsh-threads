@@ -41,10 +41,17 @@ You can delegate work to threads: real sessions that run in the background. The 
 - Use thread_status to list threads or read one thread's latest report.`
 }
 
-/** The project's own context, shared by its main conversation and every thread. */
-export function projectPrompt(project: { title: string; folder: string; instructions: string } | undefined): string {
+/**
+ * The project's own context, shared by its main conversation and every thread. The goal (what
+ * the coordinator works towards, as in Claude's project settings) goes to the main conversation only.
+ */
+export function projectPrompt(
+  project: { title: string; folder: string; instructions: string; goal: string } | undefined,
+  options: { goal: boolean },
+): string {
   if (project === undefined) return ''
   const lines = [`# Project: ${project.title}`, `Folder: ${project.folder}`]
+  if (options.goal && project.goal.length > 0) lines.push('', 'Goal set by the user for this project (what your coordination should achieve):', project.goal)
   if (project.instructions.length > 0) lines.push('', 'Project instructions from the user:', project.instructions)
   return lines.join('\n')
 }

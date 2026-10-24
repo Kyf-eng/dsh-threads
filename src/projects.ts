@@ -3,10 +3,12 @@
 import { isAbsolute } from 'node:path'
 import { truncate } from './report.ts'
 import type { ThreadStore } from './store.ts'
-import type { ProjectRecord } from './types.ts'
+import type { NotifyLevel, ProjectRecord } from './types.ts'
 
 const TITLE_MAX = 60
 const INSTRUCTIONS_MAX = 4000
+const GOAL_MAX = 8000
+const ICON_MAX = 40
 
 /** A refusal shown to the user as-is (not a bug). */
 export class ProjectError extends Error {}
@@ -25,6 +27,9 @@ export interface ProjectHost {
   /** The DSH workspace for a folder, adding it when the folder has none yet (throws when it is not a directory). */
   ensureWorkspace(folder: string, title: string): Promise<WorkspaceInfo>
   rename(sessionId: string, title: string): void
+  /** Archive a session in DSH (it leaves the sidebar and cannot run); throws when it is busy. */
+  archiveSession(sessionId: string): Promise<void>
+  unarchiveSession(sessionId: string): Promise<void>
 }
 
 export interface ProjectSummary extends ProjectRecord {
@@ -50,6 +55,14 @@ function cleanTitle(title: string): string {
 
 function cleanInstructions(instructions: string | undefined): string {
   return truncate((instructions ?? '').trim(), INSTRUCTIONS_MAX)
+}
+
+export interface ProjectPatch {
+  title?: string
+  instructions?: string
+  icon?: string
+  goal?: string
+  notify?: NotifyLevel
 }
 
 export class Projects {
@@ -128,6 +141,12 @@ export class Projects {
       mainSessionId,
       pinned: false,
       instructions: cleanInstructions(input.instructions),
+      icon: 'folder',
+      goal: '',
+      archived: false,
+      notify: 'attention',
+      mainModel: null,
+      threadModel: null,
       createdAt: at,
       updatedAt: at,
     }
@@ -142,12 +161,15 @@ export class Projects {
     return project
   }
 
-  async update(id: string, patch: { title?: string; instructions?: string }): Promise<ProjectRecord> {
+  async update(id: string, patch: ProjectPatch): Promise<ProjectRecord> {
     const project = this.require(id)
     const next: ProjectRecord = {
       ...project,
       ...(patch.title === undefined ? {} : { title: cleanTitle(patch.title) }),
       ...(patch.instructions === undefined ? {} : { instructions: cleanInstructions(patch.instructions) }),
+      ...(patch.icon === undefined ? {} : { icon: truncate(patch.icon.trim(), ICON_MAX) || 'folder' }),
+      ...(patch.goal === undefined ? {} : { goal: truncate(patch.goal.trim(), GOAL_MAX) }),
+      ...(patch.notify === undefined ? {} : { notify: patch.notify }),
       updatedAt: this.deps.now(),
     }
     await this.deps.store.putProject(next)
@@ -164,6 +186,42 @@ export class Projects {
 
   async setPinned(id: string, pinned: boolean): Promise<ProjectRecord> {
     const next = { ...this.require(id), pinned, updatedAt: this.deps.now() }
+    await this.deps.store.putProject(next)
+    this.changed()
+    return next
+  }
+
+  /**
+   * Archive the project with its main conversation and threads (DSH archives the sessions: they
+   * leave the sidebar and cannot run; nothing is deleted). Refused while a thread is running.
+   */
+  async archive(id: string): Promise<ProjectRecord> {
+    const project = this.require(id)
+    const threads = this.deps.store.threadsOf(project.mainSessionId)
+    if (threads.some((t) => t.status === 'running' || t.status === 'starting')) {
+      throw new ProjectError('还有讨论串在运行，等它们结束再归档。')
+    }
+    try {
+      await this.deps.host.archiveSession(project.mainSessionId)
+    } catch (error) {
+      throw new ProjectError(`主对话现在没法归档（可能还在运行）：${error instanceof Error ? error.message : String(error)}`)
+    }
+    for (const thread of threads) {
+      // A thread whose session was deleted in DSH is simply skipped.
+      await this.deps.host.archiveSession(thread.id).catch(() => {})
+    }
+    const next = { ...project, archived: true, pinned: false, updatedAt: this.deps.now() }
+    await this.deps.store.putProject(next)
+    this.changed()
+    return next
+  }
+
+  async unarchive(id: string): Promise<ProjectRecord> {
+    const project = this.require(id)
+    for (const sessionId of [project.mainSessionId, ...this.deps.store.threadsOf(project.mainSessionId).map((t) => t.id)]) {
+      await this.deps.host.unarchiveSession(sessionId).catch(() => {})
+    }
+    const next = { ...project, archived: false, updatedAt: this.deps.now() }
     await this.deps.store.putProject(next)
     this.changed()
     return next

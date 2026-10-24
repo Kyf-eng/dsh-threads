@@ -12,7 +12,14 @@ const createInput = z.object({
   fromSessionId: z.string().optional(),
   instructions: z.string().optional(),
 })
-const updateInput = z.object({ id: z.string(), title: z.string().optional(), instructions: z.string().optional() })
+const updateInput = z.object({
+  id: z.string(),
+  title: z.string().optional(),
+  instructions: z.string().optional(),
+  icon: z.string().optional(),
+  goal: z.string().optional(),
+  notify: z.enum(['all', 'attention', 'waiting', 'none']).optional(),
+})
 const pinInput = z.object({ id: z.string(), pinned: z.boolean() })
 const idInput = z.object({ id: z.string() })
 const mainInput = z.object({ mainSessionId: z.string() })
@@ -67,6 +74,8 @@ export function apiHandlers(deps: {
       const { id, pinned } = parse(pinInput, payload)
       return projects.setPinned(id, pinned)
     },
+    'projects.archive': (payload) => projects.archive(parse(idInput, payload).id),
+    'projects.unarchive': (payload) => projects.unarchive(parse(idInput, payload).id),
     'projects.remove': async (payload) => {
       await projects.remove(parse(idInput, payload).id)
       return { ok: true }
@@ -97,6 +106,7 @@ export function apiHandlers(deps: {
         const threads = threadsOf(p.mainSessionId)
         return {
           id: p.mainSessionId,
+          icon: p.icon,
           threads: threads.length,
           running: threads.filter((t) => t.status === 'running' || t.status === 'starting').length,
           waiting: threads.filter(isWaiting).length,

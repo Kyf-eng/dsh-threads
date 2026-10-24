@@ -2547,10 +2547,10 @@ body,[class*="dsht-"]{
 .dsht-glyph-waiting{color:var(--dsht-waiting)}
 .dsht-glyph-failed{color:var(--dsw-alias-state-error-primary,#e5484d)}
 .dsht-glyph-resolved{color:var(--dsht-success)}
-.dsht-pulse{position:relative;width:8px;height:8px;border-radius:50%;background:var(--dsht-running)}
-.dsht-pulse::after{content:"";position:absolute;inset:-3px;border-radius:50%;background:var(--dsht-running);opacity:.28;animation:dsht-breathe 1.9s var(--dsht-ease) infinite}
-@keyframes dsht-breathe{0%{transform:scale(.55);opacity:.42}70%{transform:scale(1.35);opacity:0}100%{transform:scale(1.35);opacity:0}}
-@media (prefers-reduced-motion:reduce){.dsht-pulse::after{animation:none;opacity:.2}}
+/* Running: the dot itself breathes, dim to bright and back, in place (no spreading ring). */
+.dsht-pulse{width:8px;height:8px;border-radius:50%;background:var(--dsht-running);animation:dsht-breathe 1.6s ease-in-out infinite}
+@keyframes dsht-breathe{0%,100%{opacity:.35}50%{opacity:1}}
+@media (prefers-reduced-motion:reduce){.dsht-pulse{animation:none;opacity:.8}}
 
 /* Kit (ui.tsx) */
 .dsht-mono{font-family:var(--dsw-font-family-mono,ui-monospace,SFMono-Regular,Menlo,monospace);font-size:.94em}

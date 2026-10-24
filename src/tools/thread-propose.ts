@@ -22,6 +22,7 @@ export function threadProposeTool(manager: ThreadManager, maxPerCall: number): T
               required: true,
               description: 'Complete, self-contained brief, as for thread_open; the user may start it much later.',
             },
+            worktree: { type: 'boolean', description: 'As for thread_open: true when the thread will change files.' },
           },
         },
       },

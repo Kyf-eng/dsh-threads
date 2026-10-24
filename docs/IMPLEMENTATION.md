@@ -71,7 +71,7 @@ docs/Plan.md 定了方向：在 DeepSeek Harness（DSH）里做一个插件—�
 | `SendMessage` 追加 | `thread_reply` → `ctx.sessionController.prompt` |
 | `list_sessions` | `thread_status` |
 | 侧栏一行 + 链接 | 讨论串本身就在侧栏；另加右侧栏"讨论串"标签页，点击用 `ctx.uiWorkspace.openSession(id)` 跳转 |
-| `use_worktree` | M3：`ctx.worktrees.create(agent, { name })` |
+| `use_worktree` | M3b：`thread_open { worktree: true }`，插件自己跑 `git worktree add`（见 M3b 落地情况） |
 
 ---
 
@@ -151,6 +151,8 @@ docs/Plan.md 定了方向：在 DeepSeek Harness（DSH）里做一个插件—�
 - **worktree**（M3）
   - `ctx.worktrees.create(agent, { name })` 建在 `<仓库根>/.agents/worktrees/<name>`，并自动切换工作目录。
   - **没有删除接口**，未提交的文件不会带过去。
+  - **桌面版默认没装**：它来自 `@deepseek-ai/dsh-experimental-tool-worktree` 这个 bundle，desktop profile 的 bundles 里没有它。所以 M3b 不用它，自己跑 git。
+  - 切工作目录用 `ctx.workingDirectory.set(agent, path)`（`dsh-working-directory`）：会记一条 `working-directory/change` 事件，并给会话塞一条"工作目录变了"的提示。
 
 **为什么不用官方子代理（`ctx.subagents.startActivation`）**
 - 它的好处：白送"标题栏子代理树"和自动回报。
@@ -536,9 +538,28 @@ dsh-thread/                    # 本地目录名不变；GitHub 仓库叫 dsh-th
   - 那一轮末尾显示"3 条回复"；
   - 没有新的崩溃日志。
 
-#### M3b 隔离；M4 发布
-- 按 Plan.md 原样，补充以下细节：
-  - 改代码的讨论串在 `setup` 阶段调 `ctx.worktrees.create`。这个接口没有删除功能，要自己写清理命令 `/thread cleanup`（`git worktree remove`），只在你确认后执行。
+#### M3b worktree 隔离（2026-10-24，分支 `feat/thread-worktrees`）
+
+照 Claude 的 `use_worktree`：会改文件的讨论串各开一个 git worktree 和分支，只读的照旧共用项目文件夹。
+- `thread_open` 和 `thread_propose` 的每一项多了 `worktree`（布尔）；`/thread -w <任务>` 是手动入口。
+- `src/worktree.ts` 自己跑 git（DSH 的 worktree 服务桌面版没装，也删不掉 worktree）：
+  - 从项目文件夹的 HEAD 开新分支 `dsh-threads/<n>-<6 位 id>`，检出到 `<仓库根>/.agents/worktrees/dsh-threads-<n>-<id>`；
+  - 池子和 DSH 用同一个目录，第一次建时写一个内容为 `*` 的 `.gitignore`，所以项目文件夹的 `git status` 看不到它；
+  - git 调用都带 `-c core.hooksPath=/dev/null`（和 DSH 一样，不跑仓库自己的钩子）。
+- 先建 worktree 再建会话：文件夹不是 git 仓库或还没有提交时直接拒绝，不留下空会话。会话建好后用 `workingDirectory.set` 切过去。
+- 讨论串的系统提示按记录生成：有 worktree 时写明路径和分支，要求回报前把改动提交到这个分支，不推送、不合并、不切分支；没有 worktree 时照旧"别动别人的改动、不提交"。
+- 回报便条在标题下一行写分支（放在最前面，截断时不会丢）；卡片数据带 `branch`，界面在 M3c 显示。
+- 调度员提示：改文件就开 worktree；回报后把分支告诉用户，用户要求才合并，合并后可用 `/thread cleanup` 清理。
+- 清理：`/thread cleanup` 列出不在运行的讨论串的 worktree；`/thread cleanup confirm` 才执行。`git worktree remove` 不加 `--force`，有没提交改动的跳过；分支用 `git branch -d`，有没合并的提交就保留。
+- 测试：`tests/worktree.test.ts` 在临时仓库里跑真 git（开分支、池子自带 ignore、没提交的文件不带过去、非仓库和空仓库拒绝、干净的删掉、没合并的分支保留、有改动的不删）；manager 测试覆盖开串、拒绝、提议带过去、清理。
+- 实机测试（桌面版，新 clone 的 playground 仓库，push 地址设成了 `no-push`）通过：
+  - 主对话开了 `worktree: true` 的讨论串，讨论串在 `.agents/worktrees/dsh-threads-1-6edc0d` 里新建 `docs/PLAYGROUND.md` 并提交到 `dsh-threads/1-6edc0d`；
+  - 项目文件夹 `git status` 干净，文件只在分支上；
+  - 回报唤醒主对话，主对话自己核对了分支和提交，提示用户可以 `git merge` 再 `/thread cleanup`；
+  - `/thread cleanup` 列出 #1，`confirm` 后 worktree 被删、分支因为没合并而保留；
+  - 没有新的崩溃日志。
+
+#### M4 发布
 - 发布：
   - GitHub Release 附 `.tgz`；
   - npm 用作用域包。

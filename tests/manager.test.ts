@@ -3,6 +3,8 @@ import { Config } from '../src/config.ts'
 import { type ThreadAgent, type ThreadHost, ThreadError, ThreadManager } from '../src/manager.ts'
 import type { NoticeMeta } from '../src/source.ts'
 import { memoryStore, type ThreadStore } from '../src/store.ts'
+import type { ThreadWorktree } from '../src/types.ts'
+import { WorktreeError } from '../src/worktree.ts'
 
 class FakeAgent implements ThreadAgent {
   status: 'idle' | 'running' = 'idle'
@@ -21,6 +23,9 @@ function setup(overrides: Partial<Config> = {}, options: { slowWrites?: boolean;
   const renamed: string[] = []
   const inherited: string[] = []
   let failCreate = false
+  let notARepo = false
+  const entered: string[] = []
+  const removals = new Map<string, { outcome: 'removed' | 'missing' | 'dirty'; branchKept: boolean }>()
   const host: ThreadHost = {
     async createSession(_main, id) {
       if (failCreate) throw new Error('create failed')
@@ -35,6 +40,12 @@ function setup(overrides: Partial<Config> = {}, options: { slowWrites?: boolean;
     rename(id, title) { renamed.push(`${id}:${title}`) },
     inheritPermission(main, thread) { inherited.push(`${main}->${thread}`) },
     roundOutput(id) { return outputs.get(id) },
+    async createWorktree(_main, name) {
+      if (notARepo) throw new WorktreeError('not a git repository')
+      return { path: `/repo/.agents/worktrees/dsh-threads-${name}`, branch: `dsh-threads/${name}`, baseCommit: 'abc1234def', repositoryRoot: '/repo', removed: false }
+    },
+    async enterDirectory(id, path) { entered.push(`${id}:${path}`) },
+    async removeWorktree(worktree: ThreadWorktree) { return removals.get(worktree.branch) ?? { outcome: 'removed', branchKept: false } },
   }
   const main = new FakeAgent('main')
   agents.set('main', main)
@@ -59,7 +70,7 @@ function setup(overrides: Partial<Config> = {}, options: { slowWrites?: boolean;
     id: 'project-1', title: 'P', workspaceId: 'ws', folder: '/tmp/p', mainSessionId: 'main',
     pinned: false, instructions: '', createdAt: '', updatedAt: '',
   })
-  return { manager, store, main, agents, outputs, renamed, inherited, failCreate: () => { failCreate = true } }
+  return { manager, store, main, agents, outputs, renamed, inherited, entered, removals, failCreate: () => { failCreate = true }, notARepo: () => { notARepo = true } }
 }
 
 describe('ThreadManager', () => {
@@ -242,6 +253,53 @@ describe('parallel threads', () => {
     expect(t.store.threadsOf('main').map((thread) => thread.title)).toEqual(['A', 'B', 'C'])
     expect(t.manager.runningCount('main')).toBe(1)
     expect(t.main.followups).toHaveLength(0)
+  })
+})
+
+describe('worktrees', () => {
+  it('opens a thread in its own worktree: branch on the record, the card and the report', async () => {
+    const t = setup()
+    const thread = await t.manager.open('main', { title: '改 README', task: 'x', initiation: 'user_asked', worktree: true })
+    expect(thread.worktree).toMatchObject({ branch: 'dsh-threads/1-1', path: '/repo/.agents/worktrees/dsh-threads-1-1' })
+    expect(t.entered).toEqual(['session-1:/repo/.agents/worktrees/dsh-threads-1-1'])
+    expect(t.manager.worktreeOf('session-1')?.branch).toBe('dsh-threads/1-1')
+    expect(t.agents.get('session-1')?.metas[0]?.threads[0]?.branch).toBe('dsh-threads/1-1')
+
+    await t.manager.onIdle('session-1')
+    expect(t.main.followups[0]).toContain('分支：dsh-threads/1-1')
+  })
+
+  it('refuses without creating a session when the folder is not a repository', async () => {
+    const t = setup()
+    t.notARepo()
+    await expect(t.manager.open('main', { title: 'a', task: 'x', initiation: 'user_asked', worktree: true })).rejects.toBeInstanceOf(ThreadError)
+    expect(t.agents.has('session-1')).toBe(false)
+    expect(t.store.threadsOf('main')).toEqual([])
+  })
+
+  it('cleans up finished worktrees only, keeping dirty ones', async () => {
+    const t = setup()
+    await t.manager.open('main', { title: 'a', task: 'a', initiation: 'user_asked', worktree: true })
+    await t.manager.open('main', { title: 'b', task: 'b', initiation: 'user_asked', worktree: true })
+    await t.manager.open('main', { title: 'c', task: 'c', initiation: 'user_asked', worktree: true })
+    await t.manager.onIdle('session-1')
+    await t.manager.onIdle('session-2')
+    t.removals.set('dsh-threads/2-2', { outcome: 'dirty', branchKept: true })
+
+    expect(t.manager.cleanupCandidates('main').map((thread) => thread.n)).toEqual([1, 2])
+    const lines = await t.manager.cleanupWorktrees('main')
+    expect(lines).toHaveLength(2)
+    expect(lines[1]).toContain('没提交的改动')
+    expect(t.store.thread('session-1')?.worktree?.removed).toBe(true)
+    expect(t.store.thread('session-2')?.worktree?.removed).toBe(false)
+    expect(t.manager.worktreeOf('session-1')).toBeNull()
+  })
+
+  it('carries the worktree choice through a proposal', async () => {
+    const t = setup()
+    const [p] = await t.manager.propose('main', [{ title: 'A', task: 'a', worktree: true }])
+    await t.manager.startProposals('main', [p!.id])
+    expect(t.store.thread('session-2')?.worktree?.branch).toBe('dsh-threads/1-2')
   })
 })
 

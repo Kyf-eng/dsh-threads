@@ -12,6 +12,8 @@ export interface ThreadCardInfo {
   status?: string
   /** First part of the report summary. */
   summary?: string
+  /** The thread's worktree branch, when it has one. */
+  branch?: string
 }
 
 /** brief: the first task in a thread; reply: a follow-up; report: thread reports to the main conversation. */

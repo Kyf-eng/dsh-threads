@@ -4,6 +4,11 @@ import { CommandDefinitionId } from "@deepseek-ai/dsh-commands/brand";
 import z$1 from "@deepseek-ai/schemastery";
 import { boundContextSummary, createUserMessage } from "@deepseek-ai/dsh-llm";
 import { finalAssistantOutput } from "@deepseek-ai/dsh-subagent";
+import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { promisify } from "node:util";
 import { defineTool } from "@deepseek-ai/dsh-tools";
 import { defineDomain, domainTable } from "@deepseek-ai/dsh-storage-domain";
 // package.json
@@ -54,6 +59,7 @@ function noticeSummary(thread, status) {
 function composeNote(thread, report, fallbackText, maxChars) {
 	const status = report?.status ?? "no-report";
 	const lines = [`[讨论串 #${thread.n}「${thread.title}」· ${status} · 这是讨论串的报告，不是证据]`];
+	if (thread.worktree != null) lines.push(`分支：${thread.worktree.branch}（讨论串自己的 worktree；改动不在项目文件夹里，用户要求时再合并）`);
 	if (report !== null) {
 		lines.push(`摘要：${report.summary}`);
 		if (report.changedFiles.length > 0) lines.push(`改动：${report.changedFiles.join("、")}`);
@@ -218,6 +224,11 @@ function summarize(thread) {
 		initiation,
 		lastReport,
 		error,
+		worktree: thread.worktree === null ? null : {
+			branch: thread.worktree.branch,
+			path: thread.worktree.path,
+			removed: thread.worktree.removed
+		},
 		createdAt,
 		updatedAt
 	};
@@ -310,7 +321,7 @@ function flushNotes(record, agent, runningThreads, maxAutoWakes) {
 	};
 	const quiet = record.pendingNotes.filter((note) => note.quiet);
 	const loud = record.pendingNotes.filter((note) => !note.quiet);
-	if (quiet.length > 0) agent.inject(join(quiet), summaryOf(quiet), metaOf(quiet, false));
+	if (quiet.length > 0) agent.inject(join$1(quiet), summaryOf(quiet), metaOf(quiet, false));
 	let remaining = [];
 	let streak = record.autoWakeStreak;
 	let woke = false;
@@ -322,10 +333,10 @@ function flushNotes(record, agent, runningThreads, maxAutoWakes) {
 			maxAutoWakes
 		});
 		if (action === "wake") {
-			agent.followup(join(loud), summaryOf(loud), metaOf(loud, true));
+			agent.followup(join$1(loud), summaryOf(loud), metaOf(loud, true));
 			streak += 1;
 			woke = true;
-		} else if (action === "quiet") agent.inject(join(loud), summaryOf(loud), metaOf(loud, false));
+		} else if (action === "quiet") agent.inject(join$1(loud), summaryOf(loud), metaOf(loud, false));
 		else remaining = loud;
 	}
 	return {
@@ -337,7 +348,7 @@ function flushNotes(record, agent, runningThreads, maxAutoWakes) {
 		woke
 	};
 }
-function join(notes) {
+function join$1(notes) {
 	return notes.map((note) => note.text).join("\n\n");
 }
 function metaOf(notes, wake) {
@@ -355,10 +366,14 @@ function summaryOf(notes) {
 /** Longest report summary carried on a transcript card. */
 const CARD_SUMMARY_MAX = 160;
 function cardOf(thread) {
-	return {
+	const card = {
 		threadId: thread.id,
 		n: thread.n,
 		title: thread.title
+	};
+	return thread.worktree === null ? card : {
+		...card,
+		branch: thread.worktree.branch
 	};
 }
 /** A refusal the model should read and act on (not a bug). */
@@ -404,6 +419,11 @@ var ThreadManager = class {
 	isThread(sessionId) {
 		return this.creating.has(sessionId) || this.deps.store.thread(sessionId) !== void 0;
 	}
+	/** The live worktree a thread works in, if any (for its system prompt). */
+	worktreeOf(sessionId) {
+		const worktree = this.deps.store.thread(sessionId)?.worktree ?? null;
+		return worktree === null || worktree.removed ? null : worktree;
+	}
 	/** Only a project's main conversation dispatches threads (as in Claude). */
 	isDispatcher(sessionId) {
 		return this.deps.store.projectOfMain(sessionId) !== void 0;
@@ -431,6 +451,12 @@ var ThreadManager = class {
 		const n = Math.max(0, ...store.threadsOf(mainSessionId).map((t) => t.n)) + 1;
 		const title = truncate(input.title.trim(), TITLE_MAX) || titleFrom(task);
 		const id = this.deps.newSessionId();
+		let worktree = null;
+		if (input.worktree === true) try {
+			worktree = await host.createWorktree(mainSessionId, `${n}-${id.replace(/^session-/, "").slice(0, 6)}`);
+		} catch (error) {
+			throw new ThreadError(`没法给讨论串开 worktree：${error instanceof Error ? error.message : String(error)}`);
+		}
 		const createdAt = now();
 		let record = {
 			id,
@@ -446,6 +472,7 @@ var ThreadManager = class {
 			roundStartedAt: null,
 			lastReport: null,
 			error: null,
+			worktree,
 			createdAt,
 			updatedAt: createdAt
 		};
@@ -453,6 +480,7 @@ var ThreadManager = class {
 		try {
 			await store.putThread(record);
 			const agent = await host.createSession(mainSessionId, id);
+			if (worktree !== null) await host.enterDirectory(id, worktree.path);
 			try {
 				host.rename(id, `#${n} ${title}`);
 			} catch (error) {
@@ -651,7 +679,8 @@ var ThreadManager = class {
 		if (!this.isDispatcher(mainSessionId)) throw new ThreadError(NOT_A_PROJECT);
 		const cleaned = items.map((item) => ({
 			task: item.task.trim(),
-			title: truncate(item.title.trim(), TITLE_MAX)
+			title: truncate(item.title.trim(), TITLE_MAX),
+			worktree: item.worktree === true
 		})).filter((item) => item.task.length > 0);
 		if (cleaned.length === 0) throw new ThreadError("至少要有一个带完整简报的提议。");
 		if (cleaned.length > config.maxProposalsPerTurn) throw new ThreadError(`一次最多提 ${config.maxProposalsPerTurn} 个讨论串；挑最值得做的。`);
@@ -663,6 +692,7 @@ var ThreadManager = class {
 			title: item.title || titleFrom(item.task),
 			task: item.task,
 			state: "pending",
+			worktree: item.worktree,
 			threadId: null,
 			createdAt,
 			expiresAt
@@ -712,7 +742,8 @@ var ThreadManager = class {
 					const thread = await this.openNow(mainSessionId, {
 						title: proposal.title,
 						task: proposal.task,
-						initiation: "proposal"
+						initiation: "proposal",
+						worktree: proposal.worktree
 					});
 					await this.deps.store.putProposal({
 						...proposal,
@@ -773,6 +804,38 @@ var ThreadManager = class {
 		this.chains.set(key, settled);
 		return next;
 	}
+	/** Worktrees `/thread cleanup` would remove: threads of this main conversation that are not running. */
+	cleanupCandidates(mainSessionId) {
+		return this.deps.store.threadsOf(mainSessionId).filter((t) => t.worktree !== null && !t.worktree.removed && t.status !== "running" && t.status !== "starting");
+	}
+	/** `/thread cleanup confirm`: remove those worktrees (never forced) and say what happened to each. */
+	async cleanupWorktrees(mainSessionId) {
+		const lines = [];
+		for (const thread of this.cleanupCandidates(mainSessionId)) {
+			const worktree = thread.worktree;
+			let result;
+			try {
+				result = await this.deps.host.removeWorktree(worktree);
+			} catch (error) {
+				lines.push(`#${thread.n}：删除失败（${error instanceof Error ? error.message : String(error)}）`);
+				continue;
+			}
+			if (result.outcome === "dirty") {
+				lines.push(`#${thread.n}：${worktree.path} 里有没提交的改动，没删；先提交或丢弃。`);
+				continue;
+			}
+			await this.deps.store.putThread({
+				...thread,
+				worktree: {
+					...worktree,
+					removed: true
+				},
+				updatedAt: this.deps.now()
+			});
+			lines.push(`#${thread.n}：已删除 worktree，${result.branchKept ? `分支 ${worktree.branch} 还有没合并的提交，保留` : `分支 ${worktree.branch} 已合并，一并删除`}。`);
+		}
+		return lines;
+	}
 	/** Text for thread_status: every thread of this main conversation, or one thread in detail. */
 	describe(mainSessionId, n) {
 		const threads = this.deps.store.threadsOf(mainSessionId);
@@ -782,6 +845,7 @@ var ThreadManager = class {
 			const report = thread.lastReport;
 			return [
 				`讨论串 #${thread.n}「${thread.title}」· ${thread.status}（会话 ${thread.id}）`,
+				thread.worktree === null ? "" : `worktree：${thread.worktree.path}，分支 ${thread.worktree.branch}${thread.worktree.removed ? "（已删除 worktree）" : ""}`,
 				`任务：${truncate(thread.task, 600)}`,
 				report === null ? "最新回报：无" : [
 					`最新回报（${report.at}，${report.status}）：${report.summary}`,
@@ -799,32 +863,42 @@ var ThreadManager = class {
 	}
 };
 // src/command.ts
-/** `/thread <task>`: the manual entry point, for when the model does not open a thread itself. */
+const USAGE = "用法：/thread <任务>；/thread -w <任务> 在独立 worktree 里做；/thread cleanup 清理做完的 worktree。";
+/**
+* `/thread <task>`: the manual entry point, for when the model does not open a thread itself.
+* `-w` gives the thread its own worktree; `cleanup` lists finished worktrees and
+* `cleanup confirm` removes them (the confirmation step the plan asks for).
+*/
 function registerThreadCommand(ctx, manager, packageName) {
 	ctx.commands.register({
 		definitionId: CommandDefinitionId(packageName),
 		name: "thread",
-		description: "开一个讨论串：/thread <任务>",
-		input: { hint: "<任务>" },
+		description: "开一个讨论串：/thread [-w] <任务>，或 /thread cleanup",
+		input: { hint: "[-w] <任务> | cleanup" },
 		handler: async ({ agent, rawInput }) => {
-			const task = rawInput.trim();
+			const input = rawInput.trim();
 			if (!manager.isDispatcher(agent.id)) return {
 				kind: "error",
 				text: NOT_A_PROJECT
 			};
+			if (input === "cleanup" || input === "cleanup confirm") return cleanup(manager, agent.id, input === "cleanup confirm");
+			const worktree = /^(-w|--worktree)(\s|$)/.test(input);
+			const task = worktree ? input.replace(/^(-w|--worktree)/, "").trim() : input;
 			if (task.length === 0) return {
 				kind: "error",
-				text: "用法：/thread <任务>。任务要写清目标、相关文件和完成标准。"
+				text: `${USAGE}任务要写清目标、相关文件和完成标准。`
 			};
 			try {
 				const thread = await manager.open(agent.id, {
 					title: titleFrom(task),
 					task,
-					initiation: "user_asked"
+					initiation: "user_asked",
+					worktree
 				});
+				const branch = thread.worktree === null ? "" : `（分支 ${thread.worktree.branch}）`;
 				return {
 					kind: "success",
-					text: `已开讨论串 #${thread.n}「${thread.title}」，做完会把摘要发回这里。`
+					text: `已开讨论串 #${thread.n}「${thread.title}」${branch}，做完会把摘要发回这里。`
 				};
 			} catch (error) {
 				return {
@@ -834,6 +908,21 @@ function registerThreadCommand(ctx, manager, packageName) {
 			}
 		}
 	});
+}
+async function cleanup(manager, mainSessionId, confirmed) {
+	const candidates = manager.cleanupCandidates(mainSessionId);
+	if (candidates.length === 0) return {
+		kind: "success",
+		text: "没有可以清理的 worktree（运行中的讨论串不算）。"
+	};
+	if (!confirmed) return {
+		kind: "success",
+		text: `会删除这些讨论串的 worktree：${candidates.map((t) => `#${t.n}「${t.title}」${t.worktree?.branch ?? ""}`).join("；")}。有没提交改动的会跳过；分支只在已合并时删除。确认请输入 /thread cleanup confirm。`
+	};
+	return {
+		kind: "success",
+		text: (await manager.cleanupWorktrees(mainSessionId)).join("\n")
+	};
 }
 // src/config.ts
 const Config = z$1.object({
@@ -860,6 +949,118 @@ function optional(ctx, name) {
 // src/source.ts
 /** Message source kind for everything this plugin puts into a session inbox. */
 const SOURCE_KIND = "dsh-threads";
+// src/worktree.ts
+const execFileAsync = promisify(execFile);
+/** The system git, with repository hooks off (as DSH's worktree service does) and no prompts. */
+const systemGit = async (cwd, args) => {
+	const { stdout } = await execFileAsync("git", [
+		"-c",
+		"core.hooksPath=/dev/null",
+		...args
+	], {
+		cwd,
+		env: {
+			...process.env,
+			GIT_TERMINAL_PROMPT: "0"
+		},
+		maxBuffer: 1 << 20
+	});
+	return stdout;
+};
+const BRANCH_PREFIX = "dsh-threads/";
+const POOL = [".agents", "worktrees"];
+/** A refusal the model should read (not a bug). */
+var WorktreeError = class extends Error {};
+/**
+* New branch `dsh-threads/<name>` checked out at `<repo>/.agents/worktrees/dsh-threads-<name>`,
+* from the folder's current HEAD. Uncommitted files in the folder are not carried over.
+*/
+async function createWorktree(git, folder, name) {
+	let repositoryRoot;
+	try {
+		repositoryRoot = (await git(folder, ["rev-parse", "--show-toplevel"])).trim();
+	} catch {
+		throw new WorktreeError(`项目文件夹 ${folder} 不是 git 仓库，没法开 worktree。不用 worktree 再开，或者请用户先初始化仓库。`);
+	}
+	let baseCommit;
+	try {
+		baseCommit = (await git(repositoryRoot, [
+			"rev-parse",
+			"--verify",
+			"HEAD^{commit}"
+		])).trim();
+	} catch {
+		throw new WorktreeError("仓库还没有任何提交，没法从 HEAD 开 worktree。");
+	}
+	await preparePool(join(repositoryRoot, ...POOL));
+	const branch = `${BRANCH_PREFIX}${name}`;
+	const path = join(repositoryRoot, ...POOL, `dsh-threads-${name}`);
+	await git(repositoryRoot, [
+		"worktree",
+		"add",
+		"-b",
+		branch,
+		"--",
+		path,
+		baseCommit
+	]);
+	return {
+		path,
+		branch,
+		baseCommit,
+		repositoryRoot,
+		removed: false
+	};
+}
+/** Create the pool with a `.gitignore` of `*` (as DSH does), keeping an existing one as it is. */
+async function preparePool(pool) {
+	await mkdir(join(pool, ".."), { recursive: true });
+	try {
+		await mkdir(pool);
+	} catch (error) {
+		if (error.code === "EEXIST") return;
+		throw error;
+	}
+	await writeFile(join(pool, ".gitignore"), "*\n", { flag: "wx" });
+}
+/** Remove a thread's checkout, then its branch if it is fully merged. Never forces either. */
+async function removeWorktree(git, worktree) {
+	const { repositoryRoot, path, branch } = worktree;
+	let outcome = "removed";
+	if (existsSync(path)) try {
+		await git(repositoryRoot, [
+			"worktree",
+			"remove",
+			"--",
+			path
+		]);
+	} catch {
+		return {
+			outcome: "dirty",
+			branchKept: true
+		};
+	}
+	else {
+		outcome = "missing";
+		await git(repositoryRoot, ["worktree", "prune"]);
+	}
+	try {
+		await git(repositoryRoot, [
+			"branch",
+			"-d",
+			branch
+		]);
+		return {
+			outcome,
+			branchKept: false
+		};
+	} catch {
+		return {
+			outcome,
+			branchKept: true
+		};
+	}
+}
 // src/host.ts
 /**
 * Every message this plugin puts into an inbox: tagged with our source, shown as a compact
@@ -955,6 +1156,21 @@ function createHost(ctx) {
 			if (presets === void 0 || main === void 0 || thread === void 0) return;
 			presets.set(thread.session, presets.current(main.session));
 		},
+		async createWorktree(mainSessionId, name) {
+			const folder = ctx.workspaceRegistry.list().find((candidate) => candidate.sessionIds.includes(mainSessionId))?.path ?? (() => {
+				const main = live(mainSessionId);
+				return main === void 0 ? void 0 : optional(ctx, "workingDirectory")?.get(main.session);
+			})();
+			if (folder === void 0) throw new Error("找不到主对话所在的文件夹。");
+			return createWorktree(systemGit, folder, name);
+		},
+		async enterDirectory(threadId, path) {
+			const agent = live(threadId);
+			const directories = optional(ctx, "workingDirectory");
+			if (agent === void 0 || directories === void 0) throw new Error(`没法把讨论串 ${threadId} 切到 ${path}。`);
+			await directories.set(agent, path);
+		},
+		removeWorktree: (worktree) => removeWorktree(systemGit, worktree),
 		roundOutput(threadId, fromSeq) {
 			const agent = live(threadId);
 			if (agent === void 0) return void 0;
@@ -983,9 +1199,14 @@ You can delegate work to threads: real sessions that run in the background. The 
 - The thread cannot see this conversation. Write a complete brief in "task": the goal, the relevant files or context, constraints, and what done looks like.
 - After opening, do not wait for or poll the thread. Continue with other work or end your turn.
 
+## Worktrees: threads that change files
+- Pass worktree: true when the thread will change files in a git repository (code, docs, config). It gets its own checkout under .agents/worktrees and its own branch (dsh-threads/...), started from the folder's current HEAD. Uncommitted changes in the project folder are not in it: if the task needs them, say so to the user first.
+- A worktree thread commits to its own branch and never touches the project folder. When it reports, tell the user the branch and what is on it. Merge it into the project folder only when the user asks; afterwards the user can remove finished worktrees with /thread cleanup.
+- Read-only threads (investigations, reviews, counts) leave worktree off and share the project folder.
+
 ## Running threads in parallel
 - At most ${maxRunning} thread${maxRunning === 1 ? "" : "s"} may run at once per conversation; thread_open refuses beyond that.
-- Threads share the project folder. Open several at once only for independent work: read-only work (investigations, reviews, counts) can always run side by side, but two threads that change files must never touch the same files. If two tasks would edit the same files, or one needs the other's result, make them one thread or open the second after the first reports.
+- Independent work can run side by side: read-only threads, and threads that change files each in their own worktree. Two threads without worktrees must never change the same files. If one task needs another's result, open it after the first reports.
 - Reports are held while any of your threads is still running, then arrive together in one message.
 
 ## Follow-ups: thread_reply
@@ -1003,13 +1224,13 @@ function projectPrompt(project) {
 	if (project.instructions.length > 0) lines.push("", "Project instructions from the user:", project.instructions);
 	return lines.join("\n");
 }
-function threadPrompt(summaryMaxChars) {
+function threadPrompt(summaryMaxChars, worktree) {
 	return `# You are a thread (dsh-threads)
 
 A main conversation opened this session to do one task; its first message is the brief. The user may also talk to you here directly.
 - Do the task in this session and keep the details here.
 - Your reply text does not reach the main conversation; only thread_report does. Right before you finish every reply, call thread_report exactly once, even for a short task and even if the brief says to do nothing else: a status (done | blocked | needs_decision | failed), a summary of at most ${summaryMaxChars} characters saying what is now true and what is not done or not verified, the files you changed, and any decisions the user must make.
-- Other threads may be working in the same folder at the same time. Change only the files your task needs and leave changes you did not make alone. Do not commit, switch branches, stash, reset, or run tree-wide rewrites (formatters, codemods) unless the brief asks for it.
+${worktree === null ? "- Other threads may be working in the same folder at the same time. Change only the files your task needs and leave changes you did not make alone. Do not commit, switch branches, stash, reset, or run tree-wide rewrites (formatters, codemods) unless the brief asks for it." : `- You work in your own git worktree, ${JSON.stringify(worktree.path)}, on branch ${worktree.branch}; the project folder is not touched. Before you report, commit your changes to this branch with clear messages. Do not push, merge, rebase, switch branches, or delete the branch: the user decides what happens to it. Dependencies (node_modules and the like) are not installed in a fresh worktree; install them here if the task needs them.`}
 - If you need the user to decide something, put it in decisions, report needs_decision, and stop.
 - You cannot open threads yourself.`;
 }
@@ -1046,6 +1267,10 @@ function threadOpenTool(ctx, manager) {
 				required: true,
 				enum: ["user_asked", "offer"],
 				description: "\"user_asked\" when the user explicitly asked for a thread or separate/background work; \"offer\" when the user named the task but did not ask for a thread (the user is asked first)."
+			},
+			worktree: {
+				type: "boolean",
+				description: "true when the thread will change files in a git repository: it gets its own worktree and branch. Leave false for read-only work."
 			}
 		},
 		output: {
@@ -1112,10 +1337,12 @@ function threadOpenTool(ctx, manager) {
 				const thread = await manager.open(caller.id, {
 					title: args.title,
 					task: args.task,
-					initiation: args.initiation
+					initiation: args.initiation,
+					worktree: args.worktree === true
 				});
+				const where = thread.worktree === null ? "" : `它在自己的 worktree 里工作（分支 ${thread.worktree.branch}，从 ${thread.worktree.baseCommit.slice(0, 7)} 开出）。`;
 				return {
-					text: `已开讨论串 #${thread.n}「${thread.title}」（会话 ${thread.id}），它在后台运行，用户可以在侧栏点开它。它做完会把摘要发回这里；不要等待或轮询，继续做别的事或结束本轮。`,
+					text: `已开讨论串 #${thread.n}「${thread.title}」（会话 ${thread.id}），它在后台运行，用户可以在侧栏点开它。${where}它做完会把摘要发回这里；不要等待或轮询，继续做别的事或结束本轮。`,
 					threadId: thread.id,
 					n: thread.n,
 					title: thread.title
@@ -1149,6 +1376,10 @@ function threadProposeTool(manager, maxPerCall) {
 						type: "string",
 						required: true,
 						description: "Complete, self-contained brief, as for thread_open; the user may start it much later."
+					},
+					worktree: {
+						type: "boolean",
+						description: "As for thread_open: true when the thread will change files."
 					}
 				}
 			}
@@ -1330,7 +1561,7 @@ function installPerAgent(ctx, manager, projects, config) {
 				disposers.push(scope.systemPrompt.section({
 					name: SECTION_NAME,
 					order: SECTION_ORDER,
-					text: threadPrompt(config.summaryMaxChars)
+					text: () => threadPrompt(config.summaryMaxChars, manager.worktreeOf(agent.id))
 				}));
 			} else {
 				disposers.push(scope.tools.register(threadOpenTool(ctx, manager)));
@@ -1456,6 +1687,13 @@ const threadSchema = z.object({
 	roundStartedAt: z.string().nullable(),
 	lastReport: reportSchema.nullable(),
 	error: z.string().nullable(),
+	worktree: z.object({
+		path: z.string(),
+		branch: z.string(),
+		baseCommit: z.string(),
+		repositoryRoot: z.string(),
+		removed: z.boolean().default(false)
+	}).nullable().default(null),
 	createdAt: z.string(),
 	updatedAt: z.string()
 });
@@ -1464,7 +1702,8 @@ const cardSchema = z.object({
 	n: z.number().int().positive(),
 	title: z.string(),
 	status: z.string().optional(),
-	summary: z.string().optional()
+	summary: z.string().optional(),
+	branch: z.string().optional()
 });
 const mainSchema = z.object({
 	id: z.string(),
@@ -1487,6 +1726,7 @@ const proposalSchema = z.object({
 		"started",
 		"dismissed"
 	]),
+	worktree: z.boolean().default(false),
 	threadId: z.string().nullable(),
 	createdAt: z.string(),
 	expiresAt: z.string()

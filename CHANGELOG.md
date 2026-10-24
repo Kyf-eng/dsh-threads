@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- M3b worktrees:
+  - `thread_open` / `thread_propose` take `worktree: true` (and `/thread -w <task>`): the thread gets its own git worktree under `.agents/worktrees` and its own branch `dsh-threads/<n>-<id>`, commits there and never touches the project folder.
+  - Reports name the branch; the main conversation merges only when the user asks.
+  - `/thread cleanup` lists finished worktrees, `/thread cleanup confirm` removes them; checkouts with changes are skipped and unmerged branches are kept.
+
 - M3a parallel threads:
   - Up to 3 threads per main conversation run at once (`maxRunning` default 3).
   - Opening threads is serialized per main conversation, so parallel `thread_open` calls and queued proposals cannot overshoot the limit or share a number.

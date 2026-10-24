@@ -4,13 +4,15 @@ import { flushNotes } from './delivery.ts'
 import { composeNote, currentReport, normalizeReport, noticeSummary, plainLine, truncate } from './report.ts'
 import type { ThreadCardInfo } from './source.ts'
 import type { ThreadStore } from './store.ts'
-import type { Initiation, PendingNote, ProposalRecord, ThreadRecord, ThreadReport } from './types.ts'
+import type { Initiation, PendingNote, ProposalRecord, ThreadRecord, ThreadReport, ThreadWorktree } from './types.ts'
+import type { RemoveResult } from './worktree.ts'
 
 /** Longest report summary carried on a transcript card. */
 const CARD_SUMMARY_MAX = 160
 
-function cardOf(thread: Pick<ThreadRecord, 'id' | 'n' | 'title'>): ThreadCardInfo {
-  return { threadId: thread.id, n: thread.n, title: thread.title }
+function cardOf(thread: Pick<ThreadRecord, 'id' | 'n' | 'title' | 'worktree'>): ThreadCardInfo {
+  const card: ThreadCardInfo = { threadId: thread.id, n: thread.n, title: thread.title }
+  return thread.worktree === null ? card : { ...card, branch: thread.worktree.branch }
 }
 
 /** A live session agent, reduced to what thread orchestration needs. */
@@ -31,6 +33,19 @@ export interface ThreadHost {
   inheritPermission(mainSessionId: string, threadId: string): void
   /** Text of the thread's last assistant reply since `fromSeq`. */
   roundOutput(threadId: string, fromSeq: number): string | undefined
+  /** A new worktree branched from the main conversation's folder (throws WorktreeError when it cannot). */
+  createWorktree(mainSessionId: string, name: string): Promise<ThreadWorktree>
+  /** Make `path` the thread's working directory. */
+  enterDirectory(threadId: string, path: string): Promise<void>
+  removeWorktree(worktree: ThreadWorktree): Promise<RemoveResult>
+}
+
+export interface OpenInput {
+  title: string
+  task: string
+  initiation: Initiation
+  /** Give the thread its own git worktree and branch (for threads that change files). */
+  worktree?: boolean
 }
 
 export interface ManagerDeps {
@@ -92,6 +107,12 @@ export class ThreadManager {
     return this.creating.has(sessionId) || this.deps.store.thread(sessionId) !== undefined
   }
 
+  /** The live worktree a thread works in, if any (for its system prompt). */
+  worktreeOf(sessionId: string): ThreadWorktree | null {
+    const worktree = this.deps.store.thread(sessionId)?.worktree ?? null
+    return worktree === null || worktree.removed ? null : worktree
+  }
+
   /** Only a project's main conversation dispatches threads (as in Claude). */
   isDispatcher(sessionId: string): boolean {
     return this.deps.store.projectOfMain(sessionId) !== undefined
@@ -102,7 +123,7 @@ export class ThreadManager {
   }
 
   /** Open a thread. Opens for one main conversation run one at a time, so parallel calls cannot overshoot the limit or share a number. */
-  open(mainSessionId: string, input: { title: string; task: string; initiation: Initiation }): Promise<ThreadRecord> {
+  open(mainSessionId: string, input: OpenInput): Promise<ThreadRecord> {
     return this.opening(mainSessionId, () => this.openNow(mainSessionId, input))
   }
 
@@ -113,7 +134,7 @@ export class ThreadManager {
     return next
   }
 
-  private async openNow(mainSessionId: string, input: { title: string; task: string; initiation: Initiation }): Promise<ThreadRecord> {
+  private async openNow(mainSessionId: string, input: OpenInput): Promise<ThreadRecord> {
     const { store, host, config, now } = this.deps
     if (this.isThread(mainSessionId)) throw new ThreadError('讨论串里不能再开讨论串；把这个需要写进 thread_report 的 decisions，交给主对话决定。')
     if (!this.isDispatcher(mainSessionId)) throw new ThreadError(NOT_A_PROJECT)
@@ -127,6 +148,15 @@ export class ThreadManager {
     const n = Math.max(0, ...store.threadsOf(mainSessionId).map((t) => t.n)) + 1
     const title = truncate(input.title.trim(), TITLE_MAX) || titleFrom(task)
     const id = this.deps.newSessionId()
+    // Before the session exists, so a folder that is not a git repository costs nothing.
+    let worktree: ThreadWorktree | null = null
+    if (input.worktree === true) {
+      try {
+        worktree = await host.createWorktree(mainSessionId, `${n}-${id.replace(/^session-/, '').slice(0, 6)}`)
+      } catch (error) {
+        throw new ThreadError(`没法给讨论串开 worktree：${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
     const createdAt = now()
     let record: ThreadRecord = {
       id, mainSessionId, n, title, task,
@@ -135,12 +165,14 @@ export class ThreadManager {
       resolved: false,
       round: null, roundStartSeq: null, roundStartedAt: null,
       lastReport: null, error: null,
+      worktree,
       createdAt, updatedAt: createdAt,
     }
     this.creating.add(id)
     try {
       await store.putThread(record)
       const agent = await host.createSession(mainSessionId, id)
+      if (worktree !== null) await host.enterDirectory(id, worktree.path)
       try {
         host.rename(id, `#${n} ${title}`)
       } catch (error) {
@@ -285,11 +317,11 @@ export class ThreadManager {
    * thread_propose: suggestions the model came up with itself. They wait in the proposals
    * card until the user starts or dismisses them (Claude's `own_initiative`).
    */
-  async propose(mainSessionId: string, items: readonly { title: string; task: string }[]): Promise<ProposalRecord[]> {
+  async propose(mainSessionId: string, items: readonly { title: string; task: string; worktree?: boolean }[]): Promise<ProposalRecord[]> {
     const { store, config, now } = this.deps
     if (!this.isDispatcher(mainSessionId)) throw new ThreadError(NOT_A_PROJECT)
     const cleaned = items
-      .map((item) => ({ task: item.task.trim(), title: truncate(item.title.trim(), TITLE_MAX) }))
+      .map((item) => ({ task: item.task.trim(), title: truncate(item.title.trim(), TITLE_MAX), worktree: item.worktree === true }))
       .filter((item) => item.task.length > 0)
     if (cleaned.length === 0) throw new ThreadError('至少要有一个带完整简报的提议。')
     if (cleaned.length > config.maxProposalsPerTurn) {
@@ -303,6 +335,7 @@ export class ThreadManager {
       title: item.title || titleFrom(item.task),
       task: item.task,
       state: 'pending',
+      worktree: item.worktree,
       threadId: null,
       createdAt,
       expiresAt,
@@ -348,7 +381,7 @@ export class ThreadManager {
         if (proposal.state !== 'queued') continue
         if (this.runningCount(mainSessionId) >= this.deps.config.maxRunning) return
         try {
-          const thread = await this.openNow(mainSessionId, { title: proposal.title, task: proposal.task, initiation: 'proposal' })
+          const thread = await this.openNow(mainSessionId, { title: proposal.title, task: proposal.task, initiation: 'proposal', worktree: proposal.worktree })
           await this.deps.store.putProposal({ ...proposal, state: 'started', threadId: thread.id })
         } catch (error) {
           this.deps.warn(`dsh-threads: could not start proposal ${proposal.id}: ${String(error)}`)
@@ -399,6 +432,34 @@ export class ThreadManager {
     return next
   }
 
+  /** Worktrees `/thread cleanup` would remove: threads of this main conversation that are not running. */
+  cleanupCandidates(mainSessionId: string): ThreadRecord[] {
+    return this.deps.store.threadsOf(mainSessionId)
+      .filter((t) => t.worktree !== null && !t.worktree.removed && t.status !== 'running' && t.status !== 'starting')
+  }
+
+  /** `/thread cleanup confirm`: remove those worktrees (never forced) and say what happened to each. */
+  async cleanupWorktrees(mainSessionId: string): Promise<string[]> {
+    const lines: string[] = []
+    for (const thread of this.cleanupCandidates(mainSessionId)) {
+      const worktree = thread.worktree as ThreadWorktree
+      let result: RemoveResult
+      try {
+        result = await this.deps.host.removeWorktree(worktree)
+      } catch (error) {
+        lines.push(`#${thread.n}：删除失败（${error instanceof Error ? error.message : String(error)}）`)
+        continue
+      }
+      if (result.outcome === 'dirty') {
+        lines.push(`#${thread.n}：${worktree.path} 里有没提交的改动，没删；先提交或丢弃。`)
+        continue
+      }
+      await this.deps.store.putThread({ ...thread, worktree: { ...worktree, removed: true }, updatedAt: this.deps.now() })
+      lines.push(`#${thread.n}：已删除 worktree，${result.branchKept ? `分支 ${worktree.branch} 还有没合并的提交，保留` : `分支 ${worktree.branch} 已合并，一并删除`}。`)
+    }
+    return lines
+  }
+
   /** Text for thread_status: every thread of this main conversation, or one thread in detail. */
   describe(mainSessionId: string, n?: number): string {
     const threads = this.deps.store.threadsOf(mainSessionId)
@@ -408,6 +469,7 @@ export class ThreadManager {
       const report = thread.lastReport
       return [
         `讨论串 #${thread.n}「${thread.title}」· ${thread.status}（会话 ${thread.id}）`,
+        thread.worktree === null ? '' : `worktree：${thread.worktree.path}，分支 ${thread.worktree.branch}${thread.worktree.removed ? '（已删除 worktree）' : ''}`,
         `任务：${truncate(thread.task, 600)}`,
         report === null
           ? '最新回报：无'

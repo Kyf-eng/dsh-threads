@@ -22,9 +22,14 @@ You can delegate work to threads: real sessions that run in the background. The 
 - The thread cannot see this conversation. Write a complete brief in "task": the goal, the relevant files or context, constraints, and what done looks like.
 - After opening, do not wait for or poll the thread. Continue with other work or end your turn.
 
+## Worktrees: threads that change files
+- Pass worktree: true when the thread will change files in a git repository (code, docs, config). It gets its own checkout under .agents/worktrees and its own branch (dsh-threads/...), started from the folder's current HEAD. Uncommitted changes in the project folder are not in it: if the task needs them, say so to the user first.
+- A worktree thread commits to its own branch and never touches the project folder. When it reports, tell the user the branch and what is on it. Merge it into the project folder only when the user asks; afterwards the user can remove finished worktrees with /thread cleanup.
+- Read-only threads (investigations, reviews, counts) leave worktree off and share the project folder.
+
 ## Running threads in parallel
 - At most ${maxRunning} thread${maxRunning === 1 ? '' : 's'} may run at once per conversation; thread_open refuses beyond that.
-- Threads share the project folder. Open several at once only for independent work: read-only work (investigations, reviews, counts) can always run side by side, but two threads that change files must never touch the same files. If two tasks would edit the same files, or one needs the other's result, make them one thread or open the second after the first reports.
+- Independent work can run side by side: read-only threads, and threads that change files each in their own worktree. Two threads without worktrees must never change the same files. If one task needs another's result, open it after the first reports.
 - Reports are held while any of your threads is still running, then arrive together in one message.
 
 ## Follow-ups: thread_reply
@@ -44,13 +49,16 @@ export function projectPrompt(project: { title: string; folder: string; instruct
   return lines.join('\n')
 }
 
-export function threadPrompt(summaryMaxChars: number): string {
+export function threadPrompt(summaryMaxChars: number, worktree: { path: string; branch: string } | null): string {
+  const folder = worktree === null
+    ? '- Other threads may be working in the same folder at the same time. Change only the files your task needs and leave changes you did not make alone. Do not commit, switch branches, stash, reset, or run tree-wide rewrites (formatters, codemods) unless the brief asks for it.'
+    : `- You work in your own git worktree, ${JSON.stringify(worktree.path)}, on branch ${worktree.branch}; the project folder is not touched. Before you report, commit your changes to this branch with clear messages. Do not push, merge, rebase, switch branches, or delete the branch: the user decides what happens to it. Dependencies (node_modules and the like) are not installed in a fresh worktree; install them here if the task needs them.`
   return `# You are a thread (dsh-threads)
 
 A main conversation opened this session to do one task; its first message is the brief. The user may also talk to you here directly.
 - Do the task in this session and keep the details here.
 - Your reply text does not reach the main conversation; only thread_report does. Right before you finish every reply, call thread_report exactly once, even for a short task and even if the brief says to do nothing else: a status (done | blocked | needs_decision | failed), a summary of at most ${summaryMaxChars} characters saying what is now true and what is not done or not verified, the files you changed, and any decisions the user must make.
-- Other threads may be working in the same folder at the same time. Change only the files your task needs and leave changes you did not make alone. Do not commit, switch branches, stash, reset, or run tree-wide rewrites (formatters, codemods) unless the brief asks for it.
+${folder}
 - If you need the user to decide something, put it in decisions, report needs_decision, and stop.
 - You cannot open threads yourself.`
 }

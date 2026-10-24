@@ -83,7 +83,7 @@ describe('Projects', () => {
     await t.store.putThread({
       id: 'session-t1', mainSessionId: project.mainSessionId, n: 1, title: 't', task: 'x', initiation: 'user_asked',
       status: 'running', resolved: false, round: 'dispatch', roundStartSeq: 0, roundStartedAt: null,
-      lastReport: null, error: null, createdAt: '', updatedAt: '2030-01-01T00:00:00.000Z',
+      lastReport: null, error: null, worktree: null, createdAt: '', updatedAt: '2030-01-01T00:00:00.000Z',
     })
     expect(t.projects.list()[0]).toMatchObject({ threads: 1, running: 1, lastActivity: '2030-01-01T00:00:00.000Z' })
     expect(t.projects.ofSession('session-t1')?.id).toBe(project.id)

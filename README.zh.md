@@ -4,7 +4,7 @@
 
 一个 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 插件。主对话当调度员：遇到能独立完成的任务，就开一个**讨论串**——一个你能点进去接着聊的真实会话；讨论串做完后，把简短摘要回报给主对话。
 
-> 状态：**M2b**。项目（一个文件夹 + 一个主对话）、从项目开讨论串、回报主对话、`thread_reply`、`/thread <任务>` 已可用；讨论串可以在右侧面板打开、直接对话、标记已解决（M2b）；对话里的卡片和提议在 M2c 实现。详见 [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)。
+> 状态：**M2c**。项目（一个文件夹 + 一个主对话）、从项目开讨论串、回报主对话、`thread_reply`、`/thread <任务>` 已可用；讨论串可以在右侧面板打开、直接对话、标记已解决（M2b）；回报、简报和"N 条回复"在对话里显示成讨论串卡片，模型自己的建议以勾选卡片放在输入框上方（M2c）。并行和 worktree 在 M3。详见 [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)。
 
 ## 开发安装
 

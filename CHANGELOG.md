@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- M2c thread cards:
+  - Reports, briefs and follow-ups show as thread cards in the conversation instead of a plain notice row; a batch of reports arrives as one card.
+  - "N replies" at the end of a turn that opened threads, with live status.
+  - `thread_propose`: the model's own suggestions wait in a checklist card above the composer ("Start N threads" / "Dismiss all"). At most 3 per turn, expiring after 7 days; ones over the running limit queue and start when a slot frees up.
+  - Thread and project icons on session rows in the left sidebar.
+
 - M2b thread pane:
   - Threads open in the right sidebar with their live conversation and their own composer.
   - A "Threads" list tab.

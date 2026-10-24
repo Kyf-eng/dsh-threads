@@ -1,5 +1,7 @@
-/** How a thread came to exist (docs/IMPLEMENTATION.md §一: Claude's `initiation`). Proposals arrive in M2. */
-export type Initiation = 'user_asked' | 'offer'
+import type { ThreadCardInfo } from './source.ts'
+
+/** How a thread came to exist (docs/IMPLEMENTATION.md §一: Claude's `initiation`). */
+export type Initiation = 'user_asked' | 'offer' | 'proposal'
 
 export type ThreadStatus = 'starting' | 'running' | 'idle' | 'failed'
 
@@ -50,6 +52,24 @@ export interface PendingNote {
   text: string
   /** Quiet notes never wake the main conversation; they ride along with its next turn. */
   quiet: boolean
+  /** Card data for the transcript (absent on notes stored before M2c). */
+  card?: ThreadCardInfo
+}
+
+/**
+ * A thread the main conversation suggested on its own (thread_propose). It opens only when
+ * the user picks it in the proposals card; past `maxRunning` it waits in a queue.
+ */
+export interface ProposalRecord {
+  /** `proposal-<uuid>` */
+  id: string
+  mainSessionId: string
+  title: string
+  task: string
+  state: 'pending' | 'queued' | 'started' | 'dismissed'
+  threadId: string | null
+  createdAt: string
+  expiresAt: string
 }
 
 /**

@@ -15,6 +15,7 @@ const updateInput = z.object({ id: z.string(), title: z.string().optional(), ins
 const pinInput = z.object({ id: z.string(), pinned: z.boolean() })
 const idInput = z.object({ id: z.string() })
 const mainInput = z.object({ mainSessionId: z.string() })
+const proposalsInput = z.object({ mainSessionId: z.string(), ids: z.array(z.string()) })
 
 /** What the panel shows for a thread; the brief and internal round bookkeeping stay on the host. */
 export type ThreadSummary = Pick<ThreadRecord, 'id' | 'mainSessionId' | 'n' | 'title' | 'status' | 'resolved' | 'initiation' | 'lastReport' | 'error' | 'createdAt' | 'updatedAt'>
@@ -75,5 +76,20 @@ export function apiHandlers(deps: {
     'threads.reopen': async (payload) => summarize(await manager.setResolved(parse(idInput, payload).id, false)),
     /** Ids of every resolved thread; the client locks their composers. */
     'threads.resolved': () => deps.threads().filter((t) => t.resolved).map((t) => t.id),
+    /** Which sessions are threads and which are project main conversations (sidebar row badges). */
+    'sessions.kinds': () => ({
+      threads: deps.threads().map((t) => t.id),
+      mains: projects.list().map((p) => p.mainSessionId),
+    }),
+    'proposals.list': (payload) => manager.proposals(parse(mainInput, payload).mainSessionId),
+    'proposals.start': (payload) => {
+      const { mainSessionId, ids } = parse(proposalsInput, payload)
+      return manager.startProposals(mainSessionId, ids)
+    },
+    'proposals.dismiss': async (payload) => {
+      const { mainSessionId, ids } = parse(proposalsInput, payload)
+      await manager.dismissProposals(mainSessionId, ids)
+      return { ok: true }
+    },
   }
 }

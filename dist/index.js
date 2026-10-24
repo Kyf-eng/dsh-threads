@@ -17,6 +17,10 @@ function truncate(text, max) {
 	if (chars.length <= max) return text;
 	return chars.slice(0, Math.max(0, max - 1)).join("") + ELLIPSIS;
 }
+/** One line of plain text for a card: markdown markers dropped, whitespace collapsed. */
+function plainLine(text) {
+	return text.replace(/^\s{0,3}(#{1,6}|>|[-*+]|\d+\.)\s+/gm, "").replace(/\*\*|__|`/g, "").replace(/\s+/g, " ").trim();
+}
 /** Plain text of content blocks (text blocks only), or undefined when there is none. */
 function textOf(blocks) {
 	const text = (blocks ?? []).filter((block) => block.type === "text" && typeof block.text === "string").map((block) => block.text).join("\n").trim();
@@ -198,6 +202,10 @@ const pinInput = z.object({
 });
 const idInput = z.object({ id: z.string() });
 const mainInput = z.object({ mainSessionId: z.string() });
+const proposalsInput = z.object({
+	mainSessionId: z.string(),
+	ids: z.array(z.string())
+});
 function summarize(thread) {
 	const { id, mainSessionId, n, title, status, resolved, initiation, lastReport, error, createdAt, updatedAt } = thread;
 	return {
@@ -265,7 +273,22 @@ function apiHandlers(deps) {
 		"threads.resolve": async (payload) => summarize(await manager.setResolved(parse(idInput, payload).id, true)),
 		"threads.reopen": async (payload) => summarize(await manager.setResolved(parse(idInput, payload).id, false)),
 		/** Ids of every resolved thread; the client locks their composers. */
-		"threads.resolved": () => deps.threads().filter((t) => t.resolved).map((t) => t.id)
+		"threads.resolved": () => deps.threads().filter((t) => t.resolved).map((t) => t.id),
+		/** Which sessions are threads and which are project main conversations (sidebar row badges). */
+		"sessions.kinds": () => ({
+			threads: deps.threads().map((t) => t.id),
+			mains: projects.list().map((p) => p.mainSessionId)
+		}),
+		"proposals.list": (payload) => manager.proposals(parse(mainInput, payload).mainSessionId),
+		"proposals.start": (payload) => {
+			const { mainSessionId, ids } = parse(proposalsInput, payload);
+			return manager.startProposals(mainSessionId, ids);
+		},
+		"proposals.dismiss": async (payload) => {
+			const { mainSessionId, ids } = parse(proposalsInput, payload);
+			await manager.dismissProposals(mainSessionId, ids);
+			return { ok: true };
+		}
 	};
 }
 // src/delivery.ts
@@ -287,7 +310,7 @@ function flushNotes(record, agent, runningThreads, maxAutoWakes) {
 	};
 	const quiet = record.pendingNotes.filter((note) => note.quiet);
 	const loud = record.pendingNotes.filter((note) => !note.quiet);
-	if (quiet.length > 0) agent.inject(join(quiet), summaryOf(quiet));
+	if (quiet.length > 0) agent.inject(join(quiet), summaryOf(quiet), metaOf(quiet, false));
 	let remaining = [];
 	let streak = record.autoWakeStreak;
 	let woke = false;
@@ -299,10 +322,10 @@ function flushNotes(record, agent, runningThreads, maxAutoWakes) {
 			maxAutoWakes
 		});
 		if (action === "wake") {
-			agent.followup(join(loud), summaryOf(loud));
+			agent.followup(join(loud), summaryOf(loud), metaOf(loud, true));
 			streak += 1;
 			woke = true;
-		} else if (action === "quiet") agent.inject(join(loud), summaryOf(loud));
+		} else if (action === "quiet") agent.inject(join(loud), summaryOf(loud), metaOf(loud, false));
 		else remaining = loud;
 	}
 	return {
@@ -317,11 +340,27 @@ function flushNotes(record, agent, runningThreads, maxAutoWakes) {
 function join(notes) {
 	return notes.map((note) => note.text).join("\n\n");
 }
+function metaOf(notes, wake) {
+	return {
+		role: "report",
+		threads: notes.flatMap((note) => note.card === void 0 ? [] : [note.card]),
+		wake
+	};
+}
 function summaryOf(notes) {
 	const first = notes[0]?.text.split("\n", 1)[0] ?? "";
 	return notes.length === 1 ? first : `${notes.length} 个讨论串回报`;
 }
 // src/manager.ts
+/** Longest report summary carried on a transcript card. */
+const CARD_SUMMARY_MAX = 160;
+function cardOf(thread) {
+	return {
+		threadId: thread.id,
+		n: thread.n,
+		title: thread.title
+	};
+}
 /** A refusal the model should read and act on (not a bug). */
 var ThreadError = class extends Error {};
 const TITLE_MAX = 30;
@@ -434,7 +473,11 @@ var ThreadManager = class {
 			updatedAt: at
 		};
 		await this.deps.store.putThread(next);
-		agent.followup(text, noticeSummary(next, "任务"));
+		agent.followup(text, noticeSummary(next, "任务"), {
+			role: "brief",
+			threads: [cardOf(next)],
+			wake: true
+		});
 		return next;
 	}
 	/**
@@ -466,7 +509,11 @@ var ThreadManager = class {
 			updatedAt: at
 		};
 		await this.deps.store.putThread(next);
-		agent.followup(replyText(next, text), noticeSummary(next, "追加指令"));
+		agent.followup(replyText(next, text), noticeSummary(next, "追加指令"), {
+			role: "reply",
+			threads: [cardOf(next)],
+			wake: true
+		});
 		return next;
 	}
 	/**
@@ -551,7 +598,12 @@ var ThreadManager = class {
 		const note = {
 			threadId: thread.id,
 			text: composeNote(thread, report, fallback, this.deps.config.noteMaxChars),
-			quiet: thread.round === "user"
+			quiet: thread.round === "user",
+			card: {
+				...cardOf(thread),
+				status: report?.status ?? "no-report",
+				summary: truncate(plainLine(report?.summary ?? fallback ?? ""), CARD_SUMMARY_MAX)
+			}
 		};
 		await this.deps.store.putThread({
 			...thread,
@@ -559,7 +611,93 @@ var ThreadManager = class {
 			round: null,
 			updatedAt: this.deps.now()
 		});
+		await this.drainQueue(thread.mainSessionId);
 		await this.enqueue(thread.mainSessionId, note);
+	}
+	/**
+	* thread_propose: suggestions the model came up with itself. They wait in the proposals
+	* card until the user starts or dismisses them (Claude's `own_initiative`).
+	*/
+	async propose(mainSessionId, items) {
+		const { store, config, now } = this.deps;
+		if (!this.isDispatcher(mainSessionId)) throw new ThreadError(NOT_A_PROJECT);
+		const cleaned = items.map((item) => ({
+			task: item.task.trim(),
+			title: truncate(item.title.trim(), TITLE_MAX)
+		})).filter((item) => item.task.length > 0);
+		if (cleaned.length === 0) throw new ThreadError("至少要有一个带完整简报的提议。");
+		if (cleaned.length > config.maxProposalsPerTurn) throw new ThreadError(`一次最多提 ${config.maxProposalsPerTurn} 个讨论串；挑最值得做的。`);
+		const createdAt = now();
+		const expiresAt = new Date(Date.parse(createdAt) + config.proposalTtlDays * 864e5).toISOString();
+		const records = cleaned.map((item) => ({
+			id: this.deps.newProposalId(),
+			mainSessionId,
+			title: item.title || titleFrom(item.task),
+			task: item.task,
+			state: "pending",
+			threadId: null,
+			createdAt,
+			expiresAt
+		}));
+		for (const record of records) await store.putProposal(record);
+		return records;
+	}
+	/** Proposals still waiting for the user (pending) or for a free slot (queued). Expired ones are dropped. */
+	proposals(mainSessionId) {
+		const now = this.deps.now();
+		return this.deps.store.proposalsOf(mainSessionId).filter((p) => p.state === "pending" && p.expiresAt > now || p.state === "queued");
+	}
+	/** The user picked proposals: open as many as the running limit allows, queue the rest. */
+	async startProposals(mainSessionId, ids) {
+		const { store } = this.deps;
+		for (const id of ids) {
+			const proposal = store.proposal(id);
+			if (proposal === void 0 || proposal.mainSessionId !== mainSessionId || proposal.state !== "pending") continue;
+			await store.putProposal({
+				...proposal,
+				state: "queued"
+			});
+		}
+		await this.drainQueue(mainSessionId);
+		return ids.flatMap((id) => {
+			const proposal = store.proposal(id);
+			return proposal === void 0 ? [] : [proposal];
+		});
+	}
+	async dismissProposals(mainSessionId, ids) {
+		for (const id of ids) {
+			const proposal = this.deps.store.proposal(id);
+			if (proposal === void 0 || proposal.mainSessionId !== mainSessionId) continue;
+			if (proposal.state === "pending" || proposal.state === "queued") await this.deps.store.putProposal({
+				...proposal,
+				state: "dismissed"
+			});
+		}
+	}
+	/** Start queued proposals, oldest first, while there is room under `maxRunning`. */
+	async drainQueue(mainSessionId) {
+		for (const proposal of this.deps.store.proposalsOf(mainSessionId)) {
+			if (proposal.state !== "queued") continue;
+			if (this.runningCount(mainSessionId) >= this.deps.config.maxRunning) return;
+			try {
+				const thread = await this.open(mainSessionId, {
+					title: proposal.title,
+					task: proposal.task,
+					initiation: "proposal"
+				});
+				await this.deps.store.putProposal({
+					...proposal,
+					state: "started",
+					threadId: thread.id
+				});
+			} catch (error) {
+				this.deps.warn(`dsh-threads: could not start proposal ${proposal.id}: ${String(error)}`);
+				await this.deps.store.putProposal({
+					...proposal,
+					state: "dismissed"
+				});
+			}
+		}
 	}
 	/** "标记已解决 / 重新打开" from the thread pane. A resolved thread's composer is locked in the UI. */
 	async setResolved(threadId, resolved) {
@@ -702,8 +840,11 @@ function optional(ctx, name) {
 /** Message source kind for everything this plugin puts into a session inbox. */
 const SOURCE_KIND = "dsh-threads";
 // src/host.ts
-/** Every message this plugin puts into an inbox: tagged with our source, shown as a compact notice. */
-function noticeMessage(text, summary) {
+/**
+* Every message this plugin puts into an inbox: tagged with our source, shown as a compact
+* notice, and carrying the thread cards the browser half renders in place of the notice row.
+*/
+function noticeMessage(text, summary, meta) {
 	return createUserMessage({
 		content: [{
 			type: "text",
@@ -712,7 +853,12 @@ function noticeMessage(text, summary) {
 		source: {
 			kind: SOURCE_KIND,
 			form: "notice",
-			summary: boundContextSummary(summary)
+			summary: boundContextSummary(summary),
+			...meta === void 0 ? {} : {
+				role: meta.role,
+				threads: meta.threads,
+				wake: meta.wake
+			}
 		}
 	});
 }
@@ -725,8 +871,8 @@ function wrapAgent(agent) {
 		get seq() {
 			return Number(agent.session.seq);
 		},
-		followup: (text, summary) => agent.followup(noticeMessage(text, summary)),
-		inject: (text, summary) => agent.inject(noticeMessage(text, summary))
+		followup: (text, summary, meta) => agent.followup(noticeMessage(text, summary, meta)),
+		inject: (text, summary, meta) => agent.inject(noticeMessage(text, summary, meta))
 	};
 }
 function createHost(ctx) {
@@ -813,7 +959,7 @@ You can delegate work to threads: real sessions that run in the background. The 
 ## How to open one: thread_open
 - initiation "user_asked": the user's latest message explicitly asks for a thread or for separate/background work. It opens immediately.
 - initiation "offer": the user named the task in their latest message but did not ask for a thread, and you think it belongs in one. The user is asked to choose first; respect the answer.
-- If the idea is your own (a follow-up you noticed), do not call thread_open. Mention it in one line and let the user decide.
+- If the idea is your own (a follow-up you noticed, work that should happen next), do not call thread_open. Call thread_propose: the suggestions appear as a checklist card and start only when the user picks them. At most a few per turn, only real work worth doing, and never the same suggestion twice.
 - The thread cannot see this conversation. Write a complete brief in "task": the goal, the relevant files or context, constraints, and what done looks like.
 - After opening, do not wait for or poll the thread. Continue with other work or end your turn.
 
@@ -877,18 +1023,35 @@ function threadOpenTool(ctx, manager) {
 			}
 		},
 		output: {
-			schema: { type: "string" },
+			schema: {
+				type: "object",
+				additionalProperties: false,
+				properties: {
+					text: {
+						type: "string",
+						required: true
+					},
+					threadId: { type: "string" },
+					n: { type: "integer" },
+					title: { type: "string" }
+				}
+			},
 			render: (_args, value) => [{
 				type: "text",
-				text: value
-			}]
+				text: value.text
+			}],
+			presentationMeta: (_args, value) => value.threadId === void 0 ? null : {
+				threadId: value.threadId,
+				n: value.n ?? 0,
+				title: value.title ?? ""
+			}
 		},
 		async execute(args, exec) {
 			const caller = exec.agent;
 			if (caller === void 0) throw new Error("thread_open needs a calling session");
 			if (args.initiation === "offer") {
 				const questions = optional(ctx, "userQuestions");
-				if (questions === void 0) return "没法在界面上询问用户（userQuestions 不可用）。请在回复里直接问用户要不要开讨论串。";
+				if (questions === void 0) return { text: "没法在界面上询问用户（userQuestions 不可用）。请在回复里直接问用户要不要开讨论串。" };
 				const item = (await questions.ask({
 					questions: [{
 						id: OFFER_ID,
@@ -915,9 +1078,9 @@ function threadOpenTool(ctx, manager) {
 					wait: { callId: exec.callId }
 				})).answers.find((entry) => entry.id === OFFER_ID);
 				const choice = item?.selected[0];
-				if (choice === HERE) return "用户选择在主对话里做：不要开讨论串，直接在这里做这件事。";
-				if (choice === SKIP) return "用户选择先不做这件事：不要开讨论串，也不要开始做。";
-				if (choice !== OPEN) return `用户没有选择开讨论串，回答是：${item?.custom ?? "（无）"}。按用户的回答处理，不要开讨论串。`;
+				if (choice === HERE) return { text: "用户选择在主对话里做：不要开讨论串，直接在这里做这件事。" };
+				if (choice === SKIP) return { text: "用户选择先不做这件事：不要开讨论串，也不要开始做。" };
+				if (choice !== OPEN) return { text: `用户没有选择开讨论串，回答是：${item?.custom ?? "（无）"}。按用户的回答处理，不要开讨论串。` };
 			}
 			try {
 				const thread = await manager.open(caller.id, {
@@ -925,9 +1088,60 @@ function threadOpenTool(ctx, manager) {
 					task: args.task,
 					initiation: args.initiation
 				});
-				return `已开讨论串 #${thread.n}「${thread.title}」（会话 ${thread.id}），它在后台运行，用户可以在侧栏点开它。它做完会把摘要发回这里；不要等待或轮询，继续做别的事或结束本轮。`;
+				return {
+					text: `已开讨论串 #${thread.n}「${thread.title}」（会话 ${thread.id}），它在后台运行，用户可以在侧栏点开它。它做完会把摘要发回这里；不要等待或轮询，继续做别的事或结束本轮。`,
+					threadId: thread.id,
+					n: thread.n,
+					title: thread.title
+				};
 			} catch (error) {
-				if (error instanceof ThreadError) return `没有开讨论串：${error.message}`;
+				if (error instanceof ThreadError) return { text: `没有开讨论串：${error.message}` };
+				throw error;
+			}
+		}
+	});
+}
+// src/tools/thread-propose.ts
+function threadProposeTool(manager, maxPerCall) {
+	return defineTool({
+		name: "thread_propose",
+		description: "Suggest threads the user did not ask for (follow-up work you noticed). They appear as a checklist card above the input; nothing starts until the user picks them. Use thread_open instead when the user asked for the work.",
+		parameters: { items: {
+			type: "array",
+			required: true,
+			description: `1 to ${maxPerCall} suggestions, most valuable first.`,
+			items: {
+				type: "object",
+				additionalProperties: false,
+				properties: {
+					title: {
+						type: "string",
+						required: true,
+						description: "Short title, at most 30 characters."
+					},
+					task: {
+						type: "string",
+						required: true,
+						description: "Complete, self-contained brief, as for thread_open; the user may start it much later."
+					}
+				}
+			}
+		} },
+		output: {
+			schema: { type: "string" },
+			render: (_args, value) => [{
+				type: "text",
+				text: value
+			}]
+		},
+		async execute(args, exec) {
+			const caller = exec.agent;
+			if (caller === void 0) throw new Error("thread_propose needs a calling session");
+			try {
+				const proposals = await manager.propose(caller.id, args.items);
+				return `已把 ${proposals.length} 个提议放进输入框上方的卡片：${proposals.map((p) => `「${p.title}」`).join("、")}。用户勾选后才会开讨论串；不要等待，也不要在回复里重复列出。`;
+			} catch (error) {
+				if (error instanceof ThreadError) return `没有提议：${error.message}`;
 				throw error;
 			}
 		}
@@ -1094,6 +1308,7 @@ function installPerAgent(ctx, manager, projects, config) {
 				}));
 			} else {
 				disposers.push(scope.tools.register(threadOpenTool(ctx, manager)));
+				disposers.push(scope.tools.register(threadProposeTool(manager, config.maxProposalsPerTurn)));
 				disposers.push(scope.tools.register(threadReplyTool(manager)));
 				disposers.push(scope.tools.register(threadStatusTool(manager)));
 				disposers.push(scope.systemPrompt.section({
@@ -1166,6 +1381,9 @@ function registerRpc(connection, handlers) {
 	});
 }
 // src/store.ts
+function byCreated(a, b) {
+	return a.createdAt.localeCompare(b.createdAt);
+}
 function emptyMain(id) {
 	return {
 		id,
@@ -1195,7 +1413,11 @@ const threadSchema = z.object({
 	n: z.number().int().positive(),
 	title: z.string(),
 	task: z.string(),
-	initiation: z.enum(["user_asked", "offer"]),
+	initiation: z.enum([
+		"user_asked",
+		"offer",
+		"proposal"
+	]),
 	status: z.enum([
 		"starting",
 		"running",
@@ -1211,14 +1433,37 @@ const threadSchema = z.object({
 	createdAt: z.string(),
 	updatedAt: z.string()
 });
+const cardSchema = z.object({
+	threadId: z.string(),
+	n: z.number().int().positive(),
+	title: z.string(),
+	status: z.string().optional(),
+	summary: z.string().optional()
+});
 const mainSchema = z.object({
 	id: z.string(),
 	autoWakeStreak: z.number().int().nonnegative(),
 	pendingNotes: z.array(z.object({
 		threadId: z.string(),
 		text: z.string(),
-		quiet: z.boolean()
+		quiet: z.boolean(),
+		card: cardSchema.optional()
 	}))
+});
+const proposalSchema = z.object({
+	id: z.string(),
+	mainSessionId: z.string(),
+	title: z.string(),
+	task: z.string(),
+	state: z.enum([
+		"pending",
+		"queued",
+		"started",
+		"dismissed"
+	]),
+	threadId: z.string().nullable(),
+	createdAt: z.string(),
+	expiresAt: z.string()
 });
 const projectSchema = z.object({
 	id: z.string(),
@@ -1239,7 +1484,8 @@ const domain = defineDomain({
 	tables: {
 		threads: domainTable(threadSchema),
 		mains: domainTable(mainSchema),
-		projects: domainTable(projectSchema)
+		projects: domainTable(projectSchema),
+		proposals: domainTable(proposalSchema)
 	}
 });
 async function openStore(storageDomain) {
@@ -1247,8 +1493,12 @@ async function openStore(storageDomain) {
 	const threads = opened.table("threads");
 	const mains = opened.table("mains");
 	const projects = opened.table("projects");
+	const proposals = opened.table("proposals");
 	const values = (table) => [...table.entries()].map(([, record]) => record);
 	return {
+		proposal: (id) => proposals.get(id),
+		proposalsOf: (mainSessionId) => values(proposals).filter((p) => p.mainSessionId === mainSessionId).sort(byCreated),
+		putProposal: (record) => proposals.put(record.id, record),
 		thread: (id) => threads.get(id),
 		threads: () => values(threads),
 		threadsOf: (mainSessionId) => values(threads).filter((t) => t.mainSessionId === mainSessionId).sort(byNumber),
@@ -1286,6 +1536,7 @@ async function apply(ctx, config) {
 		config,
 		now,
 		newSessionId: () => `session-${randomUUID()}`,
+		newProposalId: () => `proposal-${randomUUID()}`,
 		warn
 	});
 	const projects = new Projects({

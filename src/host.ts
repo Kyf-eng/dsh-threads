@@ -10,7 +10,7 @@ import type { ThreadAgent, ThreadHost } from './manager.ts'
 import type { ProjectHost, WorkspaceInfo } from './projects.ts'
 import { textOf } from './report.ts'
 import { optional } from './services.ts'
-import { SOURCE_KIND } from './source.ts'
+import { type NoticeMeta, SOURCE_KIND } from './source.ts'
 
 interface SessionTitleLike {
   rename(session: Agent['session'], title: string): unknown
@@ -21,11 +21,19 @@ interface PermissionPresetsLike {
   set(session: Agent['session'], name: string): void
 }
 
-/** Every message this plugin puts into an inbox: tagged with our source, shown as a compact notice. */
-export function noticeMessage(text: string, summary: string) {
+/**
+ * Every message this plugin puts into an inbox: tagged with our source, shown as a compact
+ * notice, and carrying the thread cards the browser half renders in place of the notice row.
+ */
+export function noticeMessage(text: string, summary: string, meta?: NoticeMeta) {
   return createUserMessage({
     content: [{ type: 'text', text }],
-    source: { kind: SOURCE_KIND, form: 'notice', summary: boundContextSummary(summary) },
+    source: {
+      kind: SOURCE_KIND,
+      form: 'notice',
+      summary: boundContextSummary(summary),
+      ...(meta === undefined ? {} : { role: meta.role, threads: meta.threads, wake: meta.wake }),
+    },
   })
 }
 
@@ -34,8 +42,8 @@ export function wrapAgent(agent: Agent): ThreadAgent {
     id: agent.id,
     get status() { return agent.status },
     get seq() { return Number(agent.session.seq) },
-    followup: (text, summary) => agent.followup(noticeMessage(text, summary)),
-    inject: (text, summary) => agent.inject(noticeMessage(text, summary)),
+    followup: (text, summary, meta) => agent.followup(noticeMessage(text, summary, meta)),
+    inject: (text, summary, meta) => agent.inject(noticeMessage(text, summary, meta)),
   }
 }
 

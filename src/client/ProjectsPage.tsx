@@ -5,6 +5,7 @@ import { callHost, projectsStore, type ProjectView, useProjects } from './api.ts
 import { FolderIcon, PinIcon, PlusIcon, SearchIcon, TrashIcon } from './icons.tsx'
 import { relativeTime, type Translate } from './locale.ts'
 import { NewProjectDialog, type WorkspaceOption } from './NewProjectDialog.tsx'
+import { threadsRevision } from './threads.ts'
 
 type Sort = 'activity' | 'created' | 'title'
 
@@ -61,6 +62,7 @@ export function ProjectsPage({ t, useWorkspaces, useSessionStatus, openSession, 
     await callHost('projects.remove', { id: project.id })
     if (project.pinned) await pinSession(project.mainSessionId, false).catch(() => {})
     setRemoving(null)
+    threadsRevision.bump()
     await projectsStore.refresh()
   }
 
@@ -133,7 +135,7 @@ export function ProjectsPage({ t, useWorkspaces, useSessionStatus, openSession, 
       <NewProjectDialog
         open={creating}
         onClose={() => setCreating(false)}
-        onCreated={(project) => { setCreating(false); openSession(project.mainSessionId) }}
+        onCreated={(project) => { setCreating(false); threadsRevision.bump(); openSession(project.mainSessionId) }}
         workspaces={workspaces}
         t={t}
       />

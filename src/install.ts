@@ -12,6 +12,7 @@ import type { Projects } from './projects.ts'
 import { dispatcherPrompt, projectPrompt, SECTION_ORDER, threadPrompt } from './prompts.ts'
 import { type Role, roleOf } from './roles.ts'
 import { threadOpenTool } from './tools/thread-open.ts'
+import { threadProposeTool } from './tools/thread-propose.ts'
 import { threadReplyTool } from './tools/thread-reply.ts'
 import { threadReportTool } from './tools/thread-report.ts'
 import { threadStatusTool } from './tools/thread-status.ts'
@@ -45,6 +46,7 @@ export function installPerAgent(ctx: Context, manager: ThreadManager, projects: 
         disposers.push(scope.systemPrompt.section({ name: SECTION_NAME, order: SECTION_ORDER, text: threadPrompt(config.summaryMaxChars) }))
       } else {
         disposers.push(scope.tools.register(threadOpenTool(ctx, manager)))
+        disposers.push(scope.tools.register(threadProposeTool(manager, config.maxProposalsPerTurn)))
         disposers.push(scope.tools.register(threadReplyTool(manager)))
         disposers.push(scope.tools.register(threadStatusTool(manager)))
         disposers.push(scope.systemPrompt.section({ name: SECTION_NAME, order: SECTION_ORDER, text: dispatcherPrompt(config.maxRunning) }))

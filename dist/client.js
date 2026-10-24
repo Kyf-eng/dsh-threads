@@ -5,8 +5,115 @@ window.__ModuleLoader__.load({
 		var exports = module.exports;
 Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
 let react_jsx_runtime = require("react/jsx-runtime");
-let _deepseek_ai_dsh_client_ui_primitives = require("@deepseek-ai/dsh-client-ui-primitives");
 let react = require("react");
+let _deepseek_ai_dsh_client_ui_primitives = require("@deepseek-ai/dsh-client-ui-primitives");
+// src/client/chat.ts
+const NOTICE_NODE = "dsh-threads-notice";
+const OPENED_KEY = "dsh-threads-opened";
+const isAppend = (event) => event.surfaceOp === "append";
+function isCard(value) {
+	const card = value;
+	return typeof card === "object" && card !== null && typeof card.threadId === "string" && typeof card.n === "number" && typeof card.title === "string";
+}
+const noticeDefinition = {
+	kind: NOTICE_NODE,
+	target: "chat",
+	match: (event) => {
+		if (event.type !== "user/message" || !isAppend(event) || event.data.source?.kind !== "dsh-threads") return null;
+		return {
+			id: String(event.data.id),
+			role: "start",
+			exclusive: true
+		};
+	},
+	start: (_context, match) => {
+		const { event } = match;
+		const source = event.data.source ?? {};
+		const content = Array.isArray(event.data.content) ? event.data.content : [];
+		return {
+			seq: event.seq,
+			time: event.time,
+			role: source.role === "brief" || source.role === "reply" || source.role === "report" ? source.role : null,
+			wake: typeof source.wake === "boolean" ? source.wake : null,
+			threads: Array.isArray(source.threads) ? source.threads.filter(isCard) : [],
+			summary: typeof source.summary === "string" ? source.summary : "",
+			text: content.find((block) => block.type === "text")?.text ?? ""
+		};
+	},
+	update: (context) => context.state,
+	buildViewNode: (context) => {
+		if (context.state === void 0) return null;
+		const { seq, ...data } = context.state;
+		return {
+			key: context.key,
+			kind: NOTICE_NODE,
+			id: context.id,
+			target: "chat",
+			anchorSeq: seq,
+			location: context.start?.location ?? context.matches?.[0]?.location ?? { kind: "unresolved" },
+			visibility: "visible",
+			groupTree: data.wake === true ? "input" : "turn",
+			data
+		};
+	}
+};
+const openedDefinition = {
+	kind: OPENED_KEY,
+	match: (event) => {
+		if (event.type === "turn/start") return {
+			id: String(event.data.turn),
+			role: "start"
+		};
+		if (event.type === "tool/call" || event.type === "tool/result" && isAppend(event)) return {
+			id: String(event.data.turn),
+			role: "update"
+		};
+		return null;
+	},
+	start: (_context, match) => {
+		if (match.event.type !== "turn/start") throw new Error("dsh-threads-opened start requires turn/start");
+		return {
+			turn: match.event.data.turn,
+			calls: /* @__PURE__ */ new Set(),
+			opened: []
+		};
+	},
+	update: (context, match) => {
+		const state = context.state;
+		if (state === void 0) return state;
+		const { event } = match;
+		if (event.type === "tool/call") {
+			if (event.data.name !== "thread_open") return state;
+			return {
+				...state,
+				calls: /* @__PURE__ */ new Set([...state.calls, String(event.data.callId)])
+			};
+		}
+		if (event.type !== "tool/result") return state;
+		if (!state.calls.has(String(event.data.message?.source?.callId))) return state;
+		const meta = event.data.meta;
+		if (!isCard(meta) || state.opened.some((card) => card.threadId === meta.threadId)) return state;
+		return {
+			...state,
+			opened: [...state.opened, {
+				threadId: meta.threadId,
+				n: meta.n,
+				title: meta.title
+			}]
+		};
+	},
+	buildLocationData: (context, scope, previous) => {
+		const state = context.state;
+		if (scope !== "turn" || state === void 0 || state.opened.length === 0) return null;
+		if (previous?.kind === "turn" && previous.turn === state.turn && previous.key === "dsh-threads-opened" && previous.value?.opened === state.opened) return previous;
+		return {
+			kind: "turn",
+			turn: state.turn,
+			key: OPENED_KEY,
+			value: { opened: state.opened }
+		};
+	}
+};
 // src/client/icons.tsx
 function Svg({ size = 16, children, ...rest }) {
 	return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("svg", {
@@ -89,6 +196,405 @@ function SearchIcon(props) {
 		}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", { d: "m20 20-4.2-4.2" })]
 	});
 }
+// src/client/api.ts
+/**
+* Host route, relative to the page like DSH's own Connection calls: on Desktop the page is
+* dsh-app://app/ and the shell forwards it to the Host with its cookie; on Web it is same-origin.
+* Must match RPC_PATH in src/rpc.ts.
+*/
+const RPC_URL = "api/dsh-threads";
+async function callHost(method, payload = {}) {
+	const response = await fetch(RPC_URL, {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify({
+			method,
+			payload
+		})
+	});
+	const body = await response.json().catch(() => ({}));
+	if (!response.ok) throw new Error((body.error ?? `HTTP ${response.status}`).replace(/^(Project|Thread)?Error: /, ""));
+	return body.result;
+}
+let state = {
+	status: "idle",
+	projects: [],
+	error: null
+};
+const listeners$2 = /* @__PURE__ */ new Set();
+let inflight = null;
+function publish$1(next) {
+	state = next;
+	for (const listener of listeners$2) listener();
+}
+const projectsStore = {
+	getSnapshot: () => state,
+	subscribe(listener) {
+		listeners$2.add(listener);
+		return () => {
+			listeners$2.delete(listener);
+		};
+	},
+	/** Reload from the host; concurrent calls share one request. */
+	refresh() {
+		if (inflight !== null) return inflight;
+		if (state.status === "idle") publish$1({
+			...state,
+			status: "loading"
+		});
+		inflight = callHost("projects.list").then((projects) => publish$1({
+			status: "ready",
+			projects,
+			error: null
+		})).catch((error) => publish$1({
+			...state,
+			status: "error",
+			error: error instanceof Error ? error.message : String(error)
+		})).finally(() => {
+			inflight = null;
+		});
+		return inflight;
+	}
+};
+function useProjects() {
+	return (0, react.useSyncExternalStore)(projectsStore.subscribe, projectsStore.getSnapshot);
+}
+// src/client/threads.ts
+/** Bumped after any change this browser makes (resolve, reopen), so panes reload. */
+let revision = 0;
+const listeners$1 = /* @__PURE__ */ new Set();
+const threadsRevision = {
+	bump() {
+		revision += 1;
+		for (const listener of listeners$1) listener();
+	},
+	subscribe(listener) {
+		listeners$1.add(listener);
+		return () => {
+			listeners$1.delete(listener);
+		};
+	},
+	get: () => revision
+};
+function useThreadsRevision() {
+	return (0, react.useSyncExternalStore)(threadsRevision.subscribe, threadsRevision.get);
+}
+/** Load a host value, reloading whenever `deps` change; keeps the last value while reloading. */
+function useHostValue(method, payload, deps) {
+	const [value, setValue] = (0, react.useState)(void 0);
+	(0, react.useEffect)(() => {
+		if (method === null) {
+			setValue(void 0);
+			return;
+		}
+		let live = true;
+		callHost(method, payload).then((next) => {
+			if (live) setValue(next);
+		}, () => {});
+		return () => {
+			live = false;
+		};
+	}, [method, ...deps]);
+	return value;
+}
+/** Right-sidebar resource address of a thread's conversation. */
+const THREAD_ADDRESS = "dsh-resource://dsh-threads/session/";
+function threadAddress(threadId) {
+	return `${THREAD_ADDRESS}${encodeURIComponent(threadId)}`;
+}
+function parseThreadAddress(value) {
+	let url;
+	try {
+		url = new URL(value);
+	} catch {
+		return;
+	}
+	if (url.protocol !== "dsh-resource:" || url.hostname.toLowerCase() !== "dsh-threads") return void 0;
+	const parts = url.pathname.split("/").filter(Boolean);
+	if (parts.length !== 2 || parts[0] !== "session" || parts[1] === void 0) return void 0;
+	try {
+		return decodeURIComponent(parts[1]);
+	} catch {
+		return;
+	}
+}
+const THREAD_ADDRESS_PATTERN = `${THREAD_ADDRESS}**`;
+/** StateDot state for a thread row. */
+function dotState(thread, running) {
+	if (running || thread.status === "running" || thread.status === "starting") return "ongoing";
+	if (thread.status === "failed") return "error";
+	if (thread.resolved) return "done";
+	const report = thread.lastReport?.status;
+	if (report === "needs_decision" || report === "blocked") return "warning";
+	if (report === "failed") return "error";
+	return report === "done" ? "done" : "idle";
+}
+// src/client/kinds.ts
+let kinds = {
+	threads: /* @__PURE__ */ new Set(),
+	mains: /* @__PURE__ */ new Set()
+};
+const listeners = /* @__PURE__ */ new Set();
+function publish(next) {
+	kinds = next;
+	for (const listener of listeners) listener();
+}
+/** Reload on start, after this browser changes something, and when any session starts or stops. */
+function syncKinds(status) {
+	let disposed = false;
+	let pending;
+	const load = async () => {
+		const next = await callHost("sessions.kinds").catch(() => void 0);
+		if (!disposed && next !== void 0) publish({
+			threads: new Set(next.threads),
+			mains: new Set(next.mains)
+		});
+	};
+	const schedule = () => {
+		if (pending !== void 0) clearTimeout(pending);
+		pending = setTimeout(() => {
+			load();
+		}, 300);
+	};
+	let runningKey = "";
+	const offStatus = status?.subscribe(() => {
+		const next = [...status.getSnapshot()].filter(([, state]) => state.running === true).map(([id]) => id).sort().join(",");
+		if (next !== runningKey) {
+			runningKey = next;
+			schedule();
+		}
+	});
+	const offRevision = threadsRevision.subscribe(schedule);
+	load();
+	return () => {
+		disposed = true;
+		if (pending !== void 0) clearTimeout(pending);
+		offStatus?.();
+		offRevision();
+	};
+}
+function useKinds() {
+	return (0, react.useSyncExternalStore)((listener) => {
+		listeners.add(listener);
+		return () => {
+			listeners.delete(listener);
+		};
+	}, () => kinds);
+}
+/** sidebar.session.row.leading entry: a small mark on threads and project main conversations. */
+function SessionBadge({ sessionId, t }) {
+	const { threads, mains } = useKinds();
+	if (threads.has(sessionId)) return (0, react.createElement)("span", {
+		className: "dsht-badge",
+		title: t("badge.thread")
+	}, (0, react.createElement)(ThreadsIcon, { size: 13 }));
+	if (mains.has(sessionId)) return (0, react.createElement)("span", {
+		className: "dsht-badge",
+		title: t("badge.project")
+	}, (0, react.createElement)(ProjectsIcon, { size: 13 }));
+	return null;
+}
+// src/client/ProposalsDock.tsx
+function ProposalsDock({ sessionId, useSessionStatus, t }) {
+	const revision = useThreadsRevision();
+	const runningKey = useSessionStatus((statuses) => [...statuses].filter(([, state]) => state.running === true).map(([id]) => id).sort().join(","));
+	const proposals = useHostValue(sessionId === void 0 ? null : "proposals.list", { mainSessionId: sessionId }, [
+		sessionId,
+		runningKey,
+		revision
+	]);
+	const [unchecked, setUnchecked] = (0, react.useState)(/* @__PURE__ */ new Set());
+	const [busy, setBusy] = (0, react.useState)(false);
+	if (sessionId === void 0 || proposals === void 0 || proposals.length === 0) return null;
+	const pending = proposals.filter((p) => p.state === "pending");
+	const queued = proposals.filter((p) => p.state === "queued");
+	const chosen = pending.filter((p) => !unchecked.has(p.id)).map((p) => p.id);
+	const act = async (method, ids) => {
+		setBusy(true);
+		try {
+			await callHost(method, {
+				mainSessionId: sessionId,
+				ids
+			});
+			threadsRevision.bump();
+		} finally {
+			setBusy(false);
+		}
+	};
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+		className: "dsht-proposals",
+		children: [
+			/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: "dsht-chat-card-head",
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ThreadsIcon, { size: 14 }), t("proposals.title")]
+			}),
+			pending.map((proposal) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: "dsht-proposal",
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Checkbox, {
+					checked: !unchecked.has(proposal.id),
+					label: proposal.title,
+					onChange: (next) => {
+						const set = new Set(unchecked);
+						if (next) set.delete(proposal.id);
+						else set.add(proposal.id);
+						setUnchecked(set);
+					}
+				}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+					className: "dsht-row-summary",
+					children: proposal.task
+				})]
+			}, proposal.id)),
+			queued.map((proposal) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: "dsht-proposal dsht-proposal-queued",
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+					className: "dsht-row-title",
+					children: proposal.title
+				}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+					className: "dsht-row-meta",
+					children: t("proposals.queued")
+				})]
+			}, proposal.id)),
+			/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: "dsht-buttons",
+				children: [pending.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
+					variant: "ghost",
+					size: "sm",
+					disabled: busy,
+					onClick: () => {
+						act("proposals.dismiss", pending.map((p) => p.id));
+					},
+					children: t("proposals.dismiss")
+				}) : null, pending.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
+					variant: "primary",
+					size: "sm",
+					disabled: busy || chosen.length === 0,
+					onClick: () => {
+						act("proposals.start", chosen);
+					},
+					children: t("proposals.start", { count: chosen.length })
+				}) : null]
+			})
+		]
+	});
+}
+// src/client/ThreadCards.tsx
+const STATUS_KEYS = {
+	done: "status.done",
+	blocked: "status.blocked",
+	needs_decision: "status.needsDecision",
+	failed: "status.failed",
+	"no-report": "status.noReport"
+};
+function reportDot(status) {
+	if (status === "done") return "done";
+	if (status === "blocked" || status === "needs_decision") return "warning";
+	if (status === "failed") return "error";
+	return "idle";
+}
+function ThreadRow({ card, dot, label, summary, t, openThread }) {
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+		className: "dsht-card-row",
+		children: [
+			/* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.StateDot, {
+				state: dot,
+				className: "dsht-dot"
+			}),
+			/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: "dsht-row-body",
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+					className: "dsht-row-title",
+					children: [
+						"#",
+						card.n,
+						" ",
+						card.title,
+						label === void 0 ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+							className: "dsht-row-status",
+							children: [" · ", label]
+						})
+					]
+				}), summary === void 0 || summary.length === 0 ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+					className: "dsht-row-summary",
+					children: summary
+				})]
+			}),
+			/* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
+				size: "sm",
+				variant: "outline",
+				onClick: () => openThread(card.threadId),
+				children: t("card.open")
+			})
+		]
+	});
+}
+/** conversation.chat.node renderer for NOTICE_NODE. */
+function NoticeCard({ node, t, openThread }) {
+	const { role, threads, summary, text } = node.data;
+	const [expanded, setExpanded] = (0, react.useState)(false);
+	if (role === "report" && threads.length > 0) return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+		className: "dsht-chat-card",
+		children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+			className: "dsht-chat-card-head",
+			children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ThreadsIcon, { size: 14 }), t("notice.report", { count: threads.length })]
+		}), threads.map((card) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ThreadRow, {
+			card,
+			dot: reportDot(card.status),
+			label: card.status === void 0 ? void 0 : t(STATUS_KEYS[card.status] ?? "status.noReport"),
+			summary: card.summary,
+			t,
+			openThread
+		}, card.threadId))]
+	});
+	const card = threads[0];
+	const heading = role === "brief" ? t("notice.brief") : role === "reply" ? t("notice.reply") : summary;
+	const body = text.split("\n").filter((line, index) => !(index === 0 && line.startsWith("["))).join("\n").trim();
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+		className: "dsht-chat-card",
+		children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+			className: "dsht-chat-card-head",
+			children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ThreadsIcon, { size: 14 }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", { children: [heading, card === void 0 ? "" : ` · #${card.n} ${card.title}`] })]
+		}), body.length === 0 ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+			type: "button",
+			className: `dsht-chat-card-text ${expanded ? "" : "dsht-clamped"}`,
+			onClick: () => setExpanded(!expanded),
+			children: body
+		})]
+	});
+}
+/** conversation.chat.turnTail entry: the threads this turn opened ("N 条回复"). */
+function TurnThreadsCard({ turn, sessionId, useSessionStatus, t, openThread }) {
+	const opened = turn.data.get("dsh-threads-opened")?.opened ?? [];
+	const revision = useThreadsRevision();
+	const runningKey = useSessionStatus((statuses) => [...statuses].filter(([, state]) => state.running === true).map(([id]) => id).sort().join(","));
+	const running = (0, react.useMemo)(() => new Set(runningKey.split(",")), [runningKey]);
+	const threads = useHostValue(opened.length === 0 ? null : "threads.list", { mainSessionId: sessionId }, [
+		sessionId,
+		runningKey,
+		revision
+	]);
+	if (opened.length === 0) return null;
+	const byId = new Map((threads ?? []).map((thread) => [thread.id, thread]));
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+		className: "dsht-chat-card dsht-turn-card",
+		children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+			className: "dsht-chat-card-head",
+			children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ThreadsIcon, { size: 14 }), t("card.replies", { count: opened.length })]
+		}), opened.map((card) => {
+			const thread = byId.get(card.threadId);
+			const isRunning = running.has(card.threadId) || thread?.status === "running" || thread?.status === "starting";
+			const dot = isRunning ? "ongoing" : reportDot(thread?.lastReport?.status);
+			const label = isRunning ? t("status.running") : thread?.resolved ? t("list.resolved") : void 0;
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ThreadRow, {
+				card,
+				dot,
+				label,
+				summary: isRunning ? void 0 : thread?.lastReport?.summary,
+				t,
+				openThread
+			}, card.threadId);
+		})]
+	});
+}
 // src/client/locale.ts
 /** Locale namespace for every string this plugin shows. */
 const NS = "dshThreads";
@@ -142,7 +648,24 @@ const zh = {
 	"header.running": "{count} 个运行中",
 	"header.backToMain": "回到主对话",
 	"resolved.notice": "此讨论串已解决。重新打开后才能继续发消息。",
-	"resolved.reopen": "重新打开"
+	"resolved.reopen": "重新打开",
+	"card.open": "查看讨论串",
+	"card.replies": "{count} 条回复",
+	"notice.report": "讨论串回报（{count}）",
+	"notice.brief": "来自主对话的任务",
+	"notice.reply": "主对话追加的指令",
+	"status.done": "已完成",
+	"status.blocked": "受阻",
+	"status.needsDecision": "待你决定",
+	"status.failed": "失败",
+	"status.noReport": "没有回报",
+	"status.running": "运行中",
+	"proposals.title": "建议开的讨论串",
+	"proposals.start": "开始 {count} 个讨论串",
+	"proposals.dismiss": "都不要",
+	"proposals.queued": "排队中：有讨论串结束后自动开始",
+	"badge.thread": "讨论串",
+	"badge.project": "项目主对话"
 };
 const en = {
 	"panel": "Projects",
@@ -194,7 +717,24 @@ const en = {
 	"header.running": "{count} running",
 	"header.backToMain": "Back to main conversation",
 	"resolved.notice": "This thread is resolved. Reopen it to send more messages.",
-	"resolved.reopen": "Reopen"
+	"resolved.reopen": "Reopen",
+	"card.open": "Open thread",
+	"card.replies": "{count} replies",
+	"notice.report": "Thread reports ({count})",
+	"notice.brief": "Task from the main conversation",
+	"notice.reply": "Follow-up from the main conversation",
+	"status.done": "done",
+	"status.blocked": "blocked",
+	"status.needsDecision": "needs your decision",
+	"status.failed": "failed",
+	"status.noReport": "no report",
+	"status.running": "running",
+	"proposals.title": "Suggested threads",
+	"proposals.start": "Start {count} threads",
+	"proposals.dismiss": "Dismiss all",
+	"proposals.queued": "Queued: starts when a running thread finishes",
+	"badge.thread": "Thread",
+	"badge.project": "Project main conversation"
 };
 /** Relative time like "3 天前", from an ISO timestamp. */
 function relativeTime(t, iso, now = Date.now()) {
@@ -204,69 +744,6 @@ function relativeTime(t, iso, now = Date.now()) {
 	const hours = Math.floor(minutes / 60);
 	if (hours < 24) return t("time.hours", { count: hours });
 	return t("time.days", { count: Math.floor(hours / 24) });
-}
-// src/client/api.ts
-/**
-* Host route, relative to the page like DSH's own Connection calls: on Desktop the page is
-* dsh-app://app/ and the shell forwards it to the Host with its cookie; on Web it is same-origin.
-* Must match RPC_PATH in src/rpc.ts.
-*/
-const RPC_URL = "api/dsh-threads";
-async function callHost(method, payload = {}) {
-	const response = await fetch(RPC_URL, {
-		method: "POST",
-		headers: { "content-type": "application/json" },
-		body: JSON.stringify({
-			method,
-			payload
-		})
-	});
-	const body = await response.json().catch(() => ({}));
-	if (!response.ok) throw new Error((body.error ?? `HTTP ${response.status}`).replace(/^(Project|Thread)?Error: /, ""));
-	return body.result;
-}
-let state = {
-	status: "idle",
-	projects: [],
-	error: null
-};
-const listeners$1 = /* @__PURE__ */ new Set();
-let inflight = null;
-function publish(next) {
-	state = next;
-	for (const listener of listeners$1) listener();
-}
-const projectsStore = {
-	getSnapshot: () => state,
-	subscribe(listener) {
-		listeners$1.add(listener);
-		return () => {
-			listeners$1.delete(listener);
-		};
-	},
-	/** Reload from the host; concurrent calls share one request. */
-	refresh() {
-		if (inflight !== null) return inflight;
-		if (state.status === "idle") publish({
-			...state,
-			status: "loading"
-		});
-		inflight = callHost("projects.list").then((projects) => publish({
-			status: "ready",
-			projects,
-			error: null
-		})).catch((error) => publish({
-			...state,
-			status: "error",
-			error: error instanceof Error ? error.message : String(error)
-		})).finally(() => {
-			inflight = null;
-		});
-		return inflight;
-	}
-};
-function useProjects() {
-	return (0, react.useSyncExternalStore)(projectsStore.subscribe, projectsStore.getSnapshot);
 }
 // src/client/MakeProjectMenuItem.tsx
 /** "设为项目" in a session's "…" menu; hidden for threads and sessions that already are projects. */
@@ -292,7 +769,10 @@ function MakeProjectMenuItem({ sessionId, displayTitle, useMenuOpenState, t, sho
 			callHost("projects.create", {
 				title: displayTitle,
 				fromSessionId: sessionId
-			}).then(() => projectsStore.refresh()).then(showProjects);
+			}).then(() => {
+				threadsRevision.bump();
+				return projectsStore.refresh();
+			}).then(showProjects);
 		},
 		children: t("menu.makeProject")
 	});
@@ -449,6 +929,7 @@ function ProjectsPage({ t, useWorkspaces, useSessionStatus, openSession, pinSess
 		await callHost("projects.remove", { id: project.id });
 		if (project.pinned) await pinSession(project.mainSessionId, false).catch(() => {});
 		setRemoving(null);
+		threadsRevision.bump();
 		await projectsStore.refresh();
 	};
 	return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -582,6 +1063,7 @@ function ProjectsPage({ t, useWorkspaces, useSessionStatus, openSession, pinSess
 				onClose: () => setCreating(false),
 				onCreated: (project) => {
 					setCreating(false);
+					threadsRevision.bump();
 					openSession(project.mainSessionId);
 				},
 				workspaces,
@@ -610,76 +1092,6 @@ function ProjectsPage({ t, useWorkspaces, useSessionStatus, openSession, pinSess
 			})
 		]
 	});
-}
-// src/client/threads.ts
-/** Bumped after any change this browser makes (resolve, reopen), so panes reload. */
-let revision = 0;
-const listeners = /* @__PURE__ */ new Set();
-const threadsRevision = {
-	bump() {
-		revision += 1;
-		for (const listener of listeners) listener();
-	},
-	subscribe(listener) {
-		listeners.add(listener);
-		return () => {
-			listeners.delete(listener);
-		};
-	},
-	get: () => revision
-};
-function useThreadsRevision() {
-	return (0, react.useSyncExternalStore)(threadsRevision.subscribe, threadsRevision.get);
-}
-/** Load a host value, reloading whenever `deps` change; keeps the last value while reloading. */
-function useHostValue(method, payload, deps) {
-	const [value, setValue] = (0, react.useState)(void 0);
-	(0, react.useEffect)(() => {
-		if (method === null) {
-			setValue(void 0);
-			return;
-		}
-		let live = true;
-		callHost(method, payload).then((next) => {
-			if (live) setValue(next);
-		}, () => {});
-		return () => {
-			live = false;
-		};
-	}, [method, ...deps]);
-	return value;
-}
-/** Right-sidebar resource address of a thread's conversation. */
-const THREAD_ADDRESS = "dsh-resource://dsh-threads/session/";
-function threadAddress(threadId) {
-	return `${THREAD_ADDRESS}${encodeURIComponent(threadId)}`;
-}
-function parseThreadAddress(value) {
-	let url;
-	try {
-		url = new URL(value);
-	} catch {
-		return;
-	}
-	if (url.protocol !== "dsh-resource:" || url.hostname.toLowerCase() !== "dsh-threads") return void 0;
-	const parts = url.pathname.split("/").filter(Boolean);
-	if (parts.length !== 2 || parts[0] !== "session" || parts[1] === void 0) return void 0;
-	try {
-		return decodeURIComponent(parts[1]);
-	} catch {
-		return;
-	}
-}
-const THREAD_ADDRESS_PATTERN = `${THREAD_ADDRESS}**`;
-/** StateDot state for a thread row. */
-function dotState(thread, running) {
-	if (running || thread.status === "running" || thread.status === "starting") return "ongoing";
-	if (thread.status === "failed") return "error";
-	if (thread.resolved) return "done";
-	const report = thread.lastReport?.status;
-	if (report === "needs_decision" || report === "blocked") return "warning";
-	if (report === "failed") return "error";
-	return report === "done" ? "done" : "idle";
 }
 // src/client/resolved.ts
 const RESOLVED_KIND = "dsh-threads-resolved";
@@ -787,6 +1199,19 @@ const css = `
 .dsht-row-summary{font-size:12px;line-height:17px;color:var(--dsw-alias-label-secondary);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .dsht-row-meta{font-size:11px;line-height:15px;color:var(--dsw-alias-label-tertiary)}
 .dsht-resolved{box-sizing:border-box;display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;margin:0 auto 12px;padding:12px 16px;border:1px solid var(--dsw-alias-border-l2);border-radius:16px;background:var(--dsw-alias-bg-layer-1);font-size:13px;line-height:19px;color:var(--dsw-alias-label-secondary)}
+.dsht-chat-card{box-sizing:border-box;display:flex;flex-direction:column;gap:2px;margin:6px 0;padding:8px 10px;border:1px solid var(--dsw-alias-border-l2);border-radius:14px;background:var(--dsw-alias-bg-layer-1);font-size:13px}
+.dsht-chat-card-head{display:flex;align-items:center;gap:6px;padding:2px 2px 4px;font-size:12px;line-height:17px;color:var(--dsw-alias-label-tertiary)}
+.dsht-card-row{display:flex;align-items:flex-start;gap:10px;padding:6px 2px}
+.dsht-card-row .dsht-row-body{padding-top:1px}
+.dsht-row-status{font-weight:400;color:var(--dsw-alias-label-tertiary)}
+.dsht-chat-card-text{display:block;width:100%;padding:2px;border:0;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:13px;line-height:19px;text-align:left;white-space:pre-wrap;overflow-wrap:anywhere;cursor:pointer}
+.dsht-clamped{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.dsht-turn-card{margin-top:8px}
+.dsht-proposals{box-sizing:border-box;display:flex;flex-direction:column;gap:6px;margin:0 0 8px;padding:10px 12px;border:1px solid var(--dsw-alias-border-l2);border-radius:16px;background:var(--dsw-alias-bg-layer-1);font-size:13px}
+.dsht-proposal{display:flex;flex-direction:column;gap:2px;padding:2px 0}
+.dsht-proposal .dsht-row-summary{padding-left:24px}
+.dsht-proposal-queued{flex-direction:row;justify-content:space-between;gap:8px}
+.dsht-badge{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;color:var(--dsw-alias-label-tertiary)}
 @media (max-width:640px){.dsht-page{padding-left:16px;padding-right:16px}.dsht-head{flex-direction:column}}
 `;
 /** Add the stylesheet; returns a disposer that removes it. */
@@ -1030,7 +1455,8 @@ const inject = [
 	"resources",
 	"sidebarRight",
 	"sidebarRightTabs",
-	"uiSession"
+	"uiSession",
+	"uiConversation"
 ];
 function PanelIcon({ size }) {
 	return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ProjectsIcon, { size });
@@ -1151,6 +1577,38 @@ function apply(root) {
 			openSession
 		})
 	}, ThreadsHeaderAction));
+	ctx.uiConversation.events.register(noticeDefinition);
+	ctx.uiConversation.events.register(openedDefinition);
+	ctx.slots.inject("conversation.chat.node", () => ctx.slots.register({
+		name: "conversation.chat.node",
+		key: NOTICE_NODE,
+		locale: NS,
+		inject: () => ({ openThread })
+	}, NoticeCard));
+	ctx.slots.inject("conversation.chat.turnTail", () => ctx.slots.register({
+		name: "conversation.chat.turnTail",
+		id: OPENED_KEY,
+		order: 25,
+		locale: NS,
+		inject: (sessionId) => ({
+			sessionId,
+			openThread
+		})
+	}, TurnThreadsCard));
+	ctx.slots.inject("conversation.input.dock", () => ctx.slots.register({
+		name: "conversation.input.dock",
+		id: "dsh-threads-proposals",
+		order: 15,
+		locale: NS,
+		inject: (sessionId) => ({ sessionId })
+	}, ProposalsDock));
+	ctx.effect(() => syncKinds(ctx.uiSession.sessionStatus), "dsh-threads: session kinds");
+	ctx.slots.inject("sidebar.session.row.leading", () => ctx.slots.register({
+		name: "sidebar.session.row.leading",
+		id: "dsh-threads-kind",
+		order: 50,
+		locale: NS
+	}, SessionBadge));
 	const publishResolved = ctx.uiSession.registerPendingInteraction(() => 0);
 	ctx.effect(() => syncResolved(publishResolved, ctx.uiSession.sessionStatus), "dsh-threads: resolved threads");
 	ctx.slots.inject("conversation.composer", () => ctx.slots.register({

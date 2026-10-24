@@ -1,9 +1,17 @@
 import type { Config } from './config.ts'
 import type { MainAgent } from './delivery.ts'
 import { flushNotes } from './delivery.ts'
-import { composeNote, currentReport, normalizeReport, noticeSummary, truncate } from './report.ts'
+import { composeNote, currentReport, normalizeReport, noticeSummary, plainLine, truncate } from './report.ts'
+import type { ThreadCardInfo } from './source.ts'
 import type { ThreadStore } from './store.ts'
-import type { Initiation, PendingNote, ThreadRecord, ThreadReport } from './types.ts'
+import type { Initiation, PendingNote, ProposalRecord, ThreadRecord, ThreadReport } from './types.ts'
+
+/** Longest report summary carried on a transcript card. */
+const CARD_SUMMARY_MAX = 160
+
+function cardOf(thread: Pick<ThreadRecord, 'id' | 'n' | 'title'>): ThreadCardInfo {
+  return { threadId: thread.id, n: thread.n, title: thread.title }
+}
 
 /** A live session agent, reduced to what thread orchestration needs. */
 export interface ThreadAgent extends MainAgent {
@@ -31,6 +39,7 @@ export interface ManagerDeps {
   config: Config
   now: () => string
   newSessionId: () => string
+  newProposalId: () => string
   warn: (message: string) => void
 }
 
@@ -138,7 +147,7 @@ export class ThreadManager {
     const at = this.deps.now()
     const next: ThreadRecord = { ...record, status: 'running', round: 'dispatch', roundStartSeq: agent.seq, roundStartedAt: at, updatedAt: at }
     await this.deps.store.putThread(next)
-    agent.followup(text, noticeSummary(next, '任务'))
+    agent.followup(text, noticeSummary(next, '任务'), { role: 'brief', threads: [cardOf(next)], wake: true })
     return next
   }
 
@@ -162,7 +171,7 @@ export class ThreadManager {
       ? { ...thread, status: 'running', round: 'dispatch', roundStartSeq: agent.seq, roundStartedAt: at, resolved: false, updatedAt: at }
       : { ...thread, round: 'dispatch', resolved: false, updatedAt: at }
     await this.deps.store.putThread(next)
-    agent.followup(replyText(next, text), noticeSummary(next, '追加指令'))
+    agent.followup(replyText(next, text), noticeSummary(next, '追加指令'), { role: 'reply', threads: [cardOf(next)], wake: true })
     return next
   }
 
@@ -228,9 +237,92 @@ export class ThreadManager {
       threadId: thread.id,
       text: composeNote(thread, report, fallback, this.deps.config.noteMaxChars),
       quiet: thread.round === 'user',
+      card: {
+        ...cardOf(thread),
+        status: report?.status ?? 'no-report',
+        summary: truncate(plainLine(report?.summary ?? fallback ?? ''), CARD_SUMMARY_MAX),
+      },
     }
     await this.deps.store.putThread({ ...thread, status: 'idle', round: null, updatedAt: this.deps.now() })
+    // Start queued proposals first: the note then waits for them, and the main conversation
+    // hears from the whole batch once instead of once per thread.
+    await this.drainQueue(thread.mainSessionId)
     await this.enqueue(thread.mainSessionId, note)
+  }
+
+  /**
+   * thread_propose: suggestions the model came up with itself. They wait in the proposals
+   * card until the user starts or dismisses them (Claude's `own_initiative`).
+   */
+  async propose(mainSessionId: string, items: readonly { title: string; task: string }[]): Promise<ProposalRecord[]> {
+    const { store, config, now } = this.deps
+    if (!this.isDispatcher(mainSessionId)) throw new ThreadError(NOT_A_PROJECT)
+    const cleaned = items
+      .map((item) => ({ task: item.task.trim(), title: truncate(item.title.trim(), TITLE_MAX) }))
+      .filter((item) => item.task.length > 0)
+    if (cleaned.length === 0) throw new ThreadError('至少要有一个带完整简报的提议。')
+    if (cleaned.length > config.maxProposalsPerTurn) {
+      throw new ThreadError(`一次最多提 ${config.maxProposalsPerTurn} 个讨论串；挑最值得做的。`)
+    }
+    const createdAt = now()
+    const expiresAt = new Date(Date.parse(createdAt) + config.proposalTtlDays * 86_400_000).toISOString()
+    const records = cleaned.map((item): ProposalRecord => ({
+      id: this.deps.newProposalId(),
+      mainSessionId,
+      title: item.title || titleFrom(item.task),
+      task: item.task,
+      state: 'pending',
+      threadId: null,
+      createdAt,
+      expiresAt,
+    }))
+    for (const record of records) await store.putProposal(record)
+    return records
+  }
+
+  /** Proposals still waiting for the user (pending) or for a free slot (queued). Expired ones are dropped. */
+  proposals(mainSessionId: string): ProposalRecord[] {
+    const now = this.deps.now()
+    return this.deps.store.proposalsOf(mainSessionId)
+      .filter((p) => (p.state === 'pending' && p.expiresAt > now) || p.state === 'queued')
+  }
+
+  /** The user picked proposals: open as many as the running limit allows, queue the rest. */
+  async startProposals(mainSessionId: string, ids: readonly string[]): Promise<ProposalRecord[]> {
+    const { store } = this.deps
+    for (const id of ids) {
+      const proposal = store.proposal(id)
+      if (proposal === undefined || proposal.mainSessionId !== mainSessionId || proposal.state !== 'pending') continue
+      await store.putProposal({ ...proposal, state: 'queued' })
+    }
+    await this.drainQueue(mainSessionId)
+    return ids.flatMap((id) => {
+      const proposal = store.proposal(id)
+      return proposal === undefined ? [] : [proposal]
+    })
+  }
+
+  async dismissProposals(mainSessionId: string, ids: readonly string[]): Promise<void> {
+    for (const id of ids) {
+      const proposal = this.deps.store.proposal(id)
+      if (proposal === undefined || proposal.mainSessionId !== mainSessionId) continue
+      if (proposal.state === 'pending' || proposal.state === 'queued') await this.deps.store.putProposal({ ...proposal, state: 'dismissed' })
+    }
+  }
+
+  /** Start queued proposals, oldest first, while there is room under `maxRunning`. */
+  private async drainQueue(mainSessionId: string): Promise<void> {
+    for (const proposal of this.deps.store.proposalsOf(mainSessionId)) {
+      if (proposal.state !== 'queued') continue
+      if (this.runningCount(mainSessionId) >= this.deps.config.maxRunning) return
+      try {
+        const thread = await this.open(mainSessionId, { title: proposal.title, task: proposal.task, initiation: 'proposal' })
+        await this.deps.store.putProposal({ ...proposal, state: 'started', threadId: thread.id })
+      } catch (error) {
+        this.deps.warn(`dsh-threads: could not start proposal ${proposal.id}: ${String(error)}`)
+        await this.deps.store.putProposal({ ...proposal, state: 'dismissed' })
+      }
+    }
   }
 
   /** "标记已解决 / 重新打开" from the thread pane. A resolved thread's composer is locked in the UI. */

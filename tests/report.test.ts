@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { composeNote, currentReport, normalizeReport, textOf, truncate } from '../src/report.ts'
+import { composeNote, currentReport, normalizeReport, plainLine, textOf, truncate } from '../src/report.ts'
 import type { ThreadRecord } from '../src/types.ts'
 
 const thread = { id: 'session-1', n: 2, title: '整理依赖' }
@@ -12,6 +12,12 @@ describe('truncate', () => {
 
   it('counts code points, not UTF-16 units', () => {
     expect(truncate('讨论串🧵很长', 4)).toBe('讨论串…')
+  })
+})
+
+describe('plainLine', () => {
+  it('drops markdown markers and joins lines', () => {
+    expect(plainLine('## 统计结果：共有 **7 个 JSON 文件**\n\n- `run_live/a.json`\n> 只读')).toBe('统计结果：共有 7 个 JSON 文件 run_live/a.json 只读')
   })
 })
 

@@ -9,6 +9,15 @@ export function truncate(text: string, max: number): string {
   return chars.slice(0, Math.max(0, max - 1)).join('') + ELLIPSIS
 }
 
+/** One line of plain text for a card: markdown markers dropped, whitespace collapsed. */
+export function plainLine(text: string): string {
+  return text
+    .replace(/^\s{0,3}(#{1,6}|>|[-*+]|\d+\.)\s+/gm, '')
+    .replace(/\*\*|__|`/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 /** Plain text of content blocks (text blocks only), or undefined when there is none. */
 export function textOf(blocks: readonly { type: string; text?: string }[] | undefined): string | undefined {
   const text = (blocks ?? [])

@@ -2,6 +2,7 @@
 // (docs/IMPLEMENTATION.md §三 "唤醒规则"): wake an idle main conversation only when none of
 // its threads is still running, hold while it is busy, and stop waking after
 // `maxAutoWakes` consecutive wake-ups until the user speaks again.
+import type { NoticeMeta } from './source.ts'
 import type { MainRecord, PendingNote } from './types.ts'
 
 export type DeliveryAction = 'wake' | 'hold' | 'quiet'
@@ -24,10 +25,10 @@ export function decideDelivery(input: DeliveryInput): DeliveryAction {
 /** The part of an Agent that delivery uses. */
 export interface MainAgent {
   readonly status: 'idle' | 'running'
-  /** Queue as a new turn and wake the agent. */
-  followup(text: string, summary: string): void
+  /** Queue as a new turn and wake the agent. `meta` lets the transcript render thread cards. */
+  followup(text: string, summary: string, meta?: NoticeMeta): void
   /** Queue for the next step without waking. */
-  inject(text: string, summary: string): void
+  inject(text: string, summary: string, meta?: NoticeMeta): void
 }
 
 export interface FlushResult {
@@ -43,7 +44,7 @@ export function flushNotes(record: MainRecord, agent: MainAgent, runningThreads:
   if (record.pendingNotes.length === 0) return { record, woke: false }
   const quiet = record.pendingNotes.filter((note) => note.quiet)
   const loud = record.pendingNotes.filter((note) => !note.quiet)
-  if (quiet.length > 0) agent.inject(join(quiet), summaryOf(quiet))
+  if (quiet.length > 0) agent.inject(join(quiet), summaryOf(quiet), metaOf(quiet, false))
 
   let remaining: PendingNote[] = []
   let streak = record.autoWakeStreak
@@ -51,11 +52,11 @@ export function flushNotes(record: MainRecord, agent: MainAgent, runningThreads:
   if (loud.length > 0) {
     const action = decideDelivery({ mainStatus: agent.status, runningThreads, autoWakeStreak: streak, maxAutoWakes })
     if (action === 'wake') {
-      agent.followup(join(loud), summaryOf(loud))
+      agent.followup(join(loud), summaryOf(loud), metaOf(loud, true))
       streak += 1
       woke = true
     } else if (action === 'quiet') {
-      agent.inject(join(loud), summaryOf(loud))
+      agent.inject(join(loud), summaryOf(loud), metaOf(loud, false))
     } else {
       remaining = loud
     }
@@ -65,6 +66,10 @@ export function flushNotes(record: MainRecord, agent: MainAgent, runningThreads:
 
 function join(notes: readonly PendingNote[]): string {
   return notes.map((note) => note.text).join('\n\n')
+}
+
+function metaOf(notes: readonly PendingNote[], wake: boolean): NoticeMeta {
+  return { role: 'report', threads: notes.flatMap((note) => (note.card === undefined ? [] : [note.card])), wake }
 }
 
 function summaryOf(notes: readonly PendingNote[]): string {

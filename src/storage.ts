@@ -3,8 +3,8 @@
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
 import type { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import { z } from 'zod'
-import { byNumber, emptyMain, type ThreadStore } from './store.ts'
-import type { MainRecord, ProjectRecord, ThreadRecord } from './types.ts'
+import { byCreated, byNumber, emptyMain, type ThreadStore } from './store.ts'
+import type { MainRecord, ProjectRecord, ProposalRecord, ThreadRecord } from './types.ts'
 
 const reportSchema = z.object({
   status: z.enum(['done', 'blocked', 'needs_decision', 'failed']),
@@ -20,7 +20,7 @@ const threadSchema = z.object({
   n: z.number().int().positive(),
   title: z.string(),
   task: z.string(),
-  initiation: z.enum(['user_asked', 'offer']),
+  initiation: z.enum(['user_asked', 'offer', 'proposal']),
   status: z.enum(['starting', 'running', 'idle', 'failed']),
   resolved: z.boolean().default(false),
   round: z.enum(['dispatch', 'user']).nullable(),
@@ -32,10 +32,29 @@ const threadSchema = z.object({
   updatedAt: z.string(),
 })
 
+const cardSchema = z.object({
+  threadId: z.string(),
+  n: z.number().int().positive(),
+  title: z.string(),
+  status: z.string().optional(),
+  summary: z.string().optional(),
+})
+
 const mainSchema = z.object({
   id: z.string(),
   autoWakeStreak: z.number().int().nonnegative(),
-  pendingNotes: z.array(z.object({ threadId: z.string(), text: z.string(), quiet: z.boolean() })),
+  pendingNotes: z.array(z.object({ threadId: z.string(), text: z.string(), quiet: z.boolean(), card: cardSchema.optional() })),
+})
+
+const proposalSchema = z.object({
+  id: z.string(),
+  mainSessionId: z.string(),
+  title: z.string(),
+  task: z.string(),
+  state: z.enum(['pending', 'queued', 'started', 'dismissed']),
+  threadId: z.string().nullable(),
+  createdAt: z.string(),
+  expiresAt: z.string(),
 })
 
 const projectSchema = z.object({
@@ -59,6 +78,7 @@ export const domain = defineDomain({
     threads: domainTable<string, ThreadRecord>(threadSchema),
     mains: domainTable<string, MainRecord>(mainSchema),
     projects: domainTable<string, ProjectRecord>(projectSchema),
+    proposals: domainTable<string, ProposalRecord>(proposalSchema),
   },
 })
 
@@ -67,8 +87,12 @@ export async function openStore(storageDomain: DomainFacility): Promise<ThreadSt
   const threads = opened.table('threads')
   const mains = opened.table('mains')
   const projects = opened.table('projects')
+  const proposals = opened.table('proposals')
   const values = <V>(table: { entries(): IterableIterator<[string, V]> }) => [...table.entries()].map(([, record]) => record)
   return {
+    proposal: (id) => proposals.get(id),
+    proposalsOf: (mainSessionId) => values(proposals).filter((p) => p.mainSessionId === mainSessionId).sort(byCreated),
+    putProposal: (record) => proposals.put(record.id, record),
     thread: (id) => threads.get(id),
     threads: () => values(threads),
     threadsOf: (mainSessionId) => values(threads).filter((t) => t.mainSessionId === mainSessionId).sort(byNumber),

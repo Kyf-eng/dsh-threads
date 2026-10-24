@@ -47,15 +47,28 @@ export function threadOpenTool(ctx: Context, manager: ThreadManager): ToolDefini
       },
     },
     output: {
-      schema: { type: 'string' },
-      render: (_args, value) => [{ type: 'text', text: value }],
+      // threadId/n/title reach the browser as `presentationMeta` (the turn's thread card).
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          text: { type: 'string', required: true },
+          threadId: { type: 'string' },
+          n: { type: 'integer' },
+          title: { type: 'string' },
+        },
+      },
+      render: (_args, value) => [{ type: 'text', text: value.text }],
+      presentationMeta: (_args, value) => (value.threadId === undefined
+        ? null
+        : { threadId: value.threadId, n: value.n ?? 0, title: value.title ?? '' }),
     },
     async execute(args, exec) {
       const caller = exec.agent
       if (caller === undefined) throw new Error('thread_open needs a calling session')
       if (args.initiation === 'offer') {
         const questions = optional<UserQuestionsLike>(ctx, 'userQuestions')
-        if (questions === undefined) return '没法在界面上询问用户（userQuestions 不可用）。请在回复里直接问用户要不要开讨论串。'
+        if (questions === undefined) return { text: '没法在界面上询问用户（userQuestions 不可用）。请在回复里直接问用户要不要开讨论串。' }
         const answer = await questions.ask({
           questions: [{
             id: OFFER_ID,
@@ -74,16 +87,21 @@ export function threadOpenTool(ctx: Context, manager: ThreadManager): ToolDefini
         })
         const item = answer.answers.find((entry) => entry.id === OFFER_ID)
         const choice = item?.selected[0]
-        if (choice === HERE) return '用户选择在主对话里做：不要开讨论串，直接在这里做这件事。'
-        if (choice === SKIP) return '用户选择先不做这件事：不要开讨论串，也不要开始做。'
-        if (choice !== OPEN) return `用户没有选择开讨论串，回答是：${item?.custom ?? '（无）'}。按用户的回答处理，不要开讨论串。`
+        if (choice === HERE) return { text: '用户选择在主对话里做：不要开讨论串，直接在这里做这件事。' }
+        if (choice === SKIP) return { text: '用户选择先不做这件事：不要开讨论串，也不要开始做。' }
+        if (choice !== OPEN) return { text: `用户没有选择开讨论串，回答是：${item?.custom ?? '（无）'}。按用户的回答处理，不要开讨论串。` }
       }
       try {
         const thread = await manager.open(caller.id, { title: args.title, task: args.task, initiation: args.initiation })
-        return `已开讨论串 #${thread.n}「${thread.title}」（会话 ${thread.id}），它在后台运行，用户可以在侧栏点开它。`
-          + '它做完会把摘要发回这里；不要等待或轮询，继续做别的事或结束本轮。'
+        return {
+          text: `已开讨论串 #${thread.n}「${thread.title}」（会话 ${thread.id}），它在后台运行，用户可以在侧栏点开它。`
+            + '它做完会把摘要发回这里；不要等待或轮询，继续做别的事或结束本轮。',
+          threadId: thread.id,
+          n: thread.n,
+          title: thread.title,
+        }
       } catch (error) {
-        if (error instanceof ThreadError) return `没有开讨论串：${error.message}`
+        if (error instanceof ThreadError) return { text: `没有开讨论串：${error.message}` }
         throw error
       }
     },

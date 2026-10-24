@@ -1,23 +1,26 @@
 // Project settings, after Claude's (left navigation; rows of title, description and control).
-// Text fields save when they lose focus and when the dialog closes; the icon saves at once.
+// Text fields save when they lose focus and when the dialog closes; the icon and the models save
+// at once.
 import { IconSettingsOutlineRegular, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import { type ReactNode, useEffect, useState } from 'react'
 import { callHost, projectsStore, type ProjectView } from './api.ts'
 import { PROJECT_ICON_IDS, ProjectIcon } from './icons.tsx'
 import type { MessageKey, Translate } from './locale.ts'
+import { ModelSettings, UsageSection } from './ProjectModels.tsx'
 import { CloseIcon } from './ui.tsx'
 
 const GOAL_MAX = 8000
 const MEMORY_MAX = 4000
 
-type Section = 'general' | 'memory'
+type Section = 'general' | 'memory' | 'usage'
 
 const SECTIONS: readonly { id: Section; label: MessageKey; icon: ReactNode }[] = [
   { id: 'general', label: 'settings.general', icon: <IconSettingsOutlineRegular size={16} /> },
   { id: 'memory', label: 'settings.memory', icon: <ProjectIcon id="book" size={16} /> },
+  { id: 'usage', label: 'settings.usage', icon: <ProjectIcon id="chart" size={16} /> },
 ]
 
-type Patch = Partial<Pick<ProjectView, 'title' | 'icon' | 'goal' | 'instructions'>>
+type Patch = Partial<Pick<ProjectView, 'title' | 'icon' | 'goal' | 'instructions' | 'mainModel' | 'threadModel'>>
 
 export function ProjectSettings({ project, open, onClose, t }: {
   project: ProjectView | null
@@ -46,7 +49,7 @@ export function ProjectSettings({ project, open, onClose, t }: {
   if (project === null) return null
 
   const save = async (patch: Patch) => {
-    const changed = Object.entries(patch).some(([key, value]) => project[key as keyof Patch] !== value)
+    const changed = Object.entries(patch).some(([key, value]) => JSON.stringify(project[key as keyof Patch]) !== JSON.stringify(value))
     if (!changed) return
     setError(null)
     try {
@@ -77,7 +80,7 @@ export function ProjectSettings({ project, open, onClose, t }: {
 
         <div className="dsht-settings-main">
           <div className="dsht-settings-head">
-            <h2 className="dsht-dialog-title">{t(section === 'general' ? 'settings.general' : 'settings.memory')}</h2>
+            <h2 className="dsht-dialog-title">{t(SECTIONS.find((item) => item.id === section)?.label ?? 'settings.general')}</h2>
             <button type="button" className="dsht-icon-button" aria-label={t('common.close')} title={t('common.close')} onClick={close}>
               <CloseIcon />
             </button>
@@ -118,12 +121,16 @@ export function ProjectSettings({ project, open, onClose, t }: {
                   <div className="dsht-counter">{goal.length.toLocaleString()} / {GOAL_MAX.toLocaleString()}</div>
                 </div>
 
+                <ModelSettings project={project} open={open} save={save} t={t} />
+
                 <div className="dsht-setting-block">
                   <div className="dsht-setting-title">{t('settings.folder')}</div>
                   <div className="dsht-setting-hint">{t('settings.folderHint')}</div>
                   <div className="dsht-setting-path dsht-mono" title={project.folder}>{project.folder}</div>
                 </div>
               </>
+            ) : section === 'usage' ? (
+              <UsageSection project={project} t={t} />
             ) : (
               <div className="dsht-setting-block">
                 <div className="dsht-setting-title">{t('settings.instructions')}</div>

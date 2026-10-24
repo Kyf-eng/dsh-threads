@@ -10,6 +10,8 @@ function setup() {
   const threads = new Set<string>()
   const archived = new Set<string>()
   const busy = new Set<string>()
+  const applied: string[] = []
+  const usage = new Map<string, { uncachedInputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number }>()
   const workspaces = new Map([['ws-1', { id: 'ws-1', path: '/code/app', sessions: ['existing'] }]])
   const host: ProjectHost = {
     async createMainSession(workspaceId, title) {
@@ -32,6 +34,11 @@ function setup() {
       archived.add(sessionId)
     },
     async unarchiveSession(sessionId) { archived.delete(sessionId) },
+    async applyModel(sessionId, choice) {
+      if (choice?.model === 'missing') throw new Error('session/model-unavailable')
+      applied.push(`${sessionId}:${choice === null ? 'default' : choice.model}`)
+    },
+    async sessionUsage(sessionId) { return usage.get(sessionId) ?? null },
     async ensureWorkspace(folder) {
       if (folder === '/missing') throw new Error('not a directory')
       const existing = [...workspaces.values()].find((ws) => ws.path === folder)
@@ -52,7 +59,7 @@ function setup() {
   })
   let changes = 0
   projects.onChange(() => { changes += 1 })
-  return { store, projects, created, renamed, threads, archived, busy, changes: () => changes }
+  return { store, projects, created, renamed, threads, archived, busy, applied, usage, changes: () => changes }
 }
 
 function threadOf(mainSessionId: string, id: string, status: 'idle' | 'running') {
@@ -138,6 +145,36 @@ describe('Projects', () => {
     await expect(t.projects.archive(project.id)).rejects.toBeInstanceOf(ProjectError)
     expect(t.archived.size).toBe(0)
     expect(t.store.project(project.id)?.archived).toBe(false)
+  })
+
+  it('applies the coordinator model to the main conversation, and keeps the record when DSH refuses it', async () => {
+    const project = await t.projects.create({ title: 'A', workspaceId: 'ws-1' })
+    const flash = { provider: 'deepseek', model: 'deepseek-flash', reasoningEffort: 'high' }
+    expect((await t.projects.update(project.id, { mainModel: flash })).mainModel).toEqual(flash)
+    await t.projects.update(project.id, { mainModel: flash })
+    await t.projects.update(project.id, { mainModel: null })
+    expect(t.applied).toEqual(['session-main-1:deepseek-flash', 'session-main-1:default'])
+    await expect(t.projects.update(project.id, { mainModel: { provider: 'deepseek', model: 'missing' } })).rejects.toBeInstanceOf(ProjectError)
+    expect(t.store.project(project.id)?.mainModel).toBeNull()
+    // The thread model is only stored; threads pick it up when they open.
+    expect((await t.projects.update(project.id, { threadModel: flash })).threadModel).toEqual(flash)
+    expect(t.applied).toHaveLength(2)
+  })
+
+  it('sums usage: main conversation first, then threads by size', async () => {
+    const project = await t.projects.create({ title: 'A', workspaceId: 'ws-1' })
+    await t.store.putThread({ ...threadOf('session-main-1', 'session-t1', 'idle'), n: 1, title: 'small' })
+    await t.store.putThread({ ...threadOf('session-main-1', 'session-t2', 'idle'), n: 2, title: 'big' })
+    t.usage.set('session-main-1', { uncachedInputTokens: 100, outputTokens: 10, cacheReadTokens: 50, cacheWriteTokens: 0 })
+    t.usage.set('session-t1', { uncachedInputTokens: 10, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 })
+    t.usage.set('session-t2', { uncachedInputTokens: 900, outputTokens: 90, cacheReadTokens: 0, cacheWriteTokens: 9 })
+    const usage = await t.projects.usage(project.id)
+    expect(usage.rows.map((row) => [row.kind, row.title, row.input, row.output])).toEqual([
+      ['main', 'A', 150, 10],
+      ['thread', 'big', 909, 90],
+      ['thread', 'small', 10, 1],
+    ])
+    expect(usage.total).toEqual({ input: 1069, output: 101 })
   })
 
   it('summarizes thread counts and the latest activity', async () => {

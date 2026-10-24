@@ -673,6 +673,25 @@ M2c 时 DeepSeek Flash 常常不调 `thread_report`（3 个里 2 个），卡片
   - A 归档：测试项目连同 9 个讨论串一起归档，页面留在项目页；在"已归档"里 A 取消归档后恢复。
   - 侧栏主对话行显示项目图标；没有新的崩溃日志。
 
+#### 项目设置：模型和使用情况（2026-10-24，分支 `feat/project-settings`）
+
+计划的第二个 PR。
+- **模型**（"通用"页的"模型"分组，照 Claude 的四行）：
+  - 协调器模型和思考强度、讨论串模型和思考强度。下拉用"按钮 + `Menu`"，DSH 没有 Select；选项来自 `models.catalog`（转发 `sessionController.modelCatalog()`），按服务商分组。
+  - 第一项是"默认（当前 DSH 默认模型）"；思考强度只列所选模型支持的档位，第一项是"默认（这个模型的默认档）"。跟随默认时思考强度不可选。
+  - 协调器模型改了就立刻对主对话生效；讨论串模型存在项目上，新讨论串开出来、发简报前套用（`manager.openNow`），DSH 用不了这个模型时记一条 warn，照常开串。
+- **不改用户的全局默认模型**：DSH 的 `sessionController.selectModel` 会顺带把选择存成"新会话默认模型"。`agentDefaultModel.saveSelection` 按提交顺序执行，所以先记下原来的默认、调用 `selectModel`、再把原值存回去，结果不变。
+  - 实测：协调器换成 Pro、讨论串换成 Pro + Low 之后，profile 里的默认仍是 `deepseek-flash / high`；文件被 DSH 重写过，但其他内容（注释、预设、检查器那段）都在。
+- **使用情况**（新的导航页）：
+  - 宿主 `projects.usage` 对主对话和每个讨论串调 `sessionController.projections(...)`，读 `tokenUsage`（会话没加载也能读）。
+  - 输入 = 未缓存 + 缓存读 + 缓存写（和 DSH 自己的用量标签一样）。顶部是合计，下面一张表：主对话在前，讨论串按用量从多到少；DSH 不记费用，所以只有 token。
+- **测试**：协调器模型生效、DSH 拒绝时项目记录不变、讨论串模型只存不立即生效；开讨论串时套用讨论串模型、失败照常开；用量汇总和排序。共 77 个。
+- **实机测试**（桌面版，浅色）通过：
+  - 模型目录读出 DeepSeek Account 的 Flash / Pro。
+  - 协调器换成 Pro 后，主对话输入框的模型标签变成"DeepSeek-V4-Pro · High"；讨论串设成 Pro + Low 后，`/thread` 开出的 #7 的请求头是 `deepseek-v4-pro / low`。
+  - 全局默认没变；使用情况显示合计 3.4M / 55K 和每个会话的明细。
+  - 测完把 Playground 的两个模型都改回默认；没有新的崩溃日志。
+
 #### 之后
 - 发布：
   - GitHub Release 附 `.tgz`；

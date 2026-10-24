@@ -7,7 +7,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session'
 import { finalAssistantOutput } from '@deepseek-ai/dsh-subagent'
 import { randomUUID } from 'node:crypto'
 import type { ThreadAgent, ThreadHost } from './manager.ts'
-import type { ProjectHost, WorkspaceInfo } from './projects.ts'
+import type { ProjectHost, TokenBuckets, WorkspaceInfo } from './projects.ts'
 import { textOf } from './report.ts'
 import { optional } from './services.ts'
 import { type NoticeMeta, SOURCE_KIND } from './source.ts'
@@ -20,6 +20,11 @@ interface SessionTitleLike {
 interface WorkingDirectoryLike {
   get(session: Agent['session']): string
   set(agent: Agent, path: string, signal?: AbortSignal): Promise<string>
+}
+
+interface DefaultModelLike {
+  currentSelection(): { provider: string; model: string; reasoningEffort?: string }
+  saveSelection(next: { provider: string; model: string; reasoningEffort?: string }): Promise<void>
 }
 
 interface PermissionPresetsLike {
@@ -105,6 +110,31 @@ export function createHost(ctx: Context): ThreadHost & ProjectHost {
 
     workspace(workspaceId) {
       return workspaceInfo(ctx.workspaceRegistry.list().find((candidate) => candidate.id === workspaceId))
+    },
+
+    async applyModel(sessionId, choice) {
+      const defaults = optional<DefaultModelLike>(ctx, 'agentDefaultModel')
+      const previous = defaults?.currentSelection()
+      const target = choice ?? previous
+      if (target === undefined) return
+      await ctx.sessionController.selectModel({
+        sessionId: sessionId as SessionId,
+        provider: target.provider,
+        model: target.model,
+        ...(target.reasoningEffort === undefined ? {} : { reasoningEffort: target.reasoningEffort }),
+      } as Parameters<typeof ctx.sessionController.selectModel>[0])
+      // selectModel also makes the choice DSH's default for new sessions. Saves run in submission
+      // order (dsh-agent-default-model), so saving the previous default now puts it back.
+      if (defaults !== undefined && previous !== undefined
+        && (previous.provider !== target.provider || previous.model !== target.model || previous.reasoningEffort !== target.reasoningEffort)) {
+        await defaults.saveSelection(previous)
+      }
+    },
+
+    async sessionUsage(sessionId) {
+      const projected = await ctx.sessionController.projections({ sessionId: sessionId as SessionId } as Parameters<typeof ctx.sessionController.projections>[0], AbortSignal.timeout(5000))
+      const usage = (projected as { values?: { tokenUsage?: unknown } } | null)?.values?.tokenUsage as TokenBuckets | undefined
+      return usage ?? null
     },
 
     async archiveSession(sessionId) {

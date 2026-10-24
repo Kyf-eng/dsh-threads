@@ -12,6 +12,7 @@ const createInput = z.object({
   fromSessionId: z.string().optional(),
   instructions: z.string().optional(),
 })
+const modelInput = z.object({ provider: z.string(), model: z.string(), reasoningEffort: z.string().optional() })
 const updateInput = z.object({
   id: z.string(),
   title: z.string().optional(),
@@ -19,6 +20,8 @@ const updateInput = z.object({
   icon: z.string().optional(),
   goal: z.string().optional(),
   notify: z.enum(['all', 'attention', 'waiting', 'none']).optional(),
+  mainModel: modelInput.nullable().optional(),
+  threadModel: modelInput.nullable().optional(),
 })
 const pinInput = z.object({ id: z.string(), pinned: z.boolean() })
 const idInput = z.object({ id: z.string() })
@@ -55,6 +58,7 @@ export function apiHandlers(deps: {
   thread: (id: string) => ThreadRecord | undefined
   threads: () => ThreadRecord[]
   plugin: { name: string; version: string }
+  modelCatalog: () => Promise<unknown>
 }): RpcHandlers {
   const { projects, manager, threadsOf, plugin } = deps
   const requireThread = (id: string) => {
@@ -75,6 +79,9 @@ export function apiHandlers(deps: {
       return projects.setPinned(id, pinned)
     },
     'projects.archive': (payload) => projects.archive(parse(idInput, payload).id),
+    'projects.usage': (payload) => projects.usage(parse(idInput, payload).id),
+    /** DSH's model catalog (providers, models, reasoning efforts, the default) for the model menus. */
+    'models.catalog': () => deps.modelCatalog(),
     'projects.unarchive': (payload) => projects.unarchive(parse(idInput, payload).id),
     'projects.remove': async (payload) => {
       await projects.remove(parse(idInput, payload).id)

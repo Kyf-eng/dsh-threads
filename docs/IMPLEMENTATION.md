@@ -819,6 +819,8 @@ M2c 时 DeepSeek Flash 常常不调 `thread_report`（3 个里 2 个），卡片
   - 新建项目时“文件夹要写完整路径”的示例按平台给（Windows `C:\Users\me\code\app`、macOS `/Users/me/code/app`、Linux `/home/me/code/app`），原来是清单跨平台第 6 条。
   - 测试：`tests/setup.ts` 让原有测试照旧按中文断言；`tests/messages.test.ts` 覆盖语言识别、RPC 切换语言、英文的拒绝 / 简报 / 回报，以及英文提问、中文回答。
   - 实机（桌面版，中文界面）：重启后 `/thread stop 99` 回“这个主对话没有讨论串 #99。”（宿主默认英文，说明语言确实是浏览器传过来的），项目页和侧栏正常。
+- **跨平台 CI 和打包检查**（分支 `ci/cross-platform`）：CI 加了 `windows-latest`、`macos-latest`（Node 24）跑类型检查、测试（worktree 测试跑真 git）、构建和 `dist/` 一致性；第一次跑 Windows 就全过。`.gitattributes` 统一 LF；`scripts/check-pack.mjs` 检查 `.tgz` 的内容。DSH 包的 peer 范围改成和 `engines.dsh` 一样的 `>=0.2.1-rc.2 <0.3.0`（DSH `0.2.1-rc.3` 已在 2026-10-23 发布）。Ubuntu 两个任务名不变，分支保护不用改；Windows 和 macOS 暂时不是必需检查。
+- **打 tag 自动发布**（分支 `ci/release`）：照 Plan.md 的 CI 规划，推 `v*` 标签触发 `.github/workflows/release.yml`：`npm run check`、`dist/` 一致、打包检查，再用 `scripts/release.ts` 核对 tag、`package.json` 版本、CHANGELOG 小节标题、中英 README 的安装地址四处一致，然后 `npm pack` 并 `gh release create`（版本带 `-` 的是预发布）。Release 说明按 rc.1–rc.5 手写的格式生成：CHANGELOG 小节的开头一段、安装命令、改动列表。发版步骤写进了 `CLAUDE.md`。
 
 #### 之后
 - 发布：

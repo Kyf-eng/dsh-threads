@@ -1,0 +1,95 @@
+// Release checks and notes, run by .github/workflows/release.yml when a `v*` tag is pushed:
+//   node scripts/release.ts <tag> <notes-file>
+// It fails unless the tag, package.json's version, a CHANGELOG heading and the README install
+// addresses (English and Chinese) all name the same version, then writes the GitHub Release
+// notes: the CHANGELOG section's opening paragraph, the install command, and its list of changes.
+import { readFileSync, writeFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+export interface ReleaseInput {
+  tag: string
+  pkg: { name: string; version: string }
+  changelog: string
+  readmes: Record<string, string>
+  repository: string
+}
+
+export interface Release {
+  version: string
+  prerelease: boolean
+  /** File name `npm pack` gives the package (`@fky/dsh-threads` → `fky-dsh-threads-<version>.tgz`). */
+  tarball: string
+  notes: string
+}
+
+/** The CHANGELOG section for `version` (`## <version> — <date>`), without its heading. */
+export function changelogSection(changelog: string, version: string): string | undefined {
+  const lines = changelog.split('\n')
+  const start = lines.findIndex((line) => line === `## ${version}` || line.startsWith(`## ${version} `))
+  if (start === -1) return undefined
+  const end = lines.findIndex((line, index) => index > start && line.startsWith('## '))
+  return lines.slice(start + 1, end === -1 ? undefined : end).join('\n').trim()
+}
+
+export function prepareRelease(input: ReleaseInput): Release {
+  const { tag, pkg, changelog, readmes, repository } = input
+  const problems: string[] = []
+  const version = pkg.version
+  if (tag !== `v${version}`) problems.push(`tag ${tag} does not match package.json version ${version}`)
+  const tarball = `${pkg.name.replace(/^@/, '').replace('/', '-')}-${version}.tgz`
+  const download = `https://github.com/${repository}/releases/download/${tag}/${tarball}`
+  const section = changelogSection(changelog, version)
+  if (section === undefined) problems.push(`CHANGELOG.md has no "## ${version} — <date>" section`)
+  for (const [file, text] of Object.entries(readmes)) {
+    if (!text.includes(download)) problems.push(`${file} does not install from ${download}`)
+    if (!text.includes(`#${tag}`)) problems.push(`${file} does not mention github:${repository}#${tag}`)
+  }
+  if (problems.length > 0) throw new Error(`release ${tag} is not ready:\n- ${problems.join('\n- ')}`)
+
+  // The opening paragraph (if any) introduces the release; the rest is the list of changes.
+  const blocks = (section as string).split(/\n\s*\n/)
+  const intro = blocks[0] !== undefined && !blocks[0].startsWith('- ') ? blocks.shift() : undefined
+  const notes = [
+    ...(intro === undefined ? [] : [intro, '']),
+    '## Install',
+    '',
+    'Quit DeepSeek Harness completely, then:',
+    '',
+    '```sh',
+    `dsh plugin --profile desktop add ${download}`,
+    '```',
+    '',
+    `Use \`--profile web\` for the Web app. If an earlier version is installed, this command replaces it. Usage, configuration and known limitations: [README](https://github.com/${repository}#readme) · [中文](https://github.com/${repository}/blob/main/README.zh.md).`,
+    '',
+    '## Changes',
+    '',
+    blocks.join('\n\n'),
+  ].join('\n')
+  return { version, prerelease: version.includes('-'), tarball, notes: `${notes}\n` }
+}
+
+function main(argv: string[]): void {
+  const [tag, notesFile] = argv
+  if (tag === undefined || notesFile === undefined) throw new Error('usage: node scripts/release.ts <tag> <notes-file>')
+  const read = (file: string) => readFileSync(new URL(`../${file}`, import.meta.url), 'utf8')
+  const pkg = JSON.parse(read('package.json')) as { name: string; version: string; repository: { url: string } }
+  const repository = pkg.repository.url.replace(/^git\+https:\/\/github\.com\//, '').replace(/\.git$/, '')
+  const release = prepareRelease({
+    tag, pkg, repository,
+    changelog: read('CHANGELOG.md'),
+    readmes: { 'README.md': read('README.md'), 'README.zh.md': read('README.zh.md') },
+  })
+  writeFileSync(notesFile, release.notes)
+  // For the workflow's next steps.
+  console.log(JSON.stringify({ version: release.version, prerelease: release.prerelease, tarball: release.tarball }))
+}
+
+if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
+  try {
+    main(process.argv.slice(2))
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error))
+    process.exitCode = 1
+  }
+}

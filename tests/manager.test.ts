@@ -25,6 +25,7 @@ function setup(overrides: Partial<Config> = {}, options: { slowWrites?: boolean;
   let failCreate = false
   let notARepo = false
   const entered: string[] = []
+  const models: string[] = []
   const removals = new Map<string, { outcome: 'removed' | 'missing' | 'dirty'; branchKept: boolean }>()
   const host: ThreadHost = {
     async createSession(_main, id) {
@@ -46,6 +47,10 @@ function setup(overrides: Partial<Config> = {}, options: { slowWrites?: boolean;
     },
     async enterDirectory(id, path) { entered.push(`${id}:${path}`) },
     async removeWorktree(worktree: ThreadWorktree) { return removals.get(worktree.branch) ?? { outcome: 'removed', branchKept: false } },
+    async applyModel(id, choice) {
+      if (choice.model === 'missing') throw new Error('session/model-unavailable')
+      models.push(`${id}:${choice.provider}/${choice.model}`)
+    },
   }
   const main = new FakeAgent('main')
   agents.set('main', main)
@@ -72,7 +77,7 @@ function setup(overrides: Partial<Config> = {}, options: { slowWrites?: boolean;
     pinned: false, instructions: '', icon: 'folder', goal: '', archived: false, notify: 'attention',
     mainModel: null, threadModel: null, createdAt: '', updatedAt: '',
   })
-  return { manager, store, main, agents, outputs, renamed, inherited, entered, removals, failCreate: () => { failCreate = true }, notARepo: () => { notARepo = true } }
+  return { manager, store, main, agents, outputs, renamed, inherited, entered, removals, models, failCreate: () => { failCreate = true }, notARepo: () => { notARepo = true } }
 }
 
 describe('ThreadManager', () => {
@@ -216,6 +221,20 @@ describe('ThreadManager.setResolved', () => {
     await t.manager.onInbox('session-1', 'user', 3)
     expect(t.store.thread('session-1')).toMatchObject({ resolved: false, round: 'user' })
     await expect(t.manager.setResolved('session-x', true)).rejects.toBeInstanceOf(ThreadError)
+  })
+})
+
+describe('thread model', () => {
+  it("opens threads on the project's thread model, and on the default when DSH cannot use it", async () => {
+    const t = setup()
+    const project = t.store.projectOfMain('main')!
+    await t.store.putProject({ ...project, threadModel: { provider: 'deepseek', model: 'deepseek-pro', reasoningEffort: 'high' } })
+    await t.manager.open('main', { title: 'a', task: 'a', initiation: 'user_asked' })
+    expect(t.models).toEqual(['session-1:deepseek/deepseek-pro'])
+
+    await t.store.putProject({ ...project, threadModel: { provider: 'deepseek', model: 'missing' } })
+    const thread = await t.manager.open('main', { title: 'b', task: 'b', initiation: 'user_asked' })
+    expect(thread.status).toBe('running')
   })
 })
 

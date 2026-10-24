@@ -66,6 +66,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       thread: (id) => store.thread(id),
       threads: () => store.threads(),
       plugin: { name: pkg.name, version: pkg.version },
+      modelCatalog: () => ctx.sessionController.modelCatalog(),
     })) as () => void, 'dsh-threads: /api/dsh-threads')
   })
 }

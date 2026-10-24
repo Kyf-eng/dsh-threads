@@ -84,6 +84,7 @@ function cleanTitle(title) {
 function cleanInstructions(instructions) {
 	return truncate((instructions ?? "").trim(), INSTRUCTIONS_MAX);
 }
+const sameModel = (a, b) => a?.provider === b?.provider && a?.model === b?.model && a?.reasoningEffort === b?.reasoningEffort;
 var Projects = class {
 	deps;
 	listeners = /* @__PURE__ */ new Set();
@@ -178,6 +179,11 @@ var Projects = class {
 	}
 	async update(id, patch) {
 		const project = this.require(id);
+		if (patch.mainModel !== void 0 && !sameModel(patch.mainModel, project.mainModel)) try {
+			await this.deps.host.applyModel(project.mainSessionId, patch.mainModel);
+		} catch (error) {
+			throw new ProjectError(`主对话没法换成这个模型：${error instanceof Error ? error.message : String(error)}`);
+		}
 		const next = {
 			...project,
 			...patch.title === void 0 ? {} : { title: cleanTitle(patch.title) },
@@ -185,6 +191,8 @@ var Projects = class {
 			...patch.icon === void 0 ? {} : { icon: truncate(patch.icon.trim(), ICON_MAX) || "folder" },
 			...patch.goal === void 0 ? {} : { goal: truncate(patch.goal.trim(), GOAL_MAX) },
 			...patch.notify === void 0 ? {} : { notify: patch.notify },
+			...patch.mainModel === void 0 ? {} : { mainModel: patch.mainModel },
+			...patch.threadModel === void 0 ? {} : { threadModel: patch.threadModel },
 			updatedAt: this.deps.now()
 		};
 		await this.deps.store.putProject(next);
@@ -240,6 +248,41 @@ var Projects = class {
 		this.changed();
 		return next;
 	}
+	/** Token usage of the main conversation and every thread ("使用情况" in the settings). */
+	async usage(id) {
+		const project = this.require(id);
+		const sessions = [{
+			sessionId: project.mainSessionId,
+			kind: "main",
+			n: null,
+			title: project.title
+		}, ...this.deps.store.threadsOf(project.mainSessionId).map((t) => ({
+			sessionId: t.id,
+			kind: "thread",
+			n: t.n,
+			title: t.title
+		}))];
+		const rows = [];
+		for (const session of sessions) {
+			const buckets = await this.deps.host.sessionUsage(session.sessionId).catch(() => null);
+			const input = buckets === null ? 0 : buckets.uncachedInputTokens + buckets.cacheReadTokens + buckets.cacheWriteTokens;
+			rows.push({
+				...session,
+				input,
+				output: buckets?.outputTokens ?? 0
+			});
+		}
+		const [main, ...threads] = rows;
+		threads.sort((a, b) => b.input + b.output - (a.input + a.output));
+		const ordered = main === void 0 ? threads : [main, ...threads];
+		return {
+			total: {
+				input: ordered.reduce((sum, row) => sum + row.input, 0),
+				output: ordered.reduce((sum, row) => sum + row.output, 0)
+			},
+			rows: ordered
+		};
+	}
 	/** Forget the project. Its main conversation and threads stay as ordinary sessions. */
 	async remove(id) {
 		this.require(id);
@@ -255,6 +298,11 @@ const createInput = z.object({
 	fromSessionId: z.string().optional(),
 	instructions: z.string().optional()
 });
+const modelInput = z.object({
+	provider: z.string(),
+	model: z.string(),
+	reasoningEffort: z.string().optional()
+});
 const updateInput = z.object({
 	id: z.string(),
 	title: z.string().optional(),
@@ -266,7 +314,9 @@ const updateInput = z.object({
 		"attention",
 		"waiting",
 		"none"
-	]).optional()
+	]).optional(),
+	mainModel: modelInput.nullable().optional(),
+	threadModel: modelInput.nullable().optional()
 });
 const pinInput = z.object({
 	id: z.string(),
@@ -332,6 +382,9 @@ function apiHandlers(deps) {
 			return projects.setPinned(id, pinned);
 		},
 		"projects.archive": (payload) => projects.archive(parse(idInput, payload).id),
+		"projects.usage": (payload) => projects.usage(parse(idInput, payload).id),
+		/** DSH's model catalog (providers, models, reasoning efforts, the default) for the model menus. */
+		"models.catalog": () => deps.modelCatalog(),
 		"projects.unarchive": (payload) => projects.unarchive(parse(idInput, payload).id),
 		"projects.remove": async (payload) => {
 			await projects.remove(parse(idInput, payload).id);
@@ -578,6 +631,10 @@ var ThreadManager = class {
 			await store.putThread(record);
 			const agent = await host.createSession(mainSessionId, id);
 			if (worktree !== null) await host.enterDirectory(id, worktree.path);
+			const threadModel = store.projectOfMain(mainSessionId)?.threadModel ?? null;
+			if (threadModel !== null) await host.applyModel(id, threadModel).catch((error) => {
+				this.deps.warn(`dsh-threads: thread ${id} keeps the default model: ${String(error)}`);
+			});
 			try {
 				host.rename(id, `#${n} ${title}`);
 			} catch (error) {
@@ -1270,6 +1327,22 @@ function createHost(ctx) {
 		},
 		workspace(workspaceId) {
 			return workspaceInfo(ctx.workspaceRegistry.list().find((candidate) => candidate.id === workspaceId));
+		},
+		async applyModel(sessionId, choice) {
+			const defaults = optional(ctx, "agentDefaultModel");
+			const previous = defaults?.currentSelection();
+			const target = choice ?? previous;
+			if (target === void 0) return;
+			await ctx.sessionController.selectModel({
+				sessionId,
+				provider: target.provider,
+				model: target.model,
+				...target.reasoningEffort === void 0 ? {} : { reasoningEffort: target.reasoningEffort }
+			});
+			if (defaults !== void 0 && previous !== void 0 && (previous.provider !== target.provider || previous.model !== target.model || previous.reasoningEffort !== target.reasoningEffort)) await defaults.saveSelection(previous);
+		},
+		async sessionUsage(sessionId) {
+			return (await ctx.sessionController.projections({ sessionId }, AbortSignal.timeout(5e3)))?.values?.tokenUsage ?? null;
 		},
 		async archiveSession(sessionId) {
 			await ctx.workspaceRegistry.archiveSession(sessionId, { stopActivity: false });
@@ -1995,7 +2068,8 @@ async function apply(ctx, config) {
 			plugin: {
 				name: name$1,
 				version
-			}
+			},
+			modelCatalog: () => ctx.sessionController.modelCatalog()
 		})), "dsh-threads: /api/dsh-threads");
 	});
 }

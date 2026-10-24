@@ -4,7 +4,7 @@ import { flushNotes } from './delivery.ts'
 import { composeNote, currentReport, normalizeReport, noticeSummary, plainLine, truncate } from './report.ts'
 import type { ThreadCardInfo } from './source.ts'
 import type { ThreadStore } from './store.ts'
-import type { Initiation, PendingNote, ProposalRecord, ThreadRecord, ThreadReport, ThreadWorktree } from './types.ts'
+import type { Initiation, ModelChoice, PendingNote, ProposalRecord, ThreadRecord, ThreadReport, ThreadWorktree } from './types.ts'
 import type { RemoveResult } from './worktree.ts'
 
 /** Longest report summary carried on a transcript card. */
@@ -40,6 +40,8 @@ export interface ThreadHost {
   /** Make `path` the thread's working directory. */
   enterDirectory(threadId: string, path: string): Promise<void>
   removeWorktree(worktree: ThreadWorktree): Promise<RemoveResult>
+  /** Give a session a model without changing DSH's default for new sessions. */
+  applyModel(sessionId: string, choice: ModelChoice): Promise<void>
 }
 
 export interface OpenInput {
@@ -185,6 +187,13 @@ export class ThreadManager {
       await store.putThread(record)
       const agent = await host.createSession(mainSessionId, id)
       if (worktree !== null) await host.enterDirectory(id, worktree.path)
+      // The project's thread model; a model DSH cannot use leaves the thread on the default.
+      const threadModel = store.projectOfMain(mainSessionId)?.threadModel ?? null
+      if (threadModel !== null) {
+        await host.applyModel(id, threadModel).catch((error: unknown) => {
+          this.deps.warn(`dsh-threads: thread ${id} keeps the default model: ${String(error)}`)
+        })
+      }
       try {
         host.rename(id, `#${n} ${title}`)
       } catch (error) {

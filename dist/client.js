@@ -1067,6 +1067,24 @@ const zh = {
 	"settings.instructionsHint": "会加进主对话和所有讨论串的系统提示，例如代码规范、回复语言、要避开的目录。",
 	"settings.instructionsPlaceholder": "例如：用中文回复；不要改 vendor/ 下的文件；提交信息用 Conventional Commits。",
 	"settings.saveFailed": "保存失败：{error}",
+	"settings.usage": "使用情况",
+	"settings.models": "模型",
+	"settings.mainModel": "协调器模型",
+	"settings.mainModelHint": "主对话用的模型，负责管理和开讨论串。",
+	"settings.mainEffort": "协调器思考强度",
+	"settings.mainEffortHint": "主对话管理和开讨论串时的思考强度。",
+	"settings.threadModel": "讨论串模型",
+	"settings.threadModelHint": "新讨论串默认用的模型。",
+	"settings.threadEffort": "讨论串思考强度",
+	"settings.threadEffortHint": "新讨论串默认的思考强度。",
+	"settings.default": "默认（{name}）",
+	"settings.loadingModels": "读取模型…",
+	"usage.hint": "主对话和每个讨论串用掉的 token，来自 DSH 的用量统计（不含费用）。输入包括缓存读写。",
+	"usage.loading": "正在统计…",
+	"usage.session": "会话",
+	"usage.input": "输入",
+	"usage.output": "输出",
+	"usage.main": "主对话",
 	"menu.makeProject": "设为项目",
 	"time.justNow": "刚刚",
 	"time.minutes": "{count} 分钟前",
@@ -1179,6 +1197,24 @@ const en = {
 	"settings.instructionsHint": "Added to the system prompt of the main conversation and every thread: code style, reply language, folders to leave alone.",
 	"settings.instructionsPlaceholder": "e.g. Reply in English; do not touch vendor/; use Conventional Commits.",
 	"settings.saveFailed": "Could not save: {error}",
+	"settings.usage": "Usage",
+	"settings.models": "Models",
+	"settings.mainModel": "Coordinator model",
+	"settings.mainModelHint": "The model of the main conversation, which manages and opens threads.",
+	"settings.mainEffort": "Coordinator thinking",
+	"settings.mainEffortHint": "How hard the main conversation thinks while managing threads.",
+	"settings.threadModel": "Thread model",
+	"settings.threadModelHint": "The default model of new threads.",
+	"settings.threadEffort": "Thread thinking",
+	"settings.threadEffortHint": "The default thinking strength of new threads.",
+	"settings.default": "Default ({name})",
+	"settings.loadingModels": "Loading models…",
+	"usage.hint": "Tokens used by the main conversation and each thread, from DSH's usage counters (no cost). Input includes cache reads and writes.",
+	"usage.loading": "Counting…",
+	"usage.session": "Conversation",
+	"usage.input": "Input",
+	"usage.output": "Output",
+	"usage.main": "Main conversation",
 	"menu.makeProject": "Make project",
 	"time.justNow": "just now",
 	"time.minutes": "{count} min ago",
@@ -1463,21 +1499,245 @@ function NewProjectDialog({ open, initialFolder, onClose, onCreated, workspaces,
 		})
 	});
 }
+// src/client/ProjectModels.tsx
+const DEFAULT = "default";
+const key = (provider, model) => `${provider}\u0000${model}`;
+function findModel(catalog, choice) {
+	if (catalog === void 0) return void 0;
+	const target = choice ?? catalog.default;
+	return catalog.groups.find((group) => group.id === target.provider)?.models.find((model) => model.id === target.model);
+}
+/** A menu dressed as a select box, as DSH's own settings do it (there is no Select primitive). */
+function SelectMenu({ value, label, items, onSelect, disabled }) {
+	const [open, setOpen] = (0, react.useState)(false);
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Menu, {
+		open,
+		onClose: () => setOpen(false),
+		align: "end",
+		portal: true,
+		selection: "check",
+		selectedId: value,
+		items,
+		onSelect: (id) => {
+			setOpen(false);
+			onSelect(id);
+		},
+		anchor: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+			type: "button",
+			className: "dsht-select-box",
+			disabled,
+			"aria-haspopup": "menu",
+			"aria-expanded": open,
+			onClick: () => setOpen(!open),
+			children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+				className: "dsht-select-box-text",
+				children: label
+			}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronDownOutlineRegular, { size: 14 })]
+		})
+	});
+}
+function ModelPair({ choice, catalog, modelTitle, modelHint, effortTitle, effortHint, onChange, t }) {
+	const defaultModel = findModel(catalog, null);
+	const model = findModel(catalog, choice);
+	const modelItems = [{
+		id: DEFAULT,
+		label: t("settings.default", { name: defaultModel?.name ?? catalog?.default.model ?? "…" })
+	}, ...(catalog?.groups ?? []).flatMap((group) => [
+		{
+			type: "separator",
+			id: `sep:${group.id}`
+		},
+		{
+			type: "label",
+			id: `label:${group.id}`,
+			text: group.name
+		},
+		...group.models.map((item) => ({
+			id: key(group.id, item.id),
+			label: item.name
+		}))
+	])];
+	const modelValue = choice === null ? DEFAULT : key(choice.provider, choice.model);
+	const modelLabel = choice === null ? t("settings.default", { name: defaultModel?.name ?? catalog?.default.model ?? "…" }) : model?.name ?? choice.model;
+	const efforts = model?.reasoning?.efforts ?? [];
+	const effortDefault = efforts.find((effort) => effort.id === (choice === null ? catalog?.default.reasoningEffort : model?.reasoning?.defaultEffort));
+	const effortItems = [{
+		id: DEFAULT,
+		label: t("settings.default", { name: effortDefault?.name ?? "—" })
+	}, ...efforts.map((effort) => ({
+		id: effort.id,
+		label: effort.name
+	}))];
+	const effortValue = choice?.reasoningEffort ?? DEFAULT;
+	const effortLabel = choice?.reasoningEffort === void 0 ? t("settings.default", { name: effortDefault?.name ?? "—" }) : efforts.find((effort) => effort.id === choice.reasoningEffort)?.name ?? choice.reasoningEffort;
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+		className: "dsht-setting-row",
+		children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+			className: "dsht-setting-text",
+			children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+				className: "dsht-setting-title",
+				children: t(modelTitle)
+			}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+				className: "dsht-setting-hint",
+				children: t(modelHint)
+			})]
+		}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SelectMenu, {
+			value: modelValue,
+			label: catalog === void 0 ? t("settings.loadingModels") : modelLabel,
+			items: modelItems,
+			disabled: catalog === void 0,
+			onSelect: (id) => {
+				if (id === DEFAULT) return onChange(null);
+				const [provider, modelId] = id.split("\0");
+				if (provider !== void 0 && modelId !== void 0) onChange({
+					provider,
+					model: modelId
+				});
+			}
+		})]
+	}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+		className: "dsht-setting-row",
+		children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+			className: "dsht-setting-text",
+			children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+				className: "dsht-setting-title",
+				children: t(effortTitle)
+			}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+				className: "dsht-setting-hint",
+				children: t(effortHint)
+			})]
+		}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SelectMenu, {
+			value: effortValue,
+			label: effortLabel,
+			items: effortItems,
+			disabled: catalog === void 0 || choice === null || efforts.length === 0,
+			onSelect: (id) => {
+				if (choice === null) return;
+				const { reasoningEffort: _previous, ...rest } = choice;
+				onChange(id === DEFAULT ? rest : {
+					...rest,
+					reasoningEffort: id
+				});
+			}
+		})]
+	})] });
+}
+/** The four model rows; each change saves at once (the coordinator model applies to the main conversation). */
+function ModelSettings({ project, open, save, t }) {
+	const catalog = useHostValue(open ? "models.catalog" : null, {}, [open]);
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+		className: "dsht-setting-group",
+		children: [
+			/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+				className: "dsht-setting-group-title",
+				children: t("settings.models")
+			}),
+			/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ModelPair, {
+				choice: project.mainModel,
+				catalog,
+				t,
+				modelTitle: "settings.mainModel",
+				modelHint: "settings.mainModelHint",
+				effortTitle: "settings.mainEffort",
+				effortHint: "settings.mainEffortHint",
+				onChange: (next) => {
+					save({ mainModel: next });
+				}
+			}),
+			/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ModelPair, {
+				choice: project.threadModel,
+				catalog,
+				t,
+				modelTitle: "settings.threadModel",
+				modelHint: "settings.threadModelHint",
+				effortTitle: "settings.threadEffort",
+				effortHint: "settings.threadEffortHint",
+				onChange: (next) => {
+					save({ threadModel: next });
+				}
+			})
+		]
+	});
+}
+function tokens(value) {
+	if (value >= 1e6) return `${(value / 1e6).toFixed(value >= 1e7 ? 0 : 1)}M`;
+	if (value >= 1e3) return `${(value / 1e3).toFixed(value >= 1e4 ? 0 : 1)}K`;
+	return String(value);
+}
+/** "使用情况": tokens of the main conversation and every thread, read from DSH's usage projections. */
+function UsageSection({ project, t }) {
+	const usage = useHostValue("projects.usage", { id: project.id }, [project.id]);
+	if (usage === void 0) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+		className: "dsht-setting-hint dsht-usage-loading",
+		children: t("usage.loading")
+	});
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+		className: "dsht-setting-block",
+		children: [
+			/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+				className: "dsht-setting-hint",
+				children: t("usage.hint")
+			}),
+			/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: "dsht-usage-total",
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+					className: "dsht-usage-figure",
+					children: tokens(usage.total.input)
+				}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+					className: "dsht-setting-hint",
+					children: t("usage.input")
+				})] }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+					className: "dsht-usage-figure",
+					children: tokens(usage.total.output)
+				}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+					className: "dsht-setting-hint",
+					children: t("usage.output")
+				})] })]
+			}),
+			/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("table", {
+				className: "dsht-usage-table",
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("thead", { children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("tr", { children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("th", { children: t("usage.session") }),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("th", { children: t("usage.input") }),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("th", { children: t("usage.output") })
+				] }) }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("tbody", { children: usage.rows.map((row) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("tr", { children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", { children: row.kind === "main" ? t("usage.main") : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+						className: "dsht-item-n",
+						children: ["#", row.n]
+					}), row.title] }) }),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", { children: tokens(row.input) }),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", { children: tokens(row.output) })
+				] }, row.sessionId)) })]
+			})
+		]
+	});
+}
 // src/client/ProjectSettings.tsx
 const GOAL_MAX = 8e3;
 const MEMORY_MAX = 4e3;
-const SECTIONS = [{
-	id: "general",
-	label: "settings.general",
-	icon: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconSettingsOutlineRegular, { size: 16 })
-}, {
-	id: "memory",
-	label: "settings.memory",
-	icon: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ProjectIcon, {
-		id: "book",
-		size: 16
-	})
-}];
+const SECTIONS = [
+	{
+		id: "general",
+		label: "settings.general",
+		icon: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconSettingsOutlineRegular, { size: 16 })
+	},
+	{
+		id: "memory",
+		label: "settings.memory",
+		icon: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ProjectIcon, {
+			id: "book",
+			size: 16
+		})
+	},
+	{
+		id: "usage",
+		label: "settings.usage",
+		icon: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ProjectIcon, {
+			id: "chart",
+			size: 16
+		})
+	}
+];
 function ProjectSettings({ project, open, onClose, t }) {
 	const [section, setSection] = (0, react.useState)("general");
 	const [title, setTitle] = (0, react.useState)("");
@@ -1495,7 +1755,7 @@ function ProjectSettings({ project, open, onClose, t }) {
 	}, [open, project?.id]);
 	if (project === null) return null;
 	const save = async (patch) => {
-		if (!Object.entries(patch).some(([key, value]) => project[key] !== value)) return;
+		if (!Object.entries(patch).some(([key, value]) => JSON.stringify(project[key]) !== JSON.stringify(value))) return;
 		setError(null);
 		try {
 			await callHost("projects.update", {
@@ -1542,7 +1802,7 @@ function ProjectSettings({ project, open, onClose, t }) {
 					className: "dsht-settings-head",
 					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", {
 						className: "dsht-dialog-title",
-						children: t(section === "general" ? "settings.general" : "settings.memory")
+						children: t(SECTIONS.find((item) => item.id === section)?.label ?? "settings.general")
 					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 						type: "button",
 						className: "dsht-icon-button",
@@ -1639,6 +1899,12 @@ function ProjectSettings({ project, open, onClose, t }) {
 								})
 							]
 						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ModelSettings, {
+							project,
+							open,
+							save,
+							t
+						}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 							className: "dsht-setting-block",
 							children: [
@@ -1657,7 +1923,10 @@ function ProjectSettings({ project, open, onClose, t }) {
 								})
 							]
 						})
-					] }) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					] }) : section === "usage" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(UsageSection, {
+						project,
+						t
+					}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: "dsht-setting-block",
 						children: [
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
@@ -2399,6 +2668,22 @@ body,[class*="dsht-"]{
 .dsht-setting-textarea:focus{border-color:var(--dsht-ring);box-shadow:0 0 0 3px var(--dsht-ring-soft)}
 .dsht-setting-textarea-tall{min-height:240px}
 .dsht-counter{align-self:flex-end;font-size:12px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums}
+.dsht-setting-group{display:flex;flex-direction:column;padding-top:20px}
+.dsht-setting-group-title{padding-bottom:2px;font-size:15px;line-height:22px;font-weight:600;color:var(--dsw-alias-label-primary)}
+.dsht-select-box{box-sizing:border-box;flex:none;display:inline-flex;align-items:center;justify-content:space-between;gap:10px;width:248px;height:38px;padding:0 12px;border:1px solid var(--dsht-line-strong);border-radius:10px;background:var(--dsht-field);color:var(--dsw-alias-label-primary);font:inherit;font-size:13.5px;text-align:left;cursor:pointer;transition:background .15s var(--dsht-ease),border-color .15s var(--dsht-ease)}
+.dsht-select-box:hover:enabled,.dsht-select-box[aria-expanded="true"]{background:var(--dsht-hover);border-color:var(--dsht-line-hover)}
+.dsht-select-box:disabled{cursor:default;color:var(--dsw-alias-label-tertiary)}
+.dsht-select-box svg{flex:none;color:var(--dsw-alias-label-tertiary)}
+.dsht-select-box-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dsht-usage-loading{padding:16px 0}
+.dsht-usage-total{display:flex;gap:40px;margin:14px 0 6px}
+.dsht-usage-total>div{display:flex;flex-direction:column;gap:2px}
+.dsht-usage-figure{font-size:24px;line-height:30px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-primary)}
+.dsht-usage-table{width:100%;margin-top:10px;border-collapse:collapse;font-size:13px}
+.dsht-usage-table th{padding:8px 0;border-bottom:1px solid var(--dsht-line);font-weight:500;font-size:12px;color:var(--dsw-alias-label-tertiary);text-align:right}
+.dsht-usage-table td{padding:9px 0;border-bottom:1px solid var(--dsht-line);text-align:right;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-secondary)}
+.dsht-usage-table th:first-child,.dsht-usage-table td:first-child{text-align:left;color:var(--dsw-alias-label-primary)}
+.dsht-usage-table td:first-child .dsht-item-n{margin-right:6px}
 .dsht-setting-path{box-sizing:border-box;margin-top:8px;padding:9px 12px;border:1px solid var(--dsht-line);border-radius:10px;background:var(--dsht-field);font-size:12.5px;color:var(--dsw-alias-label-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dsht-name-field{display:flex;align-items:center;flex:none;width:min(340px,100%);height:40px;border:1px solid var(--dsht-line-strong);border-radius:10px;background:var(--dsht-field);overflow:hidden;transition:border-color .15s var(--dsht-ease),box-shadow .15s var(--dsht-ease)}
 .dsht-name-field:focus-within{border-color:var(--dsht-ring);box-shadow:0 0 0 3px var(--dsht-ring-soft)}

@@ -8,6 +8,8 @@
   - Archive / unarchive a project together with its main conversation and threads.
   - Project settings: name and icon (24 icons), goal (main conversation only), folder, and project instructions ("Memory").
   - The main conversation's sidebar row shows the project icon.
+  - Project settings → Models: coordinator model and thinking (applied to the main conversation at once) and thread model and thinking (applied to new threads), from DSH's own model catalog; DSH's default for new sessions is left unchanged.
+  - Project settings → Usage: input and output tokens of the main conversation and every thread.
 
 ## 0.1.0-rc.2 — 2026-10-24
 

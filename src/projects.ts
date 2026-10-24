@@ -3,7 +3,7 @@
 import { isAbsolute } from 'node:path'
 import { truncate } from './report.ts'
 import type { ThreadStore } from './store.ts'
-import type { NotifyLevel, ProjectRecord } from './types.ts'
+import type { ModelChoice, NotifyLevel, ProjectRecord } from './types.ts'
 
 const TITLE_MAX = 60
 const INSTRUCTIONS_MAX = 4000
@@ -30,6 +30,34 @@ export interface ProjectHost {
   /** Archive a session in DSH (it leaves the sidebar and cannot run); throws when it is busy. */
   archiveSession(sessionId: string): Promise<void>
   unarchiveSession(sessionId: string): Promise<void>
+  /** Give a session this model (null: DSH's default) without changing DSH's default for new sessions. */
+  applyModel(sessionId: string, choice: ModelChoice | null): Promise<void>
+  /** Token usage per session, read from its projections (works for sessions that are not loaded). */
+  sessionUsage(sessionId: string): Promise<TokenBuckets | null>
+}
+
+/** DSH's tokenUsage projection (dsh-token-meter). */
+export interface TokenBuckets {
+  uncachedInputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+}
+
+export interface UsageRow {
+  sessionId: string
+  kind: 'main' | 'thread'
+  n: number | null
+  title: string
+  /** Uncached + cache read + cache write, as DSH's usage pill counts input. */
+  input: number
+  output: number
+}
+
+export interface ProjectUsage {
+  total: { input: number; output: number }
+  /** Main conversation first, then threads by total tokens, largest first. */
+  rows: UsageRow[]
 }
 
 export interface ProjectSummary extends ProjectRecord {
@@ -63,7 +91,12 @@ export interface ProjectPatch {
   icon?: string
   goal?: string
   notify?: NotifyLevel
+  mainModel?: ModelChoice | null
+  threadModel?: ModelChoice | null
 }
+
+const sameModel = (a: ModelChoice | null, b: ModelChoice | null) =>
+  a?.provider === b?.provider && a?.model === b?.model && a?.reasoningEffort === b?.reasoningEffort
 
 export class Projects {
   private readonly listeners = new Set<() => void>()
@@ -163,6 +196,14 @@ export class Projects {
 
   async update(id: string, patch: ProjectPatch): Promise<ProjectRecord> {
     const project = this.require(id)
+    // The coordinator model is the main conversation's own selection: apply it before saving.
+    if (patch.mainModel !== undefined && !sameModel(patch.mainModel, project.mainModel)) {
+      try {
+        await this.deps.host.applyModel(project.mainSessionId, patch.mainModel)
+      } catch (error) {
+        throw new ProjectError(`主对话没法换成这个模型：${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
     const next: ProjectRecord = {
       ...project,
       ...(patch.title === undefined ? {} : { title: cleanTitle(patch.title) }),
@@ -170,6 +211,8 @@ export class Projects {
       ...(patch.icon === undefined ? {} : { icon: truncate(patch.icon.trim(), ICON_MAX) || 'folder' }),
       ...(patch.goal === undefined ? {} : { goal: truncate(patch.goal.trim(), GOAL_MAX) }),
       ...(patch.notify === undefined ? {} : { notify: patch.notify }),
+      ...(patch.mainModel === undefined ? {} : { mainModel: patch.mainModel }),
+      ...(patch.threadModel === undefined ? {} : { threadModel: patch.threadModel }),
       updatedAt: this.deps.now(),
     }
     await this.deps.store.putProject(next)
@@ -225,6 +268,28 @@ export class Projects {
     await this.deps.store.putProject(next)
     this.changed()
     return next
+  }
+
+  /** Token usage of the main conversation and every thread ("使用情况" in the settings). */
+  async usage(id: string): Promise<ProjectUsage> {
+    const project = this.require(id)
+    const sessions = [
+      { sessionId: project.mainSessionId, kind: 'main' as const, n: null, title: project.title },
+      ...this.deps.store.threadsOf(project.mainSessionId).map((t) => ({ sessionId: t.id, kind: 'thread' as const, n: t.n, title: t.title })),
+    ]
+    const rows: UsageRow[] = []
+    for (const session of sessions) {
+      const buckets = await this.deps.host.sessionUsage(session.sessionId).catch(() => null)
+      const input = buckets === null ? 0 : buckets.uncachedInputTokens + buckets.cacheReadTokens + buckets.cacheWriteTokens
+      rows.push({ ...session, input, output: buckets?.outputTokens ?? 0 })
+    }
+    const [main, ...threads] = rows
+    threads.sort((a, b) => (b.input + b.output) - (a.input + a.output))
+    const ordered = main === undefined ? threads : [main, ...threads]
+    return {
+      total: { input: ordered.reduce((sum, row) => sum + row.input, 0), output: ordered.reduce((sum, row) => sum + row.output, 0) },
+      rows: ordered,
+    }
   }
 
   /** Forget the project. Its main conversation and threads stay as ordinary sessions. */

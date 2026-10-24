@@ -16,9 +16,9 @@
 
 ## 安装
 
-需要 DeepSeek Harness **0.2.1-rc.2**（桌面版或 Web 版）和它的 `dsh` 命令行。桌面版在应用菜单的"管理 dsh 命令…"里设置。
+需要 DeepSeek Harness **0.2.x**（桌面版或 Web 版；基于 0.2.1-rc.2 开发和测试）和它的 `dsh` 命令行。桌面版在应用菜单的"管理 dsh 命令…"里设置；没有这个命令时，可以用 npm 上和你的 DeepSeek Harness 同版本的命令行，例如 `npx -y @deepseek-ai/dsh@0.2.1-rc.2 plugin --profile web add <下面的地址>`。
 
-1. 完全退出 DeepSeek Harness。
+1. 完全退出 DeepSeek Harness（macOS 上按 ⌘Q；有菜单栏或托盘图标的，也要从那里退出）。
 2. 把插件加到你的 profile：
 
    ```sh
@@ -59,11 +59,25 @@
 | `reportReminder` | true | 讨论串做完任务却没回报时，提醒它一次 |
 | `inheritPermissionPreset` | true | 讨论串沿用主对话的权限模式 |
 
+## 排错
+
+- **开着"开发者工具"时 DeepSeek Harness 崩溃**，日志里有 `inspector: source state exceeds the source-frame byte limit`：这是 DSH 实验性检查器的问题，插件多的 profile 都可能碰到。在 profile 的 `cordis.patch.yml` 末尾加下面一段，把单帧上限调到 1MB（要连 `captureFetch: true` 一起写）。**不要**点崩溃对话框里的"禁用第三方插件"，那会把所有第三方插件一起禁掉。
+
+  ```yaml
+  - id: experimental-inspector
+    config:
+      captureFetch: true
+      maxSourceFrameBytes: 1048576
+  ```
+
+- **收不到桌面通知**：DeepSeek Harness 在前台时不发通知（侧栏的记号已经够了）。在后台也收不到时，看系统的通知设置：macOS 是"系统设置 → 通知 → DeepSeek Harness"，Windows 是"设置 → 系统 → 通知"，Linux 取决于桌面环境的通知服务。Web 版第一次会请求浏览器的通知权限。
+
 ## 已知限制
 
 - DeepSeek Harness 每个工作区默认只列 5 个会话，隐藏的讨论串也算在里面，所以讨论串多的工作区里可见的行会变少，"展开其余 N 个会话"的 N 也包含讨论串。
 - worktree 从文件夹最后一次提交开出：没提交的改动不在里面，依赖（`node_modules` 等）要在 worktree 里重新装。
 - "讨论串沿用主对话的审批模式"目前只在改过的本机安装上验证过，还没在官方原版上验证。
+- 没有花费上限：除了同时运行的数量，讨论串用多少 token 不设限。用量在项目设置的"使用情况"里看。
 
 ## 开发
 
@@ -75,6 +89,8 @@ npm run check
 # 完全退出 DeepSeek Harness 后：
 npm run dev:install
 ```
+
+`dev:install` 默认用 macOS 桌面版自带的 `dsh`。其他安装方式用 `DSH_CLI=<dsh 命令的路径> npm run dev:install`，`DSH_PROFILE` 指定 profile（默认 `desktop`）。约定和测试方法见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 协议
 

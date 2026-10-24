@@ -16,9 +16,9 @@ A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) plugin, mo
 
 ## Install
 
-Requires DeepSeek Harness **0.2.1-rc.2** (Desktop or Web) and its `dsh` command line. On Desktop it is set up from the app menu (**Manage dsh command…**).
+Requires DeepSeek Harness **0.2.x** (Desktop or Web; built and tested against 0.2.1-rc.2) and its `dsh` command line. On Desktop it is set up from the app menu (**Manage dsh command…**). Without it, the command line from npm at your DeepSeek Harness version works too, for example `npx -y @deepseek-ai/dsh@0.2.1-rc.2 plugin --profile web add <address below>`.
 
-1. Quit DeepSeek Harness completely.
+1. Quit DeepSeek Harness completely (⌘Q on macOS; also quit from its menu-bar or tray icon if it has one).
 2. Add the plugin to your profile:
 
    ```sh
@@ -59,11 +59,25 @@ Add a `config` to the plugin's entry in your profile's `cordis.patch.yml` (for D
 | `reportReminder` | true | Remind a thread once when it ends a task without reporting |
 | `inheritPermissionPreset` | true | Threads get the main conversation's permission preset |
 
+## Troubleshooting
+
+- **DeepSeek Harness crashes while Developer tools are on**, with `inspector: source state exceeds the source-frame byte limit` in the log: this is DSH's experimental inspector, and any profile with many plugins can hit it. Add the following to the end of your profile's `cordis.patch.yml` to raise the frame limit to 1 MB (keep `captureFetch: true` in it). Do **not** choose "disable third-party plugins" in the crash dialog: it disables every third-party plugin.
+
+  ```yaml
+  - id: experimental-inspector
+    config:
+      captureFetch: true
+      maxSourceFrameBytes: 1048576
+  ```
+
+- **No desktop notifications**: none are sent while DeepSeek Harness is in front (the sidebar marks are enough). If they also do not arrive while it is in the background, check the system's notification settings: System Settings → Notifications → DeepSeek Harness on macOS, Settings → System → Notifications on Windows, and your desktop environment's notification service on Linux. The Web app asks for the browser's permission the first time.
+
 ## Known limitations
 
 - DeepSeek Harness lists 5 sessions per workspace and counts hidden threads among them, so a workspace with many threads shows fewer rows, and its "show N more" count includes threads.
 - A worktree starts from the folder's last commit: uncommitted changes are not in it, and dependencies (`node_modules`, …) have to be installed there.
 - That threads keep the main conversation's approval mode has only been checked on a modified local install so far, not on a stock one.
+- There is no spending cap: apart from how many run at once, threads may use as many tokens as they need. Project settings → Usage shows what they used.
 
 ## Development
 
@@ -75,6 +89,8 @@ npm run check
 # quit DeepSeek Harness completely, then:
 npm run dev:install
 ```
+
+`dev:install` uses the `dsh` inside the macOS Desktop app. For any other install, run `DSH_CLI=<path to dsh> npm run dev:install`; `DSH_PROFILE` picks the profile (default `desktop`). Conventions and how to test: [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

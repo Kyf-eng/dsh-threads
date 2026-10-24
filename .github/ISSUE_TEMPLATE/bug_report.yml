@@ -1,0 +1,32 @@
+name: Bug report / 问题反馈
+description: Something does not work as described / 和说明不一致的行为
+labels: [bug]
+body:
+  - type: input
+    id: versions
+    attributes:
+      label: Versions / 版本
+      description: dsh-threads, DeepSeek Harness, and Desktop or Web / dsh-threads、DeepSeek Harness 的版本，桌面版还是 Web 版
+      placeholder: dsh-threads 0.1.0-rc.5, DeepSeek Harness 0.2.1-rc.2, Desktop (macOS)
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps / 复现步骤
+      placeholder: |
+        1. In a project's main conversation, …
+        2. …
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: What happened, and what you expected / 实际结果和期望
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots / 日志或截图
+      description: Anything mentioning dsh-threads in DeepSeek Harness's log helps. Remove secrets first. / DSH 日志里和 dsh-threads 有关的内容；先去掉密钥等敏感信息。

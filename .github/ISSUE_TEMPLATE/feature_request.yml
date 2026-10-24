@@ -1,0 +1,15 @@
+name: Feature request / 功能建议
+description: Something you would like dsh-threads to do / 希望 dsh-threads 支持的事
+labels: [enhancement]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: What you are trying to do / 你想做什么
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: How it could work / 可能的做法
+      description: If Claude's projects and threads already do this, say how. / 如果 Claude 的项目和讨论串已经有类似功能，可以描述一下。

@@ -15,7 +15,7 @@ class FakeAgent implements ThreadAgent {
   inject(text: string, _summary: string, meta?: NoticeMeta) { this.injects.push(text); this.metas.push(meta) }
 }
 
-function setup(overrides: Partial<Config> = {}) {
+function setup(overrides: Partial<Config> = {}, options: { slowWrites?: boolean; slowMain?: boolean } = {}) {
   const agents = new Map<string, FakeAgent>()
   const outputs = new Map<string, string>()
   const renamed: string[] = []
@@ -28,14 +28,21 @@ function setup(overrides: Partial<Config> = {}) {
       agents.set(id, agent)
       return agent
     },
-    async resolve(id) { return agents.get(id) },
+    async resolve(id) {
+      if (options.slowMain === true && id === 'main') await new Promise((resolve) => setTimeout(resolve, 5))
+      return agents.get(id)
+    },
     rename(id, title) { renamed.push(`${id}:${title}`) },
     inheritPermission(main, thread) { inherited.push(`${main}->${thread}`) },
     roundOutput(id) { return outputs.get(id) },
   }
   const main = new FakeAgent('main')
   agents.set('main', main)
-  const store: ThreadStore = memoryStore()
+  const memory = memoryStore()
+  // A store whose thread writes land a tick later, like a real storage backend may.
+  const store: ThreadStore = options.slowWrites === true
+    ? { ...memory, putThread: async (record) => { await new Promise((resolve) => setTimeout(resolve, 0)); await memory.putThread(record) } }
+    : memory
   let clock = 0
   let ids = 0
   const manager = new ThreadManager({
@@ -69,6 +76,7 @@ describe('ThreadManager', () => {
   })
 
   it('refuses beyond maxRunning, and refuses from inside a thread', async () => {
+    t = setup({ maxRunning: 1 })
     await t.manager.open('main', { title: 'a', task: 'a', initiation: 'user_asked' })
     await expect(t.manager.open('main', { title: 'b', task: 'b', initiation: 'user_asked' })).rejects.toBeInstanceOf(ThreadError)
     await expect(t.manager.open('session-1', { title: 'c', task: 'c', initiation: 'user_asked' })).rejects.toBeInstanceOf(ThreadError)
@@ -195,6 +203,45 @@ describe('ThreadManager.setResolved', () => {
     await t.manager.onInbox('session-1', 'user', 3)
     expect(t.store.thread('session-1')).toMatchObject({ resolved: false, round: 'user' })
     await expect(t.manager.setResolved('session-x', true)).rejects.toBeInstanceOf(ThreadError)
+  })
+})
+
+describe('parallel threads', () => {
+  it('runs up to three threads at once by default', async () => {
+    const t = setup()
+    for (const title of ['a', 'b', 'c']) await t.manager.open('main', { title, task: title, initiation: 'user_asked' })
+    expect(t.manager.runningCount('main')).toBe(3)
+    await expect(t.manager.open('main', { title: 'd', task: 'd', initiation: 'user_asked' })).rejects.toBeInstanceOf(ThreadError)
+  })
+
+  it('keeps the limit and the numbering when opens arrive at the same moment', async () => {
+    const t = setup({ maxRunning: 2 }, { slowWrites: true })
+    const results = await Promise.allSettled(['a', 'b', 'c'].map((title) => t.manager.open('main', { title, task: title, initiation: 'user_asked' })))
+    expect(results.map((r) => r.status)).toEqual(['fulfilled', 'fulfilled', 'rejected'])
+    expect(t.store.threadsOf('main').map((thread) => thread.n)).toEqual([1, 2])
+  })
+
+  it('holds reports until every thread is done, even when two finish at the same moment', async () => {
+    const t = setup({}, { slowMain: true })
+    await t.manager.open('main', { title: 'a', task: 'a', initiation: 'user_asked' })
+    await t.manager.open('main', { title: 'b', task: 'b', initiation: 'user_asked' })
+    const first = t.manager.onIdle('session-1')
+    // b finishes while a's report is still on its way to the main conversation.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await Promise.all([first, t.manager.onIdle('session-2')])
+    expect(t.main.followups).toHaveLength(1)
+    expect(t.main.metas[0]?.threads.map((card) => card.title)).toEqual(['a', 'b'])
+  })
+
+  it('starts each queued proposal once when two threads free their slots together', async () => {
+    const t = setup({ maxRunning: 2 })
+    const proposals = await t.manager.propose('main', [{ title: 'A', task: 'a' }, { title: 'B', task: 'b' }, { title: 'C', task: 'c' }])
+    await t.manager.startProposals('main', proposals.map((p) => p.id))
+    const [first, second] = t.store.threadsOf('main')
+    await Promise.all([t.manager.onIdle(first!.id), t.manager.onIdle(second!.id)])
+    expect(t.store.threadsOf('main').map((thread) => thread.title)).toEqual(['A', 'B', 'C'])
+    expect(t.manager.runningCount('main')).toBe(1)
+    expect(t.main.followups).toHaveLength(0)
   })
 })
 

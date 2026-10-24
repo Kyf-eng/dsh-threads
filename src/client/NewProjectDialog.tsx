@@ -3,6 +3,8 @@ import { useState } from 'react'
 import { callHost, projectsStore, type ProjectView } from './api.ts'
 import type { Translate } from './locale.ts'
 
+const OTHER = '__dsh-threads-other-folder__'
+
 export interface WorkspaceOption {
   workspaceId: string
   title: string
@@ -18,18 +20,24 @@ export function NewProjectDialog({ open, onClose, onCreated, workspaces, t }: {
 }) {
   const [title, setTitle] = useState('')
   const [workspaceId, setWorkspaceId] = useState('')
+  const [path, setPath] = useState('')
   const [instructions, setInstructions] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const folder = workspaceId || workspaces[0]?.workspaceId || ''
+  // Any folder, as in Claude: an existing workspace, or a path the host adds as a workspace.
+  const choice = workspaceId || workspaces[0]?.workspaceId || OTHER
+  const byPath = choice === OTHER
+  const ready = title.trim().length > 0 && (byPath ? path.trim().length > 0 : choice.length > 0)
 
   const submit = async () => {
     setBusy(true)
     setError(null)
     try {
-      const project = await callHost<ProjectView>('projects.create', { title, workspaceId: folder, instructions })
+      const target = byPath ? { folder: path.trim() } : { workspaceId: choice }
+      const project = await callHost<ProjectView>('projects.create', { title, ...target, instructions })
       await projectsStore.refresh()
       setTitle('')
+      setPath('')
       setInstructions('')
       onCreated(project)
     } catch (failure) {
@@ -48,7 +56,7 @@ export function NewProjectDialog({ open, onClose, onCreated, workspaces, t }: {
       footer={(
         <div className="dsht-buttons">
           <Button variant="ghost" onClick={onClose}>{t('common.cancel')}</Button>
-          <Button variant="primary" disabled={busy || title.trim().length === 0 || folder.length === 0} onClick={() => { void submit() }}>
+          <Button variant="primary" disabled={busy || !ready} onClick={() => { void submit() }}>
             {t('new.create')}
           </Button>
         </div>
@@ -62,15 +70,19 @@ export function NewProjectDialog({ open, onClose, onCreated, workspaces, t }: {
         </label>
         <label className="dsht-field">
           <span className="dsht-field-label">{t('new.folder')}</span>
-          {workspaces.length === 0
-            ? <span className="dsht-hint">{t('new.noFolders')}</span>
-            : (
-                <select className="dsht-select" value={folder} onChange={(event) => setWorkspaceId(event.target.value)}>
-                  {workspaces.map((workspace) => (
-                    <option key={workspace.workspaceId} value={workspace.workspaceId}>{workspace.title} — {workspace.path}</option>
-                  ))}
-                </select>
-              )}
+          {workspaces.length === 0 ? null : (
+            <select className="dsht-select" value={choice} onChange={(event) => setWorkspaceId(event.target.value)}>
+              {workspaces.map((workspace) => (
+                <option key={workspace.workspaceId} value={workspace.workspaceId}>{workspace.title} — {workspace.path}</option>
+              ))}
+              <option value={OTHER}>{t('new.otherFolder')}</option>
+            </select>
+          )}
+          {byPath ? (
+            <input className="dsht-text dsht-mono" value={path} placeholder={t('new.pathPlaceholder')} spellCheck={false}
+              onChange={(event) => setPath(event.target.value)} />
+          ) : null}
+          {byPath ? <span className="dsht-hint">{t('new.pathHint')}</span> : null}
         </label>
         <label className="dsht-field">
           <span className="dsht-field-label">{t('new.instructions')}</span>

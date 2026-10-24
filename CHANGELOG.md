@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- M3c Claude-style UI:
+  - Threads no longer appear in the left session list; a project's main conversation row shows ↳N, plus a raised hand when a thread waits for you and a breathing dot while threads run.
+  - One design kit for every surface: state marks (breathing dot, raised hand, hollow ring, check), thread items with an amber "waiting for you" box, green/blue/amber file chips, purple branch chips, pill buttons.
+  - Report cards show each thread's live state and list waiting threads first; "↳ N replies" is compact; the proposals card starts one or all suggestions.
+  - Thread pane header with branch chip; Claude's "This thread is resolved" composer bar.
+  - New project from any folder path (added as a workspace when needed).
+
 - M3b worktrees:
   - `thread_open` / `thread_propose` take `worktree: true` (and `/thread -w <task>`): the thread gets its own git worktree under `.agents/worktrees` and its own branch `dsh-threads/<n>-<id>`, commits there and never touches the project folder.
   - Reports name the branch; the main conversation merges only when the user asks.

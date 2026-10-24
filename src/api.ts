@@ -8,6 +8,7 @@ import type { ThreadRecord } from './types.ts'
 const createInput = z.object({
   title: z.string(),
   workspaceId: z.string().optional(),
+  folder: z.string().optional(),
   fromSessionId: z.string().optional(),
   instructions: z.string().optional(),
 })
@@ -26,6 +27,12 @@ export function summarize(thread: ThreadRecord): ThreadSummary {
   const { id, mainSessionId, n, title, status, resolved, initiation, lastReport, error, createdAt, updatedAt } = thread
   const worktree = thread.worktree === null ? null : { branch: thread.worktree.branch, path: thread.worktree.path, removed: thread.worktree.removed }
   return { id, mainSessionId, n, title, status, resolved, initiation, lastReport, error, worktree, createdAt, updatedAt }
+}
+
+/** A thread that stopped to ask the user something (Claude's raised hand). */
+export function isWaiting(thread: ThreadRecord): boolean {
+  const status = thread.lastReport?.status
+  return !thread.resolved && thread.status === 'idle' && (status === 'needs_decision' || status === 'blocked')
 }
 
 function parse<T>(schema: z.ZodType<T>, payload: unknown): T {
@@ -80,9 +87,21 @@ export function apiHandlers(deps: {
     /** Ids of every resolved thread; the client locks their composers. */
     'threads.resolved': () => deps.threads().filter((t) => t.resolved).map((t) => t.id),
     /** Which sessions are threads and which are project main conversations (sidebar row badges). */
+    /**
+     * Thread ids (hidden from the sidebar) and, per project main conversation, how many threads
+     * it has, how many run and how many wait on the user (its row shows ↳N and a state mark).
+     */
     'sessions.kinds': () => ({
       threads: deps.threads().map((t) => t.id),
-      mains: projects.list().map((p) => p.mainSessionId),
+      mains: projects.list().map((p) => {
+        const threads = threadsOf(p.mainSessionId)
+        return {
+          id: p.mainSessionId,
+          threads: threads.length,
+          running: threads.filter((t) => t.status === 'running' || t.status === 'starting').length,
+          waiting: threads.filter(isWaiting).length,
+        }
+      }),
     }),
     'proposals.list': (payload) => manager.proposals(parse(mainInput, payload).mainSessionId),
     'proposals.start': (payload) => {

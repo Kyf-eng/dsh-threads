@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import { isAbsolute, join } from "node:path";
 import { CommandDefinitionId } from "@deepseek-ai/dsh-commands/brand";
 import z$1 from "@deepseek-ai/schemastery";
 import { boundContextSummary, createUserMessage } from "@deepseek-ai/dsh-llm";
@@ -7,7 +8,6 @@ import { finalAssistantOutput } from "@deepseek-ai/dsh-subagent";
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import { promisify } from "node:util";
 import { defineTool } from "@deepseek-ai/dsh-tools";
 import { defineDomain, domainTable } from "@deepseek-ai/dsh-storage-domain";
@@ -132,9 +132,19 @@ var Projects = class {
 			if (workspace === void 0) throw new ProjectError("这个会话不在任何工作区里，没法设为项目。");
 			mainSessionId = input.fromSessionId;
 		} else {
-			if (input.workspaceId === void 0) throw new ProjectError("请选择项目的文件夹（工作区）。");
-			workspace = host.workspace(input.workspaceId);
-			if (workspace === void 0) throw new ProjectError("找不到这个工作区。");
+			const folder = input.folder?.trim();
+			if (folder !== void 0 && folder.length > 0) {
+				if (!isAbsolute(folder)) throw new ProjectError("文件夹要写完整路径，例如 /Users/me/code/app。");
+				try {
+					workspace = await host.ensureWorkspace(folder, title);
+				} catch (error) {
+					throw new ProjectError(`没法用这个文件夹：${error instanceof Error ? error.message : String(error)}`);
+				}
+			} else {
+				if (input.workspaceId === void 0) throw new ProjectError("请选择项目的文件夹（工作区）。");
+				workspace = host.workspace(input.workspaceId);
+				if (workspace === void 0) throw new ProjectError("找不到这个工作区。");
+			}
 			mainSessionId = await host.createMainSession(workspace.id, title);
 		}
 		const at = now();
@@ -194,6 +204,7 @@ var Projects = class {
 const createInput = z.object({
 	title: z.string(),
 	workspaceId: z.string().optional(),
+	folder: z.string().optional(),
 	fromSessionId: z.string().optional(),
 	instructions: z.string().optional()
 });
@@ -232,6 +243,11 @@ function summarize(thread) {
 		createdAt,
 		updatedAt
 	};
+}
+/** A thread that stopped to ask the user something (Claude's raised hand). */
+function isWaiting(thread) {
+	const status = thread.lastReport?.status;
+	return !thread.resolved && thread.status === "idle" && (status === "needs_decision" || status === "blocked");
 }
 function parse(schema, payload) {
 	const result = schema.safeParse(payload);
@@ -286,9 +302,21 @@ function apiHandlers(deps) {
 		/** Ids of every resolved thread; the client locks their composers. */
 		"threads.resolved": () => deps.threads().filter((t) => t.resolved).map((t) => t.id),
 		/** Which sessions are threads and which are project main conversations (sidebar row badges). */
+		/**
+		* Thread ids (hidden from the sidebar) and, per project main conversation, how many threads
+		* it has, how many run and how many wait on the user (its row shows ↳N and a state mark).
+		*/
 		"sessions.kinds": () => ({
 			threads: deps.threads().map((t) => t.id),
-			mains: projects.list().map((p) => p.mainSessionId)
+			mains: projects.list().map((p) => {
+				const threads = threadsOf(p.mainSessionId);
+				return {
+					id: p.mainSessionId,
+					threads: threads.length,
+					running: threads.filter((t) => t.status === "running" || t.status === "starting").length,
+					waiting: threads.filter(isWaiting).length
+				};
+			})
 		}),
 		"proposals.list": (payload) => manager.proposals(parse(mainInput, payload).mainSessionId),
 		"proposals.start": (payload) => {
@@ -365,6 +393,8 @@ function summaryOf(notes) {
 // src/manager.ts
 /** Longest report summary carried on a transcript card. */
 const CARD_SUMMARY_MAX = 160;
+/** Changed files a transcript card lists (the thread pane has the rest). */
+const CARD_FILES_MAX = 4;
 function cardOf(thread) {
 	const card = {
 		threadId: thread.id,
@@ -652,7 +682,9 @@ var ThreadManager = class {
 			card: {
 				...cardOf(thread),
 				status: report?.status ?? "no-report",
-				summary: truncate(plainLine(report?.summary ?? fallback ?? ""), CARD_SUMMARY_MAX)
+				summary: truncate(plainLine(report?.summary ?? fallback ?? ""), CARD_SUMMARY_MAX),
+				...report?.decisions[0] === void 0 ? {} : { decision: truncate(report.decisions[0], CARD_SUMMARY_MAX) },
+				...report === null || report.changedFiles.length === 0 ? {} : { files: report.changedFiles.slice(0, CARD_FILES_MAX) }
 			}
 		};
 		await this.deps.store.putThread({
@@ -1145,6 +1177,13 @@ function createHost(ctx) {
 		},
 		workspace(workspaceId) {
 			return workspaceInfo(ctx.workspaceRegistry.list().find((candidate) => candidate.id === workspaceId));
+		},
+		async ensureWorkspace(folder, title) {
+			const workspace = await ctx.workspaceRegistry.create(folder, title);
+			return {
+				id: workspace.id,
+				path: workspace.path
+			};
 		},
 		workspaceOf(sessionId) {
 			return workspaceInfo(ctx.workspaceRegistry.list().find((candidate) => candidate.sessionIds.includes(sessionId)));
@@ -1703,7 +1742,9 @@ const cardSchema = z.object({
 	title: z.string(),
 	status: z.string().optional(),
 	summary: z.string().optional(),
-	branch: z.string().optional()
+	branch: z.string().optional(),
+	decision: z.string().optional(),
+	files: z.array(z.string()).optional()
 });
 const mainSchema = z.object({
 	id: z.string(),

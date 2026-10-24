@@ -1,9 +1,12 @@
 // The thread list (right-sidebar "Threads" tab) and the conversation-header entry that opens it.
-import { Button, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import { useMemo } from 'react'
+import { glyphState, ThreadGlyph } from './glyphs.tsx'
 import { ThreadsIcon } from './icons.tsx'
 import { relativeTime, type Translate } from './locale.ts'
-import { dotState, type SessionRole, type ThreadView, useHostValue, useThreadsRevision } from './threads.ts'
+import { STATUS_KEYS } from './ThreadCards.tsx'
+import { type SessionRole, type ThreadView, useHostValue, useThreadsRevision } from './threads.ts'
+import { ThreadItem } from './ui.tsx'
 
 type UseStatus = <T>(selector: (statuses: ReadonlyMap<string, { running?: boolean }>) => T) => T
 
@@ -45,20 +48,31 @@ export function ThreadsListTab({ sessionId, useSessionStatus, t, openThread, ope
       </div>
       {threads === undefined ? null : threads.length === 0
         ? <div className="dsht-tab">{t('list.empty')}</div>
-        : threads.map((thread) => (
-            <button key={thread.id} type="button" className="dsht-row" onClick={() => openThread(thread.id)}>
-              <StateDot state={dotState(thread, running.has(thread.id))} className="dsht-dot" />
-              <span className="dsht-row-body">
-                <span className="dsht-row-title">#{thread.n} {thread.title}</span>
-                <span className="dsht-row-summary">{thread.lastReport?.summary ?? thread.error ?? t('list.noReport')}</span>
-                <span className="dsht-row-meta">
-                  {relativeTime(t, thread.updatedAt)}{thread.resolved ? ` · ${t('list.resolved')}` : ''}
-                </span>
-              </span>
-            </button>
-          ))}
+        : <div className="dsht-items">{sortForList(threads, running).map((thread) => {
+            const state = glyphState(thread, running.has(thread.id))
+            const report = thread.lastReport
+            const status = state === 'running' ? t('status.running') : state === 'resolved' ? t('list.resolved')
+              : report === null ? t('list.noReport') : t(STATUS_KEYS[report.status] ?? 'status.noReport')
+            return (
+              <ThreadItem key={thread.id} n={thread.n} title={thread.title} state={state}
+                status={`${status} · ${relativeTime(t, thread.updatedAt)}`}
+                summary={state === 'running' ? undefined : report?.summary ?? thread.error ?? undefined}
+                decision={state === 'waiting' ? report?.decisions[0] : undefined} decisionLabel={t('card.decision')}
+                branch={thread.worktree === null || thread.worktree.removed ? undefined : thread.worktree.branch}
+                openLabel={t('card.open')} onOpen={() => openThread(thread.id)} />
+            )
+          })}</div>}
     </div>
   )
+}
+
+/** Waiting on the user first, then running, then the rest; resolved threads last; newest first within each. */
+function sortForList(threads: readonly ThreadView[], running: ReadonlySet<string>): ThreadView[] {
+  const rank = (thread: ThreadView) => {
+    const state = glyphState(thread, running.has(thread.id))
+    return state === 'waiting' ? 0 : state === 'running' ? 1 : state === 'resolved' ? 3 : 2
+  }
+  return [...threads].sort((a, b) => rank(a) - rank(b) || b.n - a.n)
 }
 
 /** Conversation header: "讨论串 · N" in a project main conversation, "主对话" in a thread. */
@@ -81,9 +95,12 @@ export function ThreadsHeaderAction({ sessionId, useSessionStatus, t, openThread
   if (!isMain) return null
   const count = threads?.length ?? 0
   const active = threads?.filter((thread) => thread.status === 'running' || thread.status === 'starting').length ?? 0
+  const waiting = threads?.filter((thread) => glyphState(thread) === 'waiting').length ?? 0
+  const mark = waiting > 0 ? <ThreadGlyph state="waiting" /> : active > 0 ? <ThreadGlyph state="running" /> : <ThreadsIcon size={14} />
   return (
-    <Button size="sm" variant="ghost" icon={<ThreadsIcon size={14} />} onClick={openThreadsList}>
-      {t('header.threads', { count })}{active > 0 ? ` · ${t('header.running', { count: active })}` : ''}
+    <Button size="sm" variant="ghost" icon={mark} onClick={openThreadsList}>
+      {t('header.threads', { count })}
+      {waiting > 0 ? ` · ${t('header.waiting', { count: waiting })}` : active > 0 ? ` · ${t('header.running', { count: active })}` : ''}
     </Button>
   )
 }

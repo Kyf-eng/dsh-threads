@@ -9,6 +9,8 @@ import type { RemoveResult } from './worktree.ts'
 
 /** Longest report summary carried on a transcript card. */
 const CARD_SUMMARY_MAX = 160
+/** Changed files a transcript card lists (the thread pane has the rest). */
+const CARD_FILES_MAX = 4
 
 function cardOf(thread: Pick<ThreadRecord, 'id' | 'n' | 'title' | 'worktree'>): ThreadCardInfo {
   const card: ThreadCardInfo = { threadId: thread.id, n: thread.n, title: thread.title }
@@ -301,6 +303,8 @@ export class ThreadManager {
         ...cardOf(thread),
         status: report?.status ?? 'no-report',
         summary: truncate(plainLine(report?.summary ?? fallback ?? ''), CARD_SUMMARY_MAX),
+        ...(report?.decisions[0] === undefined ? {} : { decision: truncate(report.decisions[0], CARD_SUMMARY_MAX) }),
+        ...(report === null || report.changedFiles.length === 0 ? {} : { files: report.changedFiles.slice(0, CARD_FILES_MAX) }),
       },
     }
     await this.deps.store.putThread({ ...thread, status: 'idle', round: null, updatedAt: this.deps.now() })

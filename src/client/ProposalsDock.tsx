@@ -1,11 +1,13 @@
 // conversation.input.dock entry above the composer: threads the main conversation proposed
-// (thread_propose), as a checklist with "开始 N 个讨论串" (Claude's suggestion card).
-import { Button, Checkbox } from '@deepseek-ai/dsh-client-ui-primitives'
+// (thread_propose), as Claude's "建议的讨论串" card: start one with its own button, or all
+// of them with "开始 N 个讨论串"; ones past the running limit wait in a queue.
 import { useState } from 'react'
 import { callHost } from './api.ts'
+import { ThreadGlyph } from './glyphs.tsx'
 import { ThreadsIcon } from './icons.tsx'
 import type { Translate } from './locale.ts'
 import { type ProposalView, threadsRevision, useHostValue, useThreadsRevision } from './threads.ts'
+import { BranchIcon, CardHead, CloseIcon, Pill, StartIcon } from './ui.tsx'
 
 type UseStatus = <T>(selector: (statuses: ReadonlyMap<string, { running?: boolean }>) => T) => T
 
@@ -19,13 +21,10 @@ export function ProposalsDock({ sessionId, useSessionStatus, t }: {
   const runningKey = useSessionStatus((statuses) =>
     [...statuses].filter(([, state]) => state.running === true).map(([id]) => id).sort().join(','))
   const proposals = useHostValue<ProposalView[]>(sessionId === undefined ? null : 'proposals.list', { mainSessionId: sessionId }, [sessionId, runningKey, revision])
-  const [unchecked, setUnchecked] = useState<ReadonlySet<string>>(new Set())
   const [busy, setBusy] = useState(false)
   if (sessionId === undefined || proposals === undefined || proposals.length === 0) return null
 
   const pending = proposals.filter((p) => p.state === 'pending')
-  const queued = proposals.filter((p) => p.state === 'queued')
-  const chosen = pending.filter((p) => !unchecked.has(p.id)).map((p) => p.id)
   const act = async (method: 'proposals.start' | 'proposals.dismiss', ids: string[]) => {
     setBusy(true)
     try {
@@ -37,41 +36,37 @@ export function ProposalsDock({ sessionId, useSessionStatus, t }: {
   }
 
   return (
-    <div className="dsht-proposals">
-      <div className="dsht-chat-card-head"><ThreadsIcon size={14} />{t('proposals.title')}</div>
-      {pending.map((proposal) => (
-        <div key={proposal.id} className="dsht-proposal">
-          <Checkbox
-            checked={!unchecked.has(proposal.id)}
-            label={proposal.title}
-            onChange={(next) => {
-              const set = new Set(unchecked)
-              if (next) set.delete(proposal.id)
-              else set.add(proposal.id)
-              setUnchecked(set)
-            }}
-          />
-          <span className="dsht-row-summary">{proposal.task}</span>
-        </div>
-      ))}
-      {queued.map((proposal) => (
-        <div key={proposal.id} className="dsht-proposal dsht-proposal-queued">
-          <span className="dsht-row-title">{proposal.title}</span>
-          <span className="dsht-row-meta">{t('proposals.queued')}</span>
-        </div>
-      ))}
-      <div className="dsht-buttons">
-        {pending.length > 0 ? (
-          <Button variant="ghost" size="sm" disabled={busy} onClick={() => { void act('proposals.dismiss', pending.map((p) => p.id)) }}>
-            {t('proposals.dismiss')}
-          </Button>
-        ) : null}
-        {pending.length > 0 ? (
-          <Button variant="primary" size="sm" disabled={busy || chosen.length === 0} onClick={() => { void act('proposals.start', chosen) }}>
-            {t('proposals.start', { count: chosen.length })}
-          </Button>
-        ) : null}
+    <div className="dsht-card dsht-proposals">
+      <CardHead icon={<ThreadsIcon size={14} />}>{t('proposals.title')}</CardHead>
+      <div className="dsht-proposal-list">
+        {proposals.map((proposal) => (
+          <div key={proposal.id} className={`dsht-proposal${proposal.state === 'queued' ? ' dsht-proposal-queued' : ''}`}>
+            <div className="dsht-proposal-body">
+              <div className="dsht-proposal-title">
+                {proposal.title}
+                {proposal.worktree ? <span className="dsht-tag" title={t('proposals.worktree')}><BranchIcon />{t('proposals.worktree')}</span> : null}
+              </div>
+              <div className="dsht-proposal-task">
+                {proposal.state === 'queued' ? <><ThreadGlyph state="queued" />{t('proposals.queued')}</> : proposal.task.split('\n', 1)[0]}
+              </div>
+            </div>
+            {proposal.state === 'pending' ? (
+              <div className="dsht-proposal-actions">
+                <Pill icon={<CloseIcon />} label={t('proposals.dismissOne')} disabled={busy} onClick={() => { void act('proposals.dismiss', [proposal.id]) }} />
+                <Pill icon={<StartIcon />} label={t('proposals.startOne')} disabled={busy} onClick={() => { void act('proposals.start', [proposal.id]) }} />
+              </div>
+            ) : null}
+          </div>
+        ))}
       </div>
+      {pending.length === 0 ? null : (
+        <div className="dsht-card-foot">
+          <Pill disabled={busy} onClick={() => { void act('proposals.dismiss', pending.map((p) => p.id)) }}>{t('proposals.dismiss')}</Pill>
+          <Pill primary disabled={busy} onClick={() => { void act('proposals.start', pending.map((p) => p.id)) }}>
+            {t('proposals.start', { count: pending.length })}
+          </Pill>
+        </div>
+      )}
     </div>
   )
 }

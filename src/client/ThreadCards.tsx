@@ -1,17 +1,17 @@
 // Thread cards in the transcript, modelled on Claude's: the notice that replaces "收到执行请求",
-// and the turn-tail "N 条回复" card listing the threads a turn opened.
-import { Button, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
+// and the turn-tail "↳ N 条回复" card listing the threads a turn opened.
 import { useMemo, useState } from 'react'
 import type { NoticeData } from './chat.ts'
 import { OPENED_KEY } from './chat.ts'
+import { glyphState, reportGlyph } from './glyphs.tsx'
 import { ThreadsIcon } from './icons.tsx'
 import type { MessageKey, Translate } from './locale.ts'
 import { type ThreadCardInfo, type ThreadView, useHostValue, useThreadsRevision } from './threads.ts'
+import { CardHead, RepliesIcon, ThreadItem } from './ui.tsx'
 
 type UseStatus = <T>(selector: (statuses: ReadonlyMap<string, { running?: boolean }>) => T) => T
-type DotState = 'idle' | 'ongoing' | 'done' | 'warning' | 'error'
 
-const STATUS_KEYS: Record<string, MessageKey> = {
+export const STATUS_KEYS: Record<string, MessageKey> = {
   done: 'status.done',
   blocked: 'status.blocked',
   needs_decision: 'status.needsDecision',
@@ -19,36 +19,17 @@ const STATUS_KEYS: Record<string, MessageKey> = {
   'no-report': 'status.noReport',
 }
 
-function reportDot(status: string | undefined): DotState {
-  if (status === 'done') return 'done'
-  if (status === 'blocked' || status === 'needs_decision') return 'warning'
-  if (status === 'failed') return 'error'
-  return 'idle'
-}
-
-function ThreadRow({ card, dot, label, summary, t, openThread }: {
-  card: ThreadCardInfo
-  dot: DotState
-  label?: string
-  summary?: string
-  t: Translate
-  openThread: (threadId: string) => void
-}) {
-  return (
-    <div className="dsht-card-row">
-      <StateDot state={dot} className="dsht-dot" />
-      <div className="dsht-row-body">
-        <span className="dsht-row-title">#{card.n} {card.title}{label === undefined ? null : <span className="dsht-row-status"> · {label}</span>}</span>
-        {summary === undefined || summary.length === 0 ? null : <span className="dsht-row-summary">{summary}</span>}
-      </div>
-      <Button size="sm" variant="outline" onClick={() => openThread(card.threadId)}>{t('card.open')}</Button>
-    </div>
-  )
+/** Threads that wait on the user lead a report card. */
+function waitingFirst(cards: readonly ThreadCardInfo[]): ThreadCardInfo[] {
+  const waiting = (card: ThreadCardInfo) => (reportGlyph(card.status) === 'waiting' ? 0 : 1)
+  return [...cards].sort((a, b) => waiting(a) - waiting(b))
 }
 
 /** conversation.chat.node renderer for NOTICE_NODE. */
-export function NoticeCard({ node, t, openThread }: {
+export function NoticeCard({ node, sessionId, useSessionStatus, t, openThread }: {
   node: { data: NoticeData }
+  sessionId: string
+  useSessionStatus: UseStatus
   t: Translate
   openThread: (threadId: string) => void
 }) {
@@ -56,16 +37,7 @@ export function NoticeCard({ node, t, openThread }: {
   const [expanded, setExpanded] = useState(false)
 
   if (role === 'report' && threads.length > 0) {
-    return (
-      <div className="dsht-chat-card">
-        <div className="dsht-chat-card-head"><ThreadsIcon size={14} />{t('notice.report', { count: threads.length })}</div>
-        {threads.map((card) => (
-          <ThreadRow key={card.threadId} card={card} dot={reportDot(card.status)}
-            label={card.status === undefined ? undefined : t(STATUS_KEYS[card.status] ?? 'status.noReport')}
-            summary={card.summary} t={t} openThread={openThread} />
-        ))}
-      </div>
-    )
+    return <ReportCard cards={threads} sessionId={sessionId} useSessionStatus={useSessionStatus} t={t} openThread={openThread} />
   }
 
   // A brief or a follow-up, shown inside the thread; or an older notice without card data.
@@ -73,13 +45,12 @@ export function NoticeCard({ node, t, openThread }: {
   const heading = role === 'brief' ? t('notice.brief') : role === 'reply' ? t('notice.reply') : summary
   const body = text.split('\n').filter((line, index) => !(index === 0 && line.startsWith('['))).join('\n').trim()
   return (
-    <div className="dsht-chat-card">
-      <div className="dsht-chat-card-head">
-        <ThreadsIcon size={14} />
-        <span>{heading}{card === undefined ? '' : ` · #${card.n} ${card.title}`}</span>
-      </div>
+    <div className="dsht-card dsht-brief">
+      <CardHead icon={<ThreadsIcon size={14} />} trailing={card?.branch === undefined ? undefined : <span className="dsht-mono">{card.branch}</span>}>
+        {heading}{card === undefined ? '' : ` · #${card.n} ${card.title}`}
+      </CardHead>
       {body.length === 0 ? null : (
-        <button type="button" className={`dsht-chat-card-text ${expanded ? '' : 'dsht-clamped'}`} onClick={() => setExpanded(!expanded)}>
+        <button type="button" className={`dsht-brief-text${expanded ? '' : ' dsht-clamped'}`} aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
           {body}
         </button>
       )}
@@ -87,7 +58,44 @@ export function NoticeCard({ node, t, openThread }: {
   )
 }
 
-/** conversation.chat.turnTail entry: the threads this turn opened ("N 条回复"). */
+/**
+ * A report as delivered (its summary, files and branch), with each thread's current state, as
+ * Claude's cards stay live: a thread resolved since then no longer shows a raised hand.
+ */
+function ReportCard({ cards, sessionId, useSessionStatus, t, openThread }: {
+  cards: readonly ThreadCardInfo[]
+  sessionId: string
+  useSessionStatus: UseStatus
+  t: Translate
+  openThread: (threadId: string) => void
+}) {
+  const revision = useThreadsRevision()
+  const runningKey = useSessionStatus((statuses) =>
+    [...statuses].filter(([, state]) => state.running === true).map(([id]) => id).sort().join(','))
+  const running = useMemo(() => new Set(runningKey.split(',')), [runningKey])
+  const threads = useHostValue<ThreadView[]>('threads.list', { mainSessionId: sessionId }, [sessionId, runningKey, revision])
+  const byId = new Map((threads ?? []).map((thread) => [thread.id, thread]))
+  return (
+    <div className="dsht-card">
+      <CardHead icon={<ThreadsIcon size={14} />}>{t('notice.report', { count: cards.length })}</CardHead>
+      <div className="dsht-items">
+        {waitingFirst(cards).map((card) => {
+          const thread = byId.get(card.threadId)
+          const state = thread === undefined ? reportGlyph(card.status) : glyphState(thread, running.has(card.threadId))
+          const status = state === 'running' ? t('status.running') : state === 'resolved' ? t('list.resolved')
+            : t(STATUS_KEYS[thread?.lastReport?.status ?? card.status ?? 'no-report'] ?? 'status.noReport')
+          return (
+            <ThreadItem key={card.threadId} n={card.n} title={card.title} state={state} status={status}
+              summary={card.summary} decision={state === 'waiting' ? card.decision : undefined} decisionLabel={t('card.decision')}
+              files={card.files} branch={card.branch} openLabel={t('card.open')} onOpen={() => openThread(card.threadId)} />
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+/** conversation.chat.turnTail entry: the threads this turn opened ("↳ N 条回复"), with live state. */
 export function TurnThreadsCard({ turn, sessionId, useSessionStatus, t, openThread }: {
   turn: { data: { get(key: string): unknown } }
   sessionId: string
@@ -104,18 +112,23 @@ export function TurnThreadsCard({ turn, sessionId, useSessionStatus, t, openThre
   if (opened.length === 0) return null
   const byId = new Map((threads ?? []).map((thread) => [thread.id, thread]))
   return (
-    <div className="dsht-chat-card dsht-turn-card">
-      <div className="dsht-chat-card-head"><ThreadsIcon size={14} />{t('card.replies', { count: opened.length })}</div>
-      {opened.map((card) => {
-        const thread = byId.get(card.threadId)
-        const isRunning = running.has(card.threadId) || thread?.status === 'running' || thread?.status === 'starting'
-        const dot: DotState = isRunning ? 'ongoing' : reportDot(thread?.lastReport?.status)
-        const label = isRunning ? t('status.running') : thread?.resolved ? t('list.resolved') : undefined
-        return (
-          <ThreadRow key={card.threadId} card={card} dot={dot} label={label}
-            summary={isRunning ? undefined : thread?.lastReport?.summary} t={t} openThread={openThread} />
-        )
-      })}
+    <div className="dsht-card dsht-replies">
+      <CardHead icon={<RepliesIcon />}>{t('card.replies', { count: opened.length })}</CardHead>
+      <div className="dsht-items">
+        {opened.map((card) => {
+          const thread = byId.get(card.threadId)
+          const state = thread === undefined ? 'running' : glyphState(thread, running.has(card.threadId))
+          const report = thread?.lastReport ?? null
+          const status = state === 'running' ? t('status.running') : state === 'resolved' ? t('list.resolved')
+            : report === null ? undefined : t(STATUS_KEYS[report.status] ?? 'status.noReport')
+          return (
+            // Compact, like Claude's inline thread cards: the report card carries the details.
+            <ThreadItem key={card.threadId} compact n={card.n} title={card.title} state={state} status={status}
+              files={state === 'running' ? undefined : report?.changedFiles.slice(0, 2)}
+              branch={thread?.worktree?.branch ?? card.branch} openLabel={t('card.open')} onOpen={() => openThread(card.threadId)} />
+          )
+        })}
+      </div>
     </div>
   )
 }

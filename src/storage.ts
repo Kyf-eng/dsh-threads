@@ -46,6 +46,8 @@ const cardSchema = z.object({
   status: z.string().optional(),
   summary: z.string().optional(),
   branch: z.string().optional(),
+  decision: z.string().optional(),
+  files: z.array(z.string()).optional(),
 })
 
 const mainSchema = z.object({

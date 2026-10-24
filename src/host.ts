@@ -107,6 +107,11 @@ export function createHost(ctx: Context): ThreadHost & ProjectHost {
       return workspaceInfo(ctx.workspaceRegistry.list().find((candidate) => candidate.id === workspaceId))
     },
 
+    async ensureWorkspace(folder, title) {
+      const workspace = await ctx.workspaceRegistry.create(folder, title)
+      return { id: workspace.id, path: workspace.path }
+    },
+
     workspaceOf(sessionId) {
       return workspaceInfo(ctx.workspaceRegistry.list().find((candidate) => candidate.sessionIds.includes(sessionId as SessionId)))
     },

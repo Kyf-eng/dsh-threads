@@ -1,5 +1,6 @@
 // Projects, as in Claude: one folder (DSH workspace) + one standing main conversation.
 // The projects page, the session menu and the /thread gate all go through here.
+import { isAbsolute } from 'node:path'
 import { truncate } from './report.ts'
 import type { ThreadStore } from './store.ts'
 import type { ProjectRecord } from './types.ts'
@@ -21,6 +22,8 @@ export interface ProjectHost {
   createMainSession(workspaceId: string, title: string): Promise<string>
   workspace(workspaceId: string): WorkspaceInfo | undefined
   workspaceOf(sessionId: string): WorkspaceInfo | undefined
+  /** The DSH workspace for a folder, adding it when the folder has none yet (throws when it is not a directory). */
+  ensureWorkspace(folder: string, title: string): Promise<WorkspaceInfo>
   rename(sessionId: string, title: string): void
 }
 
@@ -88,7 +91,7 @@ export class Projects {
     })
   }
 
-  async create(input: { title: string; workspaceId?: string; fromSessionId?: string; instructions?: string }): Promise<ProjectRecord> {
+  async create(input: { title: string; workspaceId?: string; folder?: string; fromSessionId?: string; instructions?: string }): Promise<ProjectRecord> {
     const { store, host, now } = this.deps
     const title = cleanTitle(input.title)
     let workspace: WorkspaceInfo | undefined
@@ -101,9 +104,19 @@ export class Projects {
       if (workspace === undefined) throw new ProjectError('这个会话不在任何工作区里，没法设为项目。')
       mainSessionId = input.fromSessionId
     } else {
-      if (input.workspaceId === undefined) throw new ProjectError('请选择项目的文件夹（工作区）。')
-      workspace = host.workspace(input.workspaceId)
-      if (workspace === undefined) throw new ProjectError('找不到这个工作区。')
+      const folder = input.folder?.trim()
+      if (folder !== undefined && folder.length > 0) {
+        if (!isAbsolute(folder)) throw new ProjectError('文件夹要写完整路径，例如 /Users/me/code/app。')
+        try {
+          workspace = await host.ensureWorkspace(folder, title)
+        } catch (error) {
+          throw new ProjectError(`没法用这个文件夹：${error instanceof Error ? error.message : String(error)}`)
+        }
+      } else {
+        if (input.workspaceId === undefined) throw new ProjectError('请选择项目的文件夹（工作区）。')
+        workspace = host.workspace(input.workspaceId)
+        if (workspace === undefined) throw new ProjectError('找不到这个工作区。')
+      }
       mainSessionId = await host.createMainSession(workspace.id, title)
     }
     const at = now()

@@ -7,7 +7,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { ComponentType } from 'react'
 import { NOTICE_NODE, noticeDefinition, OPENED_KEY, openedDefinition } from './chat.ts'
 import { ProjectsIcon } from './icons.tsx'
-import { SessionBadge, syncKinds } from './kinds.ts'
+import { MainRowMark, syncKinds } from './kinds.ts'
 import { ProposalsDock } from './ProposalsDock.tsx'
 import { NoticeCard, TurnThreadsCard } from './ThreadCards.tsx'
 import { en, NS, type Translate, zh } from './locale.ts'
@@ -175,7 +175,8 @@ export function apply(root: Context): void {
   ))
 
   // Transcript cards (M2c): our notices become thread cards; a turn that opened threads ends
-  // with an "N 条回复" card; proposals wait above the composer; sidebar rows get a small badge.
+  // with an "N 条回复" card; proposals wait above the composer. Sidebar: thread rows are hidden
+  // and their main conversation's row shows ↳N and the threads' state (kinds.ts).
   ctx.uiConversation.events.register(noticeDefinition)
   ctx.uiConversation.events.register(openedDefinition)
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
@@ -192,8 +193,8 @@ export function apply(root: Context): void {
   ))
   ctx.effect(() => syncKinds(ctx.uiSession.sessionStatus), 'dsh-threads: session kinds')
   ctx.slots.inject('sidebar.session.row.leading', () => ctx.slots.register(
-    { name: 'sidebar.session.row.leading', id: 'dsh-threads-kind', order: 50, locale: NS },
-    SessionBadge as ComponentType<never>,
+    { name: 'sidebar.session.row.leading', id: 'dsh-threads-main', order: 50, locale: NS },
+    MainRowMark as ComponentType<never>,
   ))
 
   // Resolved threads: a pending interaction per thread selects ResolvedComposer.

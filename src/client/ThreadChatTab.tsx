@@ -1,11 +1,12 @@
 // Right-sidebar tab showing one thread's live conversation, with its own composer.
 // Body shape copied from dsh-client-ui-subagent's SidebarChatTab / ConversationSlotPanel,
 // but for ordinary sessions (the `subagentchat` resource would reroute them as subagents).
-import { Button, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
 import { useState, type ReactNode } from 'react'
+import { glyphState, ThreadGlyph } from './glyphs.tsx'
 import type { Translate } from './locale.ts'
 import { setThreadResolved } from './resolved.ts'
-import { dotState, parseThreadAddress, type ThreadDetail, useHostValue, useThreadsRevision } from './threads.ts'
+import { parseThreadAddress, type ThreadDetail, useHostValue, useThreadsRevision } from './threads.ts'
+import { BranchChip, Pill } from './ui.tsx'
 
 /** Session-scoped child slot this tab declares; only the declaring entry may render it. */
 export const THREAD_CONVERSATION_SLOT = 'dsh-threads.chat.conversation'
@@ -58,15 +59,18 @@ function ThreadPaneHeader({ threadId, useSessionStatus, t, openSession }: {
   }
   return (
     <div className="dsht-pane-head">
-      <StateDot state={dotState(thread, running)} />
-      <div className="dsht-pane-title" title={thread.title}>
-        #{thread.n} {thread.title}
-        {thread.projectTitle === null ? null : <span className="dsht-pane-project">{thread.projectTitle}</span>}
+      <ThreadGlyph state={glyphState(thread, running)} />
+      <div className="dsht-pane-text">
+        <div className="dsht-pane-title" title={thread.title}><span className="dsht-item-n">#{thread.n}</span>{thread.title}</div>
+        <div className="dsht-pane-meta">
+          {thread.projectTitle === null ? null : <span>{thread.projectTitle}</span>}
+          {thread.worktree === null ? null : <BranchChip branch={thread.worktree.branch} removed={thread.worktree.removed} />}
+        </div>
       </div>
-      <Button size="sm" variant="ghost" disabled={busy || running} onClick={() => { void toggle() }}>
-        {thread.resolved ? t('pane.reopen') : t('pane.resolve')}
-      </Button>
-      <Button size="sm" variant="ghost" onClick={() => openSession(threadId)}>{t('pane.openMain')}</Button>
+      <div className="dsht-pane-actions">
+        <Pill disabled={busy || running} onClick={() => { void toggle() }}>{thread.resolved ? t('pane.reopen') : t('pane.resolve')}</Pill>
+        <Pill onClick={() => openSession(threadId)}>{t('pane.openMain')}</Pill>
+      </div>
     </div>
   )
 }
@@ -107,13 +111,14 @@ export function ResolvedComposer({ sessionId, t }: { sessionId: string; t: Trans
   const [busy, setBusy] = useState(false)
   return (
     <div className="dsht-resolved">
-      <span>{t('resolved.notice')}</span>
-      <Button size="sm" variant="outline" disabled={busy} onClick={() => {
+      <ThreadGlyph state="resolved" />
+      <span className="dsht-resolved-text"><b>{t('resolved.notice')}</b>{t('resolved.hint')}</span>
+      <Pill disabled={busy} onClick={() => {
         setBusy(true)
         void setThreadResolved(sessionId, false).finally(() => setBusy(false))
       }}>
         {t('resolved.reopen')}
-      </Button>
+      </Pill>
     </div>
   )
 }

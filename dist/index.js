@@ -13,7 +13,7 @@ import { defineTool } from "@deepseek-ai/dsh-tools";
 import { defineDomain, domainTable } from "@deepseek-ai/dsh-storage-domain";
 // package.json
 var name$1 = "@fky/dsh-threads";
-var version = "0.1.0-rc.1";
+var version = "0.1.0-rc.2";
 // src/report.ts
 const ELLIPSIS = "…";
 /** Cut `text` to at most `max` characters (code points), marking the cut. */

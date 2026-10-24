@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.1.0-rc.2 — 2026-10-24
+
+Fixes found after rc.1, in an end-to-end run and a pass over every surface in dark and light mode.
 
 - Fix: colors derived from DSH's theme (borders, hover and button fills, focus ring) were computed on `:root`, where DSH's theme variables are not defined, so they were empty; in light mode project cards had no border at all.
 - "↳ N replies" cards size to their content; thread pane buttons have icons; project cards have a resting shadow.

@@ -122,6 +122,15 @@ export class ThreadManager {
     return this.creating.has(sessionId) || this.deps.store.thread(sessionId) !== undefined
   }
 
+  /**
+   * A thread whose main conversation is still a project's. After the project is deleted its
+   * threads are ordinary conversations again: shown in DSH's list, without thread tools.
+   */
+  isProjectThread(sessionId: string): boolean {
+    const thread = this.deps.store.thread(sessionId)
+    return thread === undefined ? this.creating.has(sessionId) : this.isDispatcher(thread.mainSessionId)
+  }
+
   /** The live worktree a thread works in, if any (for its system prompt). */
   worktreeOf(sessionId: string): ThreadWorktree | null {
     const worktree = this.deps.store.thread(sessionId)?.worktree ?? null
@@ -282,6 +291,8 @@ export class ThreadManager {
       await this.onMainUserMessage(sessionId)
       return
     }
+    // A deleted project's thread is an ordinary conversation now: nothing to report.
+    if (!this.isDispatcher(thread.mainSessionId)) return
     const said = text.trim().length === 0 ? [] : [text.trim()]
     const at = this.deps.now()
     if (thread.round !== null) {

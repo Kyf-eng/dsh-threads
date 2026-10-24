@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Fix: after a project is deleted, its threads are ordinary conversations again, as the delete dialog says: they show in DSH's session list, lose the thread tools, and no longer report to the old main conversation. Deleting a project, like archiving it, waits until no thread is running.
+
 ## 0.1.0-rc.5 — 2026-10-24
 
 Fixes from a full run of the test prompts: the main conversation knows when a change was the user's own request, and choices go to threads.

@@ -287,9 +287,10 @@ var Projects = class {
 			rows: ordered
 		};
 	}
-	/** Forget the project. Its main conversation and threads stay as ordinary sessions. */
+	/** Forget the project. Its main conversation and threads stay as ordinary sessions. Refused while a thread is running. */
 	async remove(id) {
-		this.require(id);
+		const project = this.require(id);
+		if (this.deps.store.threadsOf(project.mainSessionId).some((t) => t.status === "running" || t.status === "starting")) throw new ProjectError("还有讨论串在运行，等它们结束再删除。");
 		await this.deps.store.removeProject(id);
 		this.changed();
 	}
@@ -400,6 +401,7 @@ function parse(schema, payload) {
 }
 function apiHandlers(deps) {
 	const { projects, manager, threadsOf, plugin } = deps;
+	const projectThreads = () => deps.threads().filter((t) => projects.ofMain(t.mainSessionId) !== void 0);
 	const requireThread = (id) => {
 		const thread = deps.thread(id);
 		if (thread === void 0) throw new ProjectError("找不到这个讨论串。");
@@ -458,14 +460,14 @@ function apiHandlers(deps) {
 		"threads.resolve": async (payload) => summarize(await manager.setResolved(parse(idInput, payload).id, true)),
 		"threads.reopen": async (payload) => summarize(await manager.setResolved(parse(idInput, payload).id, false)),
 		/** Ids of every resolved thread; the client locks their composers. */
-		"threads.resolved": () => deps.threads().filter((t) => t.resolved).map((t) => t.id),
+		"threads.resolved": () => projectThreads().filter((t) => t.resolved).map((t) => t.id),
 		/** Which sessions are threads and which are project main conversations (sidebar row badges). */
 		/**
 		* Thread ids (hidden from the sidebar) and, per project main conversation, how many threads
 		* it has, how many run and how many wait on the user (its row shows ↳N and a state mark).
 		*/
 		"sessions.kinds": () => ({
-			threads: deps.threads().map((t) => t.id),
+			threads: projectThreads().map((t) => t.id),
 			mains: projects.list().map((p) => {
 				const threads = threadsOf(p.mainSessionId);
 				return {
@@ -615,6 +617,14 @@ var ThreadManager = class {
 	}
 	isThread(sessionId) {
 		return this.creating.has(sessionId) || this.deps.store.thread(sessionId) !== void 0;
+	}
+	/**
+	* A thread whose main conversation is still a project's. After the project is deleted its
+	* threads are ordinary conversations again: shown in DSH's list, without thread tools.
+	*/
+	isProjectThread(sessionId) {
+		const thread = this.deps.store.thread(sessionId);
+		return thread === void 0 ? this.creating.has(sessionId) : this.isDispatcher(thread.mainSessionId);
 	}
 	/** The live worktree a thread works in, if any (for its system prompt). */
 	worktreeOf(sessionId) {
@@ -809,6 +819,7 @@ var ThreadManager = class {
 			await this.onMainUserMessage(sessionId);
 			return;
 		}
+		if (!this.isDispatcher(thread.mainSessionId)) return;
 		const said = text.trim().length === 0 ? [] : [text.trim()];
 		const at = this.deps.now();
 		if (thread.round !== null) {
@@ -1532,7 +1543,7 @@ ${worktree === null ? "- Other threads may be working in the same folder at the 
 // src/roles.ts
 function roleOf(agent, manager) {
 	if (agent.origin === "subagent") return "none";
-	if (manager.isThread(agent.id)) return "thread";
+	if (manager.isProjectThread(agent.id)) return "thread";
 	if (manager.isDispatcher(agent.id)) return "dispatcher";
 	return "none";
 }

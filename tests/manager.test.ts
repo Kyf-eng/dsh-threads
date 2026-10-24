@@ -180,6 +180,20 @@ describe('ThreadManager', () => {
     expect(t.manager.isDispatcher('other')).toBe(false)
     await expect(t.manager.open('other', { title: 'a', task: 'a', initiation: 'user_asked' })).rejects.toBeInstanceOf(ThreadError)
   })
+
+  it('treats a deleted project\'s threads as ordinary conversations', async () => {
+    await t.manager.open('main', { title: 'a', task: 'x', initiation: 'user_asked' })
+    await t.manager.onIdle('session-1')
+    expect(t.manager.isProjectThread('session-1')).toBe(true)
+    await t.store.removeProject('project-1')
+    expect(t.manager.isThread('session-1')).toBe(true)
+    expect(t.manager.isProjectThread('session-1')).toBe(false)
+    // The user talking there no longer starts a round that reports to the old main conversation.
+    await t.manager.onInbox('session-1', 'user', 10, 'hi')
+    await t.manager.onIdle('session-1')
+    expect(t.store.thread('session-1')).toMatchObject({ status: 'idle', round: null })
+    expect(t.main.injects).toHaveLength(0)
+  })
 })
 
 describe('ThreadManager.reply', () => {

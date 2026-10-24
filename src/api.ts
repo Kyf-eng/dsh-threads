@@ -109,6 +109,8 @@ export function apiHandlers(deps: {
   lastReply: (sessionId: string) => string | undefined
 }): RpcHandlers {
   const { projects, manager, threadsOf, plugin } = deps
+  // Threads of a deleted project are ordinary conversations again: not hidden, not locked.
+  const projectThreads = () => deps.threads().filter((t) => projects.ofMain(t.mainSessionId) !== undefined)
   const requireThread = (id: string) => {
     const thread = deps.thread(id)
     if (thread === undefined) throw new ProjectError('找不到这个讨论串。')
@@ -154,14 +156,14 @@ export function apiHandlers(deps: {
     'threads.resolve': async (payload) => summarize(await manager.setResolved(parse(idInput, payload).id, true)),
     'threads.reopen': async (payload) => summarize(await manager.setResolved(parse(idInput, payload).id, false)),
     /** Ids of every resolved thread; the client locks their composers. */
-    'threads.resolved': () => deps.threads().filter((t) => t.resolved).map((t) => t.id),
+    'threads.resolved': () => projectThreads().filter((t) => t.resolved).map((t) => t.id),
     /** Which sessions are threads and which are project main conversations (sidebar row badges). */
     /**
      * Thread ids (hidden from the sidebar) and, per project main conversation, how many threads
      * it has, how many run and how many wait on the user (its row shows ↳N and a state mark).
      */
     'sessions.kinds': () => ({
-      threads: deps.threads().map((t) => t.id),
+      threads: projectThreads().map((t) => t.id),
       mains: projects.list().map((p) => {
         const threads = threadsOf(p.mainSessionId)
         return {

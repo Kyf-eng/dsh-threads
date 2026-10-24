@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
+import { apiHandlers } from '../src/api.ts'
+import type { ThreadManager } from '../src/manager.ts'
 import { roleOf } from '../src/roles.ts'
 import { ProjectError, type ProjectHost, Projects } from '../src/projects.ts'
 import { memoryStore, type ThreadStore } from '../src/store.ts'
@@ -116,6 +118,36 @@ describe('Projects', () => {
     expect(t.changes()).toBe(4)
   })
 
+  it('refuses to delete while a thread runs', async () => {
+    const project = await t.projects.create({ title: 'A', workspaceId: 'ws-1' })
+    await t.store.putThread(threadOf('session-main-1', 'session-t1', 'running'))
+    await expect(t.projects.remove(project.id)).rejects.toBeInstanceOf(ProjectError)
+    await t.store.putThread(threadOf('session-main-1', 'session-t1', 'idle'))
+    await t.projects.remove(project.id)
+    expect(t.store.projects()).toEqual([])
+  })
+
+  it('stops hiding and locking a deleted project\'s threads', async () => {
+    const project = await t.projects.create({ title: 'A', workspaceId: 'ws-1' })
+    await t.store.putThread({ ...threadOf('session-main-1', 'session-t1', 'idle'), resolved: true })
+    const api = apiHandlers({
+      projects: t.projects,
+      manager: { isThread: (id: string) => t.store.thread(id) !== undefined } as unknown as ThreadManager,
+      threadsOf: (main) => t.store.threadsOf(main),
+      thread: (id) => t.store.thread(id),
+      threads: () => t.store.threads(),
+      plugin: { name: 'p', version: '0' },
+      modelCatalog: async () => null,
+      lastReply: () => undefined,
+    })
+    const kinds = () => api['sessions.kinds']!(undefined) as { threads: string[]; mains: { id: string }[] }
+    expect(kinds().threads).toEqual(['session-t1'])
+    expect(api['threads.resolved']!(undefined)).toEqual(['session-t1'])
+    await t.projects.remove(project.id)
+    expect(kinds()).toEqual({ threads: [], mains: [] })
+    expect(api['threads.resolved']!(undefined)).toEqual([])
+  })
+
   it('gives new projects defaults and updates icon, goal and notifications', async () => {
     const project = await t.projects.create({ title: 'A', workspaceId: 'ws-1' })
     expect(project).toMatchObject({ icon: 'folder', goal: '', archived: false, notify: 'attention', mainModel: null, threadModel: null })
@@ -191,13 +223,15 @@ describe('Projects', () => {
 
 describe('roleOf', () => {
   const manager = {
-    isThread: (id: string) => id === 'thread',
+    // 'orphan' is a thread whose project was deleted.
+    isProjectThread: (id: string) => id === 'thread',
     isDispatcher: (id: string) => id === 'main',
   }
 
   it('gives dispatcher tools only to project main conversations', () => {
     expect(roleOf({ id: 'main' }, manager)).toBe('dispatcher')
     expect(roleOf({ id: 'thread' }, manager)).toBe('thread')
+    expect(roleOf({ id: 'orphan' }, manager)).toBe('none')
     expect(roleOf({ id: 'plain' }, manager)).toBe('none')
     expect(roleOf({ id: 'main', origin: 'subagent' }, manager)).toBe('none')
   })

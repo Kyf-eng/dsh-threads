@@ -292,9 +292,12 @@ export class Projects {
     }
   }
 
-  /** Forget the project. Its main conversation and threads stay as ordinary sessions. */
+  /** Forget the project. Its main conversation and threads stay as ordinary sessions. Refused while a thread is running. */
   async remove(id: string): Promise<void> {
-    this.require(id)
+    const project = this.require(id)
+    if (this.deps.store.threadsOf(project.mainSessionId).some((t) => t.status === 'running' || t.status === 'starting')) {
+      throw new ProjectError('还有讨论串在运行，等它们结束再删除。')
+    }
     await this.deps.store.removeProject(id)
     this.changed()
   }

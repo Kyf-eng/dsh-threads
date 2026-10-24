@@ -3,7 +3,8 @@ import { z } from 'zod'
 import type { ThreadManager } from './manager.ts'
 import { ProjectError, type Projects } from './projects.ts'
 import type { RpcHandlers } from './rpc.ts'
-import type { ThreadRecord } from './types.ts'
+import { plainLine, truncate } from './report.ts'
+import type { NotifyLevel, ThreadRecord } from './types.ts'
 
 const createInput = z.object({
   title: z.string(),
@@ -27,6 +28,51 @@ const pinInput = z.object({ id: z.string(), pinned: z.boolean() })
 const idInput = z.object({ id: z.string() })
 const mainInput = z.object({ mainSessionId: z.string() })
 const proposalsInput = z.object({ mainSessionId: z.string(), ids: z.array(z.string()) })
+const sessionsInput = z.object({ ids: z.array(z.string()).max(50) })
+
+/** What a desktop notification needs about a session that just stopped running. */
+export interface NotifyTarget {
+  sessionId: string
+  kind: 'main' | 'thread'
+  mainSessionId: string
+  projectTitle: string
+  level: NotifyLevel
+  /** A thread that stopped to ask the user something. */
+  waiting: boolean
+  n: number | null
+  title: string | null
+  /** Report status of a thread (`done`, `needs_decision`, …, `no-report`). */
+  status: string | null
+  /** The decision a waiting thread asks for, a thread's summary, or the main conversation's last reply. */
+  text: string
+}
+
+const NOTIFY_TEXT_MAX = 160
+
+/** Describe one session for a notification; null when it belongs to no (active) project. */
+export function notifyTarget(id: string, deps: {
+  thread: (id: string) => ThreadRecord | undefined
+  projectOfMain: (mainSessionId: string) => { title: string; notify: NotifyLevel; archived: boolean } | undefined
+  lastReply: (sessionId: string) => string | undefined
+}): NotifyTarget | null {
+  const thread = deps.thread(id)
+  const project = deps.projectOfMain(thread?.mainSessionId ?? id)
+  if (project === undefined || project.archived) return null
+  const clip = (text: string | undefined) => truncate(plainLine(text ?? ''), NOTIFY_TEXT_MAX)
+  if (thread === undefined) {
+    return {
+      sessionId: id, kind: 'main', mainSessionId: id, projectTitle: project.title, level: project.notify,
+      waiting: false, n: null, title: null, status: null, text: clip(deps.lastReply(id)),
+    }
+  }
+  const report = thread.lastReport
+  const waiting = isWaiting(thread)
+  return {
+    sessionId: id, kind: 'thread', mainSessionId: thread.mainSessionId, projectTitle: project.title, level: project.notify,
+    waiting, n: thread.n, title: thread.title, status: report?.status ?? 'no-report',
+    text: clip(waiting ? report?.decisions[0] ?? report?.summary : report?.summary ?? deps.lastReply(id)),
+  }
+}
 
 /** What the panel shows for a thread; the brief and internal round bookkeeping stay on the host. */
 export type ThreadSummary = Pick<ThreadRecord, 'id' | 'mainSessionId' | 'n' | 'title' | 'status' | 'resolved' | 'initiation' | 'lastReport' | 'error' | 'createdAt' | 'updatedAt'> & {
@@ -59,6 +105,8 @@ export function apiHandlers(deps: {
   threads: () => ThreadRecord[]
   plugin: { name: string; version: string }
   modelCatalog: () => Promise<unknown>
+  /** Text of a session's latest assistant reply, when its agent is live. */
+  lastReply: (sessionId: string) => string | undefined
 }): RpcHandlers {
   const { projects, manager, threadsOf, plugin } = deps
   const requireThread = (id: string) => {
@@ -82,6 +130,11 @@ export function apiHandlers(deps: {
     'projects.usage': (payload) => projects.usage(parse(idInput, payload).id),
     /** DSH's model catalog (providers, models, reasoning efforts, the default) for the model menus. */
     'models.catalog': () => deps.modelCatalog(),
+    /** Sessions that just stopped running, as far as they belong to projects (notifications). */
+    'notifications.describe': (payload) => parse(sessionsInput, payload).ids.flatMap((id) => {
+      const target = notifyTarget(id, { thread: deps.thread, projectOfMain: (main) => projects.ofMain(main), lastReply: deps.lastReply })
+      return target === null ? [] : [target]
+    }),
     'projects.unarchive': (payload) => projects.unarchive(parse(idInput, payload).id),
     'projects.remove': async (payload) => {
       await projects.remove(parse(idInput, payload).id)

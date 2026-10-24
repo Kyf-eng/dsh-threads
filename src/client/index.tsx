@@ -8,6 +8,7 @@ import type { ComponentType } from 'react'
 import { NOTICE_NODE, noticeDefinition, OPENED_KEY, openedDefinition } from './chat.ts'
 import { ProjectsIcon } from './icons.tsx'
 import { MainRowMark, syncKinds } from './kinds.ts'
+import { startNotifications } from './notify.ts'
 import { ProposalsDock } from './ProposalsDock.tsx'
 import { NoticeCard, TurnThreadsCard } from './ThreadCards.tsx'
 import { en, NS, type Translate, zh } from './locale.ts'
@@ -208,6 +209,7 @@ export function apply(root: Context): void {
     ProposalsDock as ComponentType<never>,
   ))
   ctx.effect(() => syncKinds(ctx.uiSession.sessionStatus), 'dsh-threads: session kinds')
+  ctx.effect(() => startNotifications({ status: ctx.uiSession.sessionStatus, openSession, openThread, t }), 'dsh-threads: notifications')
   ctx.slots.inject('sidebar.session.row.leading', () => ctx.slots.register(
     { name: 'sidebar.session.row.leading', id: 'dsh-threads-main', order: 50, locale: NS },
     MainRowMark as ComponentType<never>,

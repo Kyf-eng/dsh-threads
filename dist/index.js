@@ -328,6 +328,41 @@ const proposalsInput = z.object({
 	mainSessionId: z.string(),
 	ids: z.array(z.string())
 });
+const sessionsInput = z.object({ ids: z.array(z.string()).max(50) });
+const NOTIFY_TEXT_MAX = 160;
+/** Describe one session for a notification; null when it belongs to no (active) project. */
+function notifyTarget(id, deps) {
+	const thread = deps.thread(id);
+	const project = deps.projectOfMain(thread?.mainSessionId ?? id);
+	if (project === void 0 || project.archived) return null;
+	const clip = (text) => truncate(plainLine(text ?? ""), NOTIFY_TEXT_MAX);
+	if (thread === void 0) return {
+		sessionId: id,
+		kind: "main",
+		mainSessionId: id,
+		projectTitle: project.title,
+		level: project.notify,
+		waiting: false,
+		n: null,
+		title: null,
+		status: null,
+		text: clip(deps.lastReply(id))
+	};
+	const report = thread.lastReport;
+	const waiting = isWaiting(thread);
+	return {
+		sessionId: id,
+		kind: "thread",
+		mainSessionId: thread.mainSessionId,
+		projectTitle: project.title,
+		level: project.notify,
+		waiting,
+		n: thread.n,
+		title: thread.title,
+		status: report?.status ?? "no-report",
+		text: clip(waiting ? report?.decisions[0] ?? report?.summary : report?.summary ?? deps.lastReply(id))
+	};
+}
 function summarize(thread) {
 	const { id, mainSessionId, n, title, status, resolved, initiation, lastReport, error, createdAt, updatedAt } = thread;
 	return {
@@ -385,6 +420,15 @@ function apiHandlers(deps) {
 		"projects.usage": (payload) => projects.usage(parse(idInput, payload).id),
 		/** DSH's model catalog (providers, models, reasoning efforts, the default) for the model menus. */
 		"models.catalog": () => deps.modelCatalog(),
+		/** Sessions that just stopped running, as far as they belong to projects (notifications). */
+		"notifications.describe": (payload) => parse(sessionsInput, payload).ids.flatMap((id) => {
+			const target = notifyTarget(id, {
+				thread: deps.thread,
+				projectOfMain: (main) => projects.ofMain(main),
+				lastReply: deps.lastReply
+			});
+			return target === null ? [] : [target];
+		}),
 		"projects.unarchive": (payload) => projects.unarchive(parse(idInput, payload).id),
 		"projects.remove": async (payload) => {
 			await projects.remove(parse(idInput, payload).id);
@@ -1382,6 +1426,14 @@ function createHost(ctx) {
 			await directories.set(agent, path);
 		},
 		removeWorktree: (worktree) => removeWorktree(systemGit, worktree),
+		/** The latest assistant reply in a live session (searching its recent events only). */
+		lastReply(sessionId) {
+			const agent = live(sessionId);
+			if (agent === void 0) return void 0;
+			const from = Math.max(0, Number(agent.session.seq) - 400);
+			const events = agent.session.snapshotEvents(from);
+			return textOf(finalAssistantOutput(events));
+		},
 		roundOutput(threadId, fromSeq) {
 			const agent = live(threadId);
 			if (agent === void 0) return void 0;
@@ -2069,7 +2121,8 @@ async function apply(ctx, config) {
 				name: name$1,
 				version
 			},
-			modelCatalog: () => ctx.sessionController.modelCatalog()
+			modelCatalog: () => ctx.sessionController.modelCatalog(),
+			lastReply: (sessionId) => host.lastReply(sessionId)
 		})), "dsh-threads: /api/dsh-threads");
 	});
 }

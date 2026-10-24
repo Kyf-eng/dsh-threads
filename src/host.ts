@@ -58,7 +58,12 @@ export function wrapAgent(agent: Agent): ThreadAgent {
   }
 }
 
-export function createHost(ctx: Context): ThreadHost & ProjectHost {
+/** Host services the browser's notifications use (src/api.ts). */
+export interface ReplyHost {
+  lastReply(sessionId: string): string | undefined
+}
+
+export function createHost(ctx: Context): ThreadHost & ProjectHost & ReplyHost {
   const live = (sessionId: string): Agent | undefined => ctx.agents.get(sessionId as SessionId)
 
   const workspaceInfo = (workspace: { id: string; path: string } | undefined): WorkspaceInfo | undefined =>
@@ -180,6 +185,15 @@ export function createHost(ctx: Context): ThreadHost & ProjectHost {
     },
 
     removeWorktree: (worktree) => removeWorktree(systemGit, worktree),
+
+    /** The latest assistant reply in a live session (searching its recent events only). */
+    lastReply(sessionId: string) {
+      const agent = live(sessionId)
+      if (agent === undefined) return undefined
+      const from = Math.max(0, Number(agent.session.seq) - 400)
+      const events = agent.session.snapshotEvents(from as Parameters<typeof agent.session.snapshotEvents>[0])
+      return textOf(finalAssistantOutput(events) as { type: string; text?: string }[] | undefined)
+    },
 
     roundOutput(threadId, fromSeq) {
       const agent = live(threadId)

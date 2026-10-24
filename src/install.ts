@@ -43,7 +43,11 @@ export function installPerAgent(ctx: Context, manager: ThreadManager, projects: 
       }))
       if (role === 'thread') {
         disposers.push(scope.tools.register(threadReportTool(manager, config.summaryMaxChars)))
-        disposers.push(scope.systemPrompt.section({ name: SECTION_NAME, order: SECTION_ORDER, text: threadPrompt(config.summaryMaxChars) }))
+        disposers.push(scope.systemPrompt.section({
+          name: SECTION_NAME,
+          order: SECTION_ORDER,
+          text: () => threadPrompt(config.summaryMaxChars, manager.worktreeOf(agent.id)),
+        }))
       } else {
         disposers.push(scope.tools.register(threadOpenTool(ctx, manager)))
         disposers.push(scope.tools.register(threadProposeTool(manager, config.maxProposalsPerTurn)))

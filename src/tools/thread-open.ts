@@ -45,6 +45,10 @@ export function threadOpenTool(ctx: Context, manager: ThreadManager): ToolDefini
         enum: ['user_asked', 'offer'],
         description: '"user_asked" when the user explicitly asked for a thread or separate/background work; "offer" when the user named the task but did not ask for a thread (the user is asked first).',
       },
+      worktree: {
+        type: 'boolean',
+        description: 'true when the thread will change files in a git repository: it gets its own worktree and branch. Leave false for read-only work.',
+      },
     },
     output: {
       // threadId/n/title reach the browser as `presentationMeta` (the turn's thread card).
@@ -92,9 +96,10 @@ export function threadOpenTool(ctx: Context, manager: ThreadManager): ToolDefini
         if (choice !== OPEN) return { text: `用户没有选择开讨论串，回答是：${item?.custom ?? '（无）'}。按用户的回答处理，不要开讨论串。` }
       }
       try {
-        const thread = await manager.open(caller.id, { title: args.title, task: args.task, initiation: args.initiation })
+        const thread = await manager.open(caller.id, { title: args.title, task: args.task, initiation: args.initiation, worktree: args.worktree === true })
+        const where = thread.worktree === null ? '' : `它在自己的 worktree 里工作（分支 ${thread.worktree.branch}，从 ${thread.worktree.baseCommit.slice(0, 7)} 开出）。`
         return {
-          text: `已开讨论串 #${thread.n}「${thread.title}」（会话 ${thread.id}），它在后台运行，用户可以在侧栏点开它。`
+          text: `已开讨论串 #${thread.n}「${thread.title}」（会话 ${thread.id}），它在后台运行，用户可以在侧栏点开它。${where}`
             + '它做完会把摘要发回这里；不要等待或轮询，继续做别的事或结束本轮。',
           threadId: thread.id,
           n: thread.n,

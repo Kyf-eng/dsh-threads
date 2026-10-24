@@ -18,11 +18,14 @@ const mainInput = z.object({ mainSessionId: z.string() })
 const proposalsInput = z.object({ mainSessionId: z.string(), ids: z.array(z.string()) })
 
 /** What the panel shows for a thread; the brief and internal round bookkeeping stay on the host. */
-export type ThreadSummary = Pick<ThreadRecord, 'id' | 'mainSessionId' | 'n' | 'title' | 'status' | 'resolved' | 'initiation' | 'lastReport' | 'error' | 'createdAt' | 'updatedAt'>
+export type ThreadSummary = Pick<ThreadRecord, 'id' | 'mainSessionId' | 'n' | 'title' | 'status' | 'resolved' | 'initiation' | 'lastReport' | 'error' | 'createdAt' | 'updatedAt'> & {
+  worktree: { branch: string; path: string; removed: boolean } | null
+}
 
 export function summarize(thread: ThreadRecord): ThreadSummary {
   const { id, mainSessionId, n, title, status, resolved, initiation, lastReport, error, createdAt, updatedAt } = thread
-  return { id, mainSessionId, n, title, status, resolved, initiation, lastReport, error, createdAt, updatedAt }
+  const worktree = thread.worktree === null ? null : { branch: thread.worktree.branch, path: thread.worktree.path, removed: thread.worktree.removed }
+  return { id, mainSessionId, n, title, status, resolved, initiation, lastReport, error, worktree, createdAt, updatedAt }
 }
 
 function parse<T>(schema: z.ZodType<T>, payload: unknown): T {

@@ -28,6 +28,13 @@ const threadSchema = z.object({
   roundStartedAt: z.string().nullable(),
   lastReport: reportSchema.nullable(),
   error: z.string().nullable(),
+  worktree: z.object({
+    path: z.string(),
+    branch: z.string(),
+    baseCommit: z.string(),
+    repositoryRoot: z.string(),
+    removed: z.boolean().default(false),
+  }).nullable().default(null),
   createdAt: z.string(),
   updatedAt: z.string(),
 })
@@ -38,6 +45,7 @@ const cardSchema = z.object({
   title: z.string(),
   status: z.string().optional(),
   summary: z.string().optional(),
+  branch: z.string().optional(),
 })
 
 const mainSchema = z.object({
@@ -52,6 +60,7 @@ const proposalSchema = z.object({
   title: z.string(),
   task: z.string(),
   state: z.enum(['pending', 'queued', 'started', 'dismissed']),
+  worktree: z.boolean().default(false),
   threadId: z.string().nullable(),
   createdAt: z.string(),
   expiresAt: z.string(),

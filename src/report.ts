@@ -62,13 +62,17 @@ export function noticeSummary(thread: Pick<ThreadRecord, 'n' | 'title'>, status:
  * open decisions; the details stay in the thread (docs/IMPLEMENTATION.md §三).
  */
 export function composeNote(
-  thread: Pick<ThreadRecord, 'n' | 'title' | 'id'>,
+  thread: Pick<ThreadRecord, 'n' | 'title' | 'id'> & { worktree?: ThreadRecord['worktree'] },
   report: ThreadReport | null,
   fallbackText: string | undefined,
   maxChars: number,
 ): string {
   const status = report?.status ?? 'no-report'
   const lines = [`[讨论串 #${thread.n}「${thread.title}」· ${status} · 这是讨论串的报告，不是证据]`]
+  // Right under the header so truncation never drops it.
+  if (thread.worktree != null) {
+    lines.push(`分支：${thread.worktree.branch}（讨论串自己的 worktree；改动不在项目文件夹里，用户要求时再合并）`)
+  }
   if (report !== null) {
     lines.push(`摘要：${report.summary}`)
     if (report.changedFiles.length > 0) lines.push(`改动：${report.changedFiles.join('、')}`)

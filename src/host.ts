@@ -11,9 +11,15 @@ import type { ProjectHost, WorkspaceInfo } from './projects.ts'
 import { textOf } from './report.ts'
 import { optional } from './services.ts'
 import { type NoticeMeta, SOURCE_KIND } from './source.ts'
+import { createWorktree, removeWorktree, systemGit } from './worktree.ts'
 
 interface SessionTitleLike {
   rename(session: Agent['session'], title: string): unknown
+}
+
+interface WorkingDirectoryLike {
+  get(session: Agent['session']): string
+  set(agent: Agent, path: string, signal?: AbortSignal): Promise<string>
 }
 
 interface PermissionPresetsLike {
@@ -112,6 +118,25 @@ export function createHost(ctx: Context): ThreadHost & ProjectHost {
       if (presets === undefined || main === undefined || thread === undefined) return
       presets.set(thread.session, presets.current(main.session))
     },
+
+    async createWorktree(mainSessionId, name) {
+      const folder = ctx.workspaceRegistry.list().find((candidate) => candidate.sessionIds.includes(mainSessionId as SessionId))?.path
+        ?? (() => {
+          const main = live(mainSessionId)
+          return main === undefined ? undefined : optional<WorkingDirectoryLike>(ctx, 'workingDirectory')?.get(main.session)
+        })()
+      if (folder === undefined) throw new Error('找不到主对话所在的文件夹。')
+      return createWorktree(systemGit, folder, name)
+    },
+
+    async enterDirectory(threadId, path) {
+      const agent = live(threadId)
+      const directories = optional<WorkingDirectoryLike>(ctx, 'workingDirectory')
+      if (agent === undefined || directories === undefined) throw new Error(`没法把讨论串 ${threadId} 切到 ${path}。`)
+      await directories.set(agent, path)
+    },
+
+    removeWorktree: (worktree) => removeWorktree(systemGit, worktree),
 
     roundOutput(threadId, fromSeq) {
       const agent = live(threadId)

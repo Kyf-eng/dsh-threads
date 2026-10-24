@@ -24,6 +24,17 @@ export interface ThreadReport {
  */
 export type RoundOrigin = 'dispatch' | 'user'
 
+/** A thread's own git checkout (M3b): it works and commits on its own branch. */
+export interface ThreadWorktree {
+  path: string
+  branch: string
+  /** Commit the branch started from. */
+  baseCommit: string
+  repositoryRoot: string
+  /** Set by `/thread cleanup confirm` once the checkout is gone. */
+  removed: boolean
+}
+
 export interface ThreadRecord {
   /** The thread's session id. */
   id: string
@@ -42,6 +53,8 @@ export interface ThreadRecord {
   roundStartedAt: string | null
   lastReport: ThreadReport | null
   error: string | null
+  /** Its own checkout when it was opened with `worktree: true`; otherwise it shares the project folder. */
+  worktree: ThreadWorktree | null
   createdAt: string
   updatedAt: string
 }
@@ -67,6 +80,8 @@ export interface ProposalRecord {
   title: string
   task: string
   state: 'pending' | 'queued' | 'started' | 'dismissed'
+  /** Open the thread in its own worktree. */
+  worktree: boolean
   threadId: string | null
   createdAt: string
   expiresAt: string

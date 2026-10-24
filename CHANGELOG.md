@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Fix: a user message in the main conversation now always resets the wake-up streak, even while a report is being delivered (found in an end-to-end run).
+- `maxAutoWakes: 0` is documented as "never wake automatically".
+
 ## 0.1.0-rc.1 — 2026-10-24
 
 First pre-release, for DeepSeek Harness 0.2.1-rc.2.

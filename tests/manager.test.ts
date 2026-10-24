@@ -218,6 +218,21 @@ describe('ThreadManager.setResolved', () => {
   })
 })
 
+describe('wake streak', () => {
+  it('resets when the user speaks, even while a delivery to the main conversation is in flight', async () => {
+    const t = setup({}, { slowMain: true })
+    await t.store.putMain({ ...t.store.main('main'), autoWakeStreak: 2 })
+    await t.manager.open('main', { title: 'a', task: 'x', initiation: 'user_asked' })
+    const settling = t.manager.onIdle('session-1')
+    // The delivery is waiting to reach the main conversation when the user speaks there.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await t.manager.onInbox('main', 'user', 5)
+    await settling
+    expect(t.main.followups).toHaveLength(1)
+    expect(t.store.main('main').autoWakeStreak).toBe(0)
+  })
+})
+
 describe('report reminder', () => {
   it('asks a thread once to report, keeps the round open, and delivers the report it then sends', async () => {
     const t = setup({ reportReminder: true })

@@ -654,12 +654,14 @@ var ThreadManager = class {
 		});
 	}
 	/** The user spoke in a main conversation: automatic wake-ups may start again. */
-	async onMainUserMessage(mainSessionId) {
-		const main = this.deps.store.main(mainSessionId);
-		if (main.autoWakeStreak === 0) return;
-		await this.deps.store.putMain({
-			...main,
-			autoWakeStreak: 0
+	onMainUserMessage(mainSessionId) {
+		return this.serial(mainSessionId, async () => {
+			const main = this.deps.store.main(mainSessionId);
+			if (main.autoWakeStreak === 0) return;
+			await this.deps.store.putMain({
+				...main,
+				autoWakeStreak: 0
+			});
 		});
 	}
 	/** A session went idle: settle a thread's round, or deliver notes held for a main conversation. */
@@ -991,7 +993,7 @@ async function cleanup(manager, mainSessionId, confirmed) {
 // src/config.ts
 const Config = z$1.object({
 	maxRunning: z$1.natural().min(1).default(3).description("How many threads one main conversation may run at once."),
-	maxAutoWakes: z$1.natural().default(5).description("Consecutive automatic wake-ups of the main conversation before reports wait for the user."),
+	maxAutoWakes: z$1.natural().default(5).description("Consecutive automatic wake-ups of the main conversation before reports wait for the user; 0 never wakes it automatically."),
 	noteMaxChars: z$1.natural().min(80).default(400).description("Longest report delivered back to the main conversation."),
 	summaryMaxChars: z$1.natural().min(40).default(300).description("Longest summary a thread may submit through thread_report."),
 	proposalTtlDays: z$1.natural().min(1).default(7).description("Days before an unstarted thread proposal expires."),

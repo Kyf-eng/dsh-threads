@@ -852,3 +852,40 @@ M2c 时 DeepSeek Flash 常常不调 `thread_report`（3 个里 2 个），卡片
    - 第一次打开要在网页里自己登录 DeepSeek 账号；测完删掉 `~/dsh-clean` 即可。
    - 主会话设成 ask 模式，讨论串执行写文件时会弹出审批；
    - 不能出现"后台讨论串自动通过"。
+
+## 七、依赖的 DSH 内部行为和升级冒烟清单
+
+下面这些不是 DSH 公开承诺的接口，是读 0.2.1-rc.2 源码或实测得出的。DSH 升级后最先坏的就是它们，每次换 DSH 版本都按第二张表走一遍。
+
+| 依赖 | 用在哪里 | 坏了会怎样 |
+| --- | --- | --- |
+| 侧栏会话行的 `data-row-key="session:<id>"`、`workspace:<id>`、`overflow:<id>` | `src/client/kinds.ts` 生成 CSS 隐藏讨论串、项目主对话和只剩项目会话的工作区 | 讨论串和主对话重新出现在“工作区”列表里 |
+| 侧栏结构：`sidebar.panellist` 所在的 `<nav>` 后面能插元素；导航图标 16px 表示展开 | `src/client/SidebarProjects.tsx` 用 portal 插“项目”分组 | “项目”分组不显示，或者窄侧栏时位置不对 |
+| `retainedBy.mainView > 0` 的会话就是当前会话 | 侧栏项目行的高亮 | 高亮错行 |
+| `globalThis.__DSH_DIRECTORY_PICKER__.pick()`（桌面版）；`uiWorkspace.pickDirectory()` 在 browse 模式抛 `directory-picker/unavailable` | 新建项目选文件夹 | 弹不出系统文件夹选择器，退回手填路径 |
+| `sessionController.selectModel` 顺带把选择存成新会话默认模型；`agentDefaultModel.saveSelection` 按提交顺序执行 | `host.applyModel` 先记下默认、再改回去 | 换项目模型会改掉用户的全局默认模型 |
+| `permissionPresets.current()` 对不上任何模式时返回 `custom`；`set()` 只接受真实模式名；新会话由 `pinInitialPermission` 钉成用户默认模式 | 讨论串沿用主对话的审批模式 | 讨论串开不出来，或者用了更宽的默认模式 |
+| 用户停止的一轮以 `turn/end`、`reason: { kind: 'aborted', reason: { kind: 'user' } }` 结束 | `host.stoppedByUser`：停掉的一轮不提醒 | 停掉的讨论串又被“提醒回报”叫醒 |
+| `agent.cancel({ kind: 'user' })` 不带 `keepInbox` 会丢掉排队的输入 | “停止”按钮和 `/thread stop` | 停止后讨论串接着跑排队的追加指令 |
+| `agent.session.snapshotEvents(seq)` 加 `finalAssistantOutput`（`dsh-subagent`） | 没回报时用最后一条回复兜底；通知正文 | 兜底和通知正文变空 |
+| 没有 `groupTree` 的聊天节点在已结束的轮里会被过滤（`dsh-client-ui-chat`） | 讨论串卡片设 `groupTree: 'input' / 'turn'` | 卡片在历史轮次里消失 |
+| `agent.inject` 的消息留在收件箱，直到主对话下一轮；这期间退出 DSH 会提示“任务将会中断” | 安静回报（用户自己聊的、被停止的轮次） | 只是提示，回报已写进日志 |
+| `workspaceRegistry.archiveSession(id, { stopActivity: false })` 在会话运行时抛错；归档的会话从侧栏消失、不能运行 | 归档项目、归档讨论串 | 归档时把运行中的讨论串一起停掉，或者归档失败 |
+| `sessionController.projections({ sessionId })` 的 `values.tokenUsage`（会话没加载也能读） | 项目设置里的“使用情况” | 用量全是 0 |
+| `connection.fetch.register` 只放行 owner principal；桌面版 `dsh-app://app/*` 带 cookie 转发 | 浏览器 ↔ 宿主的唯一通道 `POST /api/dsh-threads` | 整个界面拿不到数据 |
+| 插槽名和作用域（`CLIENT_SLOT_API`）：`sidebar.panellist`、`main`、`shell.overlay`、`sidebar.right.pane.tab`、`conversation.session.header.actions`、`conversation.chat.node`、`conversation.chat.turnTail`、`conversation.input.dock`、`conversation.composer`、`sidebar.workspaces.session.menu.item`、`sidebar.session.row.leading` | 浏览器端所有入口 | 对应的入口不显示 |
+
+**升级冒烟清单**（新 DSH 版本，先在隔离环境 `DSH_HOME=~/dsh-clean`，再在桌面版）：
+
+| # | 操作 | 期望 |
+| --- | --- | --- |
+| 1 | `npm run check`，devDependencies 换成新版本后再跑一次 | 类型检查和测试都过 |
+| 2 | 装 `.tgz`，打开 DSH | 插件页有 dsh-threads；左侧有“项目”入口和“项目”分组；没有新的崩溃日志 |
+| 3 | 新建项目（系统文件夹选择器） | 打开主对话；工作区列表里看不到它 |
+| 4 | 主对话里 `/thread 列出根目录的文件` | 开出 #1，回报唤醒主对话；卡片、“↳ 1 条回复”、侧栏 ↳1 都对 |
+| 5 | `/thread -w 新建一个文件并提交` | worktree 和分支建好，回报带分支；`/thread cleanup confirm` 能删 |
+| 6 | 开一个 `sleep 60` 的讨论串，分别用面板头“停止”和输入框里 DSH 自带的停止按钮停 | 都不被提醒叫醒，主对话收到安静的 stopped 回报 |
+| 7 | 归档、取消归档一个讨论串；归档、取消归档项目 | 列表、计数、侧栏都跟着变 |
+| 8 | 项目设置：换协调器模型和讨论串模型 | 生效，DSH 的全局默认模型不变 |
+| 9 | 主对话设成 ask 模式，开一个写文件的讨论串（隔离的官方 DSH，§六 第 8 条） | 讨论串弹审批，不自动通过 |
+| 10 | 切换 DSH 的界面语言 | `/thread stop 99` 的回复跟着换语言 |

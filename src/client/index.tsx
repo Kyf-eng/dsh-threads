@@ -6,6 +6,7 @@
 // "讨论串 · N" / "回到主对话" in the conversation header; resolved threads lock their composer.
 import type { Context } from '@deepseek-ai/cordis'
 import type { ComponentType } from 'react'
+import { callHost, sendLocaleToHost } from './api.ts'
 import { NOTICE_NODE, noticeDefinition, OPENED_KEY, openedDefinition } from './chat.ts'
 import { ProjectsIcon } from './icons.tsx'
 import { syncKinds } from './kinds.ts'
@@ -38,6 +39,7 @@ type Disposer = () => void
 // packages that are not on npm).
 interface ClientContext {
   effect(body: () => Disposer, label?: string): void
+  on(event: 'locale/change', listener: () => void): Disposer
   slots: {
     inject(name: string, body: () => Disposer): void
     register(options: Record<string, unknown>, component: ComponentType<never>): Disposer
@@ -45,6 +47,7 @@ interface ClientContext {
   locale: {
     register(ns: string, dicts: { zh: Record<string, string>; en: Record<string, string> }): Disposer
     bind(ns: string): (key: string, params?: Record<string, string | number>) => string
+    getLocale(): { active: string }
   }
   layout: { selectPanel(id: string | null): void }
   uiWorkspace: {
@@ -104,6 +107,9 @@ export function apply(root: Context): void {
   ctx.effect(() => injectStyles(), 'dsh-threads: styles')
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-threads: locale')
   const t = ctx.locale.bind(NS) as Translate
+  // The host writes its own text (the offer question, /thread replies, errors) in this language.
+  ctx.effect(() => sendLocaleToHost(() => ctx.locale.getLocale().active), 'dsh-threads: host locale')
+  ctx.on('locale/change', () => { void callHost('ping').catch(() => {}) })
 
   const openSession = (sessionId: string) => ctx.uiWorkspace.openSession(sessionId)
   const pinSession = (sessionId: string, pinned: boolean) =>

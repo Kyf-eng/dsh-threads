@@ -14,6 +14,247 @@ import { defineDomain, domainTable } from "@deepseek-ai/dsh-storage-domain";
 // package.json
 var name$1 = "@fky/dsh-threads";
 var version = "0.1.0-rc.5";
+// src/messages.ts
+const zh = {
+	notAProject: "只有项目的主对话能开讨论串。先在左侧\"项目\"里新建项目，或在会话菜单里选\"设为项目\"。",
+	briefHeader: (n, title) => `[来自主对话的任务 · 讨论串 #${n}「${title}」]`,
+	briefFooter: "（重要：结束本轮回复之前，必须调用一次 thread_report。主对话只能收到 thread_report 的内容，收不到你的回复正文。）",
+	reminderHeader: (n, title) => `[dsh-threads 提醒 · 讨论串 #${n}「${title}」]`,
+	reminderBody: "你结束了这一轮，但没有调用 thread_report，主对话收不到结果。现在调用一次 thread_report 汇报这一轮的结果（status、summary、changedFiles、decisions）。不用重做任务，也不要做别的事。",
+	replyHeader: (n, title) => `[来自主对话的追加指令 · 讨论串 #${n}「${title}」]`,
+	replyFooter: "（做完后同样要调用一次 thread_report。）",
+	noticeBrief: "任务",
+	noticeReply: "追加指令",
+	noticeReminder: "提醒回报",
+	noNestedThreads: "讨论串里不能再开讨论串；把这个需要写进 thread_report 的 decisions，交给主对话决定。",
+	emptyTask: "task 不能为空：写一份完整的简报。",
+	runningLimit: (running, max) => `已有 ${running} 个讨论串在运行（上限 ${max}）。等有讨论串回报后再开，或者这件事在主对话里做。`,
+	noPreset: (reason) => `没有开讨论串：没法让它沿用主对话的审批模式（${reason}）。`,
+	noWorktree: (reason) => `没法给讨论串开 worktree：${reason}`,
+	emptyMessage: "message 不能为空。",
+	noThreadNumber: (n) => `这个主对话没有讨论串 #${n}。`,
+	notReady: (n, status) => `讨论串 #${n} 没有建好（${status}），不能追加；需要的话重新开一个。`,
+	archivedNoReply: (n) => `讨论串 #${n} 已被用户归档。需要继续就请用户在讨论串列表里取消归档，或者开一个新的。`,
+	unreachable: (n) => `讨论串 #${n} 现在连不上（会话可能已被归档或删除）。`,
+	failedAtRestart: "DSH 重启时讨论串还没建好。",
+	unreachableAfterRestart: "DSH 重启后连不上这个讨论串。",
+	noProposals: "至少要有一个带完整简报的提议。",
+	proposalLimit: (max) => `一次最多提 ${max} 个讨论串；挑最值得做的。`,
+	threadNotFound: "找不到这个讨论串。",
+	stillStarting: (n) => `讨论串 #${n} 还在建，稍后再停。`,
+	notRunning: (n) => `讨论串 #${n} 现在没有在运行。`,
+	stopBeforeArchive: (n) => `讨论串 #${n} 还在运行，先停止再归档。`,
+	reportFromThreadsOnly: "只有讨论串会话能调用 thread_report。",
+	cleanupFailed: (n, reason) => `#${n}：删除失败（${reason}）`,
+	cleanupDirty: (n, path) => `#${n}：${path} 里有没提交的改动，没删；先提交或丢弃。`,
+	cleanupRemoved: (n, branch, kept) => `#${n}：已删除 worktree，${kept ? `分支 ${branch} 还有没合并的提交，保留` : `分支 ${branch} 已合并，一并删除`}。`,
+	noSuchThread: (n) => `没有讨论串 #${n}。`,
+	noThreads: "这个主对话还没有讨论串。",
+	archivedMark: " · 已归档",
+	describeHead: (n, title, status, archived, id) => `讨论串 #${n}「${title}」· ${status}${archived}（会话 ${id}）`,
+	describeWorktree: (path, branch, removed) => `worktree：${path}，分支 ${branch}${removed ? "（已删除 worktree）" : ""}`,
+	describeTask: (task) => `任务：${task}`,
+	describeNoReport: "最新回报：无",
+	describeReport: (at, status, summary) => `最新回报（${at}，${status}）：${summary}`,
+	describeError: (error) => `错误：${error}`,
+	listNoReport: "无回报",
+	listLatest: (status, summary) => `${status}：${summary}`,
+	listLine: (n, title, status, archived, latest) => `#${n}「${title}」· ${status}${archived} · ${latest}`,
+	noticeSummary: (n, title, status) => `讨论串 #${n}「${title}」· ${status}`,
+	noteHeader: (n, title, status) => `[讨论串 #${n}「${title}」· ${status} · 这是讨论串的报告，不是证据]`,
+	noteStopped: "用户在这一轮做完之前停止了讨论串。不要自己重开或重派这件事，除非用户要求。",
+	noteBranch: (branch) => `分支：${branch}（讨论串自己的 worktree；改动不在项目文件夹里，用户要求时再合并）`,
+	quote: (text) => `「${text}」`,
+	noteUserRound: (said) => `这一轮是用户自己在讨论串里要求的，不是讨论串自作主张。用户的原话：${said}`,
+	noteUserSaid: (said) => `这一轮中用户在讨论串里说过：${said}`,
+	noteSummary: (summary) => `摘要：${summary}`,
+	changedFiles: (files) => `改动：${files.join("、")}`,
+	decisionsLine: (decisions) => `待用户决定：${decisions.join("；")}`,
+	noteFallback: (text) => `（讨论串没有调用 thread_report，以下是它最后一条回复）${text}`,
+	noteNothing: "（讨论串结束了，但没有回报也没有回复；用户可以点开讨论串查看。）",
+	noteDetails: (n) => `详情：thread_status { n: ${n} }，或让用户在侧栏打开该讨论串。`,
+	reportsSummary: (count) => `${count} 个讨论串回报`,
+	notARepository: (folder) => `项目文件夹 ${folder} 不是 git 仓库，没法开 worktree。不用 worktree 再开，或者请用户先初始化仓库。`,
+	noCommits: "仓库还没有任何提交，没法从 HEAD 开 worktree。",
+	subfolderNotCommitted: (subdir) => `项目文件夹 ${subdir} 还没有提交进仓库，worktree 里不会有它。不用 worktree 再开，或者请用户先提交。`,
+	mainUnreachable: (id) => `主对话 ${id} 连不上`,
+	customPreset: "主对话的审批设置是自定义的（custom），不对应任何模式；先在主对话里选一个审批模式",
+	cannotSetPreset: (id) => `没法给讨论串 ${id} 设审批模式。`,
+	noMainFolder: "找不到主对话所在的文件夹。",
+	cannotEnter: (id, path) => `没法把讨论串 ${id} 切到 ${path}。`,
+	emptyProjectTitle: "项目名不能为空。",
+	threadNotProject: "讨论串不能设为项目。",
+	notInWorkspace: "这个会话不在任何工作区里，没法设为项目。",
+	absoluteFolder: (example) => `文件夹要写完整路径，例如 ${example}。`,
+	badFolder: (reason) => `没法用这个文件夹：${reason}`,
+	pickFolder: "请选择项目的文件夹（工作区）。",
+	workspaceNotFound: "找不到这个工作区。",
+	projectNotFound: "找不到这个项目。",
+	modelRefused: (reason) => `主对话没法换成这个模型：${reason}`,
+	archiveWhileRunning: "还有讨论串在运行，等它们结束再归档。",
+	mainBusy: (reason) => `主对话现在没法归档（可能还在运行）：${reason}`,
+	deleteWhileRunning: "还有讨论串在运行，等它们结束再删除。",
+	badRequest: (issues) => `请求参数不对：${issues.join("；")}`,
+	usage: "用法：/thread <任务>；/thread -w <任务> 在独立 worktree 里做；/thread stop <n> 停止讨论串 #n；/thread cleanup 清理做完的 worktree。",
+	usageTask: "任务要写清目标、相关文件和完成标准。",
+	commandStopped: (n, title) => `已停止讨论串 #${n}「${title}」。`,
+	stopFailed: (reason) => `停止失败：${reason}`,
+	commandOpened: (n, title, branch) => `已开讨论串 #${n}「${title}」${branch === null ? "" : `（分支 ${branch}）`}，做完会把摘要发回这里。`,
+	openFailed: (reason) => `开讨论串失败：${reason}`,
+	cleanupNone: "没有可以清理的 worktree（运行中的讨论串不算）。",
+	cleanupItem: (n, title, branch) => `#${n}「${title}」${branch}`,
+	cleanupList: (items) => `会删除这些讨论串的 worktree：${items.join("；")}。有没提交改动的会跳过；分支只在已合并时删除。确认请输入 /thread cleanup confirm。`,
+	offerHeader: "讨论串",
+	offerQuestion: (title) => `要为「${title}」开一个讨论串吗？`,
+	offerOpen: "开讨论串",
+	offerOpenDetail: "在后台的新会话里做，做完把摘要发回这里",
+	offerHere: "在主对话里做",
+	offerHereDetail: "就在当前对话里做",
+	offerSkip: "先不做",
+	offerSkipDetail: "先不做",
+	offerUnavailable: "没法在界面上询问用户（userQuestions 不可用）。请在回复里直接问用户要不要开讨论串。",
+	offerChoseHere: "用户选择在主对话里做：不要开讨论串，直接在这里做这件事。",
+	offerChoseSkip: "用户选择先不做这件事：不要开讨论串，也不要开始做。",
+	offerChoseOther: (answer) => `用户没有选择开讨论串，回答是：${answer ?? "（无）"}。按用户的回答处理，不要开讨论串。`,
+	toolOpenedWorktree: (branch, base) => `它在自己的 worktree 里工作（分支 ${branch}，从 ${base} 开出）。`,
+	toolOpened: (n, title, id, worktree) => `已开讨论串 #${n}「${title}」（会话 ${id}），它在后台运行，用户可以在侧栏点开它。${worktree}它做完会把摘要发回这里；不要等待或轮询，继续做别的事或结束本轮。`,
+	toolNotOpened: (reason) => `没有开讨论串：${reason}`,
+	toolReplied: (n, title) => `已把追加指令发给讨论串 #${n}「${title}」。它做完会再回报；不要等待或轮询。`,
+	toolNotSent: (reason) => `没有发送：${reason}`,
+	toolReported: "回报已记录，结束本轮时会发给主对话。现在用一两句话结束回复，不要再调用工具。",
+	toolProposed: (titles) => `已把 ${titles.length} 个提议放进输入框上方的卡片：${titles.map((title) => `「${title}」`).join("、")}。用户勾选后才会开讨论串；不要等待，也不要在回复里重复列出。`,
+	toolNotProposed: (reason) => `没有提议：${reason}`
+};
+const en = {
+	notAProject: "Only a project's main conversation can open threads. Create a project under \"Projects\" in the sidebar, or choose \"Make project\" in the conversation's menu.",
+	briefHeader: (n, title) => `[Task from the main conversation · thread #${n} "${title}"]`,
+	briefFooter: "(Important: call thread_report once before you end this reply. The main conversation receives only what you put in thread_report, not your reply text.)",
+	reminderHeader: (n, title) => `[dsh-threads reminder · thread #${n} "${title}"]`,
+	reminderBody: "You ended this round without calling thread_report, so the main conversation has no result. Call thread_report once now to report this round (status, summary, changedFiles, decisions). Do not redo the task and do nothing else.",
+	replyHeader: (n, title) => `[Follow-up from the main conversation · thread #${n} "${title}"]`,
+	replyFooter: "(Call thread_report once when you are done, as before.)",
+	noticeBrief: "task",
+	noticeReply: "follow-up",
+	noticeReminder: "report reminder",
+	noNestedThreads: "A thread cannot open threads; put what you need in the decisions of thread_report and let the main conversation decide.",
+	emptyTask: "task is empty: write a complete brief.",
+	runningLimit: (running, max) => `${running} threads are already running (limit ${max}). Open this one after a thread reports, or do the work in the main conversation.`,
+	noPreset: (reason) => `Thread not opened: it could not keep the main conversation's permission mode (${reason}).`,
+	noWorktree: (reason) => `Could not give the thread a worktree: ${reason}`,
+	emptyMessage: "message is empty.",
+	noThreadNumber: (n) => `This main conversation has no thread #${n}.`,
+	notReady: (n, status) => `Thread #${n} was never set up (${status}), so it cannot take follow-ups; open a new one if needed.`,
+	archivedNoReply: (n) => `The user archived thread #${n}. To continue it, ask the user to unarchive it in the threads list, or open a new one.`,
+	unreachable: (n) => `Thread #${n} cannot be reached now (its session may have been archived or deleted).`,
+	failedAtRestart: "The thread was still being set up when DSH restarted.",
+	unreachableAfterRestart: "The thread could not be reached after DSH restarted.",
+	noProposals: "Give at least one suggestion with a complete brief.",
+	proposalLimit: (max) => `At most ${max} suggestions at once; pick the most valuable.`,
+	threadNotFound: "Thread not found.",
+	stillStarting: (n) => `Thread #${n} is still being set up; stop it in a moment.`,
+	notRunning: (n) => `Thread #${n} is not running.`,
+	stopBeforeArchive: (n) => `Thread #${n} is still running; stop it before archiving.`,
+	reportFromThreadsOnly: "Only thread sessions can call thread_report.",
+	cleanupFailed: (n, reason) => `#${n}: removal failed (${reason})`,
+	cleanupDirty: (n, path) => `#${n}: ${path} has uncommitted changes, so it was kept; commit or discard them first.`,
+	cleanupRemoved: (n, branch, kept) => `#${n}: worktree removed; ${kept ? `branch ${branch} has unmerged commits and was kept` : `branch ${branch} was merged and was deleted too`}.`,
+	noSuchThread: (n) => `No thread #${n}.`,
+	noThreads: "This main conversation has no threads yet.",
+	archivedMark: " · archived",
+	describeHead: (n, title, status, archived, id) => `Thread #${n} "${title}" · ${status}${archived} (session ${id})`,
+	describeWorktree: (path, branch, removed) => `Worktree: ${path}, branch ${branch}${removed ? " (worktree removed)" : ""}`,
+	describeTask: (task) => `Task: ${task}`,
+	describeNoReport: "Latest report: none",
+	describeReport: (at, status, summary) => `Latest report (${at}, ${status}): ${summary}`,
+	describeError: (error) => `Error: ${error}`,
+	listNoReport: "no report",
+	listLatest: (status, summary) => `${status}: ${summary}`,
+	listLine: (n, title, status, archived, latest) => `#${n} "${title}" · ${status}${archived} · ${latest}`,
+	noticeSummary: (n, title, status) => `Thread #${n} "${title}" · ${status}`,
+	noteHeader: (n, title, status) => `[Thread #${n} "${title}" · ${status} · the thread's own report, not proof]`,
+	noteStopped: "The user stopped the thread before this round was done. Do not reopen or re-dispatch this work unless the user asks.",
+	noteBranch: (branch) => `Branch: ${branch} (the thread's own worktree; the changes are not in the project folder; merge only when the user asks)`,
+	quote: (text) => `"${text}"`,
+	noteUserRound: (said) => `The user asked for this round in the thread themselves; the thread did not act on its own. The user's words: ${said}`,
+	noteUserSaid: (said) => `During this round the user said in the thread: ${said}`,
+	noteSummary: (summary) => `Summary: ${summary}`,
+	changedFiles: (files) => `Changed: ${files.join(", ")}`,
+	decisionsLine: (decisions) => `For the user to decide: ${decisions.join("; ")}`,
+	noteFallback: (text) => `(The thread did not call thread_report; this is its last reply) ${text}`,
+	noteNothing: "(The thread ended without a report or a reply; the user can open the thread to look.)",
+	noteDetails: (n) => `Details: thread_status { n: ${n} }, or have the user open the thread in the sidebar.`,
+	reportsSummary: (count) => `${count} thread reports`,
+	notARepository: (folder) => `The project folder ${folder} is not a git repository, so it cannot have a worktree. Open the thread without a worktree, or ask the user to initialize the repository first.`,
+	noCommits: "The repository has no commits yet, so there is no HEAD to start a worktree from.",
+	subfolderNotCommitted: (subdir) => `The project folder ${subdir} is not committed to the repository yet, so a worktree would not contain it. Open the thread without a worktree, or ask the user to commit it first.`,
+	mainUnreachable: (id) => `the main conversation ${id} cannot be reached`,
+	customPreset: "the main conversation uses custom permission settings that match no mode; choose a permission mode in the main conversation first",
+	cannotSetPreset: (id) => `Could not set the permission mode of thread ${id}.`,
+	noMainFolder: "The main conversation's folder was not found.",
+	cannotEnter: (id, path) => `Could not move thread ${id} to ${path}.`,
+	emptyProjectTitle: "The project needs a name.",
+	threadNotProject: "A thread cannot become a project.",
+	notInWorkspace: "This conversation is in no workspace, so it cannot become a project.",
+	absoluteFolder: (example) => `Write the folder's full path, for example ${example}.`,
+	badFolder: (reason) => `This folder cannot be used: ${reason}`,
+	pickFolder: "Choose the project's folder (workspace).",
+	workspaceNotFound: "Workspace not found.",
+	projectNotFound: "Project not found.",
+	modelRefused: (reason) => `The main conversation cannot use this model: ${reason}`,
+	archiveWhileRunning: "Threads are still running; archive the project once they finish.",
+	mainBusy: (reason) => `The main conversation cannot be archived now (it may still be running): ${reason}`,
+	deleteWhileRunning: "Threads are still running; delete the project once they finish.",
+	badRequest: (issues) => `Invalid request: ${issues.join("; ")}`,
+	usage: "Usage: /thread <task>; /thread -w <task> to work in its own worktree; /thread stop <n> to stop thread #n; /thread cleanup to remove finished worktrees.",
+	usageTask: "Describe the goal, the relevant files and what done looks like.",
+	commandStopped: (n, title) => `Stopped thread #${n} "${title}".`,
+	stopFailed: (reason) => `Could not stop the thread: ${reason}`,
+	commandOpened: (n, title, branch) => `Opened thread #${n} "${title}"${branch === null ? "" : ` (branch ${branch})`}; its summary comes back here when it is done.`,
+	openFailed: (reason) => `Could not open the thread: ${reason}`,
+	cleanupNone: "No worktrees to remove (running threads are left alone).",
+	cleanupItem: (n, title, branch) => `#${n} "${title}" ${branch}`,
+	cleanupList: (items) => `This removes the worktrees of: ${items.join("; ")}. Checkouts with uncommitted changes are skipped; a branch is deleted only when it is merged. To go ahead, type /thread cleanup confirm.`,
+	offerHeader: "Thread",
+	offerQuestion: (title) => `Open a thread for "${title}"?`,
+	offerOpen: "Open a thread",
+	offerOpenDetail: "Work on it in a new background session; its summary comes back here",
+	offerHere: "Do it here",
+	offerHereDetail: "Work on it in this conversation",
+	offerSkip: "Not now",
+	offerSkipDetail: "Do not do it for now",
+	offerUnavailable: "The question cannot be shown in the interface (userQuestions is not available). Ask the user in your reply whether to open a thread.",
+	offerChoseHere: "The user chose to do it in the main conversation: do not open a thread; do the work here.",
+	offerChoseSkip: "The user chose not to do this now: do not open a thread and do not start the work.",
+	offerChoseOther: (answer) => `The user did not choose to open a thread; their answer: ${answer ?? "(none)"}. Act on their answer and do not open a thread.`,
+	toolOpenedWorktree: (branch, base) => `It works in its own worktree (branch ${branch}, started from ${base}). `,
+	toolOpened: (n, title, id, worktree) => `Opened thread #${n} "${title}" (session ${id}). It runs in the background and the user can open it from the sidebar. ${worktree}Its summary comes back here when it is done; do not wait or poll, carry on with other work or end your turn.`,
+	toolNotOpened: (reason) => `Thread not opened: ${reason}`,
+	toolReplied: (n, title) => `Sent the follow-up to thread #${n} "${title}". It reports again when it is done; do not wait or poll.`,
+	toolNotSent: (reason) => `Not sent: ${reason}`,
+	toolReported: "Report recorded; it goes to the main conversation when this round ends. Finish your reply in a sentence or two and call no more tools.",
+	toolProposed: (titles) => `Put ${titles.length} suggestion(s) in the card above the composer: ${titles.map((title) => `"${title}"`).join(", ")}. Threads open only when the user picks them; do not wait, and do not list them again in your reply.`,
+	toolNotProposed: (reason) => `No suggestions made: ${reason}`
+};
+const dictionaries = {
+	zh,
+	en
+};
+let current = "en";
+/** The browser's locale id (`zh`, `zh-CN`, `en-US`, …) → the language this half writes in. */
+function languageOf(locale) {
+	return /^zh\b/i.test(locale) ? "zh" : "en";
+}
+function setLanguage(language) {
+	current = language;
+}
+/** The active language's messages. */
+function msg() {
+	return dictionaries[current];
+}
+/** One message in every language (to recognize an answer whatever language the question was asked in). */
+function inEveryLanguage(key) {
+	return [zh[key], en[key]];
+}
 // src/report.ts
 const ELLIPSIS = "…";
 /** Longest quote of one user message in a report. */
@@ -52,26 +293,27 @@ function currentReport(thread) {
 }
 /** One line for the chat UI's notice row (the UI bounds it further). */
 function noticeSummary(thread, status) {
-	return `讨论串 #${thread.n}「${thread.title}」· ${status}`;
+	return msg().noticeSummary(thread.n, thread.title, status);
 }
 /**
 * The note delivered to the main conversation: only the conclusion, changed files and
 * open decisions; the details stay in the thread (docs/IMPLEMENTATION.md §三).
 */
 function composeNote(thread, report, fallbackText, maxChars, options = {}) {
+	const m = msg();
 	const status = options.stopped === true ? "stopped" : report?.status ?? "no-report";
-	const lines = [`[讨论串 #${thread.n}「${thread.title}」· ${status} · 这是讨论串的报告，不是证据]`];
-	if (options.stopped === true) lines.push("用户在这一轮做完之前停止了讨论串。不要自己重开或重派这件事，除非用户要求。");
-	if (thread.worktree != null) lines.push(`分支：${thread.worktree.branch}（讨论串自己的 worktree；改动不在项目文件夹里，用户要求时再合并）`);
-	const said = (thread.userMessages ?? []).map((text) => `「${truncate(plainLine(text), USER_WORDS_MAX)}」`).join(" ");
-	if (said.length > 0) lines.push(thread.round === "user" ? `这一轮是用户自己在讨论串里要求的，不是讨论串自作主张。用户的原话：${said}` : `这一轮中用户在讨论串里说过：${said}`);
+	const lines = [m.noteHeader(thread.n, thread.title, status)];
+	if (options.stopped === true) lines.push(m.noteStopped);
+	if (thread.worktree != null) lines.push(m.noteBranch(thread.worktree.branch));
+	const said = (thread.userMessages ?? []).map((text) => m.quote(truncate(plainLine(text), USER_WORDS_MAX))).join(" ");
+	if (said.length > 0) lines.push(thread.round === "user" ? m.noteUserRound(said) : m.noteUserSaid(said));
 	if (report !== null) {
-		lines.push(`摘要：${report.summary}`);
-		if (report.changedFiles.length > 0) lines.push(`改动：${report.changedFiles.join("、")}`);
-		if (report.decisions.length > 0) lines.push(`待用户决定：${report.decisions.join("；")}`);
-	} else if (fallbackText !== void 0) lines.push(`（讨论串没有调用 thread_report，以下是它最后一条回复）${fallbackText}`);
-	else lines.push("（讨论串结束了，但没有回报也没有回复；用户可以点开讨论串查看。）");
-	lines.push(`详情：thread_status { n: ${thread.n} }，或让用户在侧栏打开该讨论串。`);
+		lines.push(m.noteSummary(report.summary));
+		if (report.changedFiles.length > 0) lines.push(m.changedFiles(report.changedFiles));
+		if (report.decisions.length > 0) lines.push(m.decisionsLine(report.decisions));
+	} else if (fallbackText !== void 0) lines.push(m.noteFallback(fallbackText));
+	else lines.push(m.noteNothing);
+	lines.push(m.noteDetails(thread.n));
 	return truncate(lines.join("\n"), maxChars);
 }
 // src/projects.ts
@@ -79,11 +321,13 @@ const TITLE_MAX$1 = 60;
 const INSTRUCTIONS_MAX = 4e3;
 const GOAL_MAX = 8e3;
 const ICON_MAX = 40;
+/** A full path in this system's own form, for the "write the full path" hint. */
+const FOLDER_EXAMPLE = process.platform === "win32" ? "C:\\Users\\me\\code\\app" : process.platform === "darwin" ? "/Users/me/code/app" : "/home/me/code/app";
 /** A refusal shown to the user as-is (not a bug). */
 var ProjectError = class extends Error {};
 function cleanTitle(title) {
 	const value = truncate(title.trim(), TITLE_MAX$1);
-	if (value.length === 0) throw new ProjectError("项目名不能为空。");
+	if (value.length === 0) throw new ProjectError(msg().emptyProjectTitle);
 	return value;
 }
 function cleanInstructions(instructions) {
@@ -135,23 +379,23 @@ var Projects = class {
 		if (input.fromSessionId !== void 0) {
 			const existing = store.projectOfMain(input.fromSessionId);
 			if (existing !== void 0) return existing;
-			if (this.deps.isThread(input.fromSessionId)) throw new ProjectError("讨论串不能设为项目。");
+			if (this.deps.isThread(input.fromSessionId)) throw new ProjectError(msg().threadNotProject);
 			workspace = host.workspaceOf(input.fromSessionId);
-			if (workspace === void 0) throw new ProjectError("这个会话不在任何工作区里，没法设为项目。");
+			if (workspace === void 0) throw new ProjectError(msg().notInWorkspace);
 			mainSessionId = input.fromSessionId;
 		} else {
 			const folder = input.folder?.trim();
 			if (folder !== void 0 && folder.length > 0) {
-				if (!isAbsolute(folder)) throw new ProjectError("文件夹要写完整路径，例如 /Users/me/code/app。");
+				if (!isAbsolute(folder)) throw new ProjectError(msg().absoluteFolder(FOLDER_EXAMPLE));
 				try {
 					workspace = await host.ensureWorkspace(folder, title);
 				} catch (error) {
-					throw new ProjectError(`没法用这个文件夹：${error instanceof Error ? error.message : String(error)}`);
+					throw new ProjectError(msg().badFolder(error instanceof Error ? error.message : String(error)));
 				}
 			} else {
-				if (input.workspaceId === void 0) throw new ProjectError("请选择项目的文件夹（工作区）。");
+				if (input.workspaceId === void 0) throw new ProjectError(msg().pickFolder);
 				workspace = host.workspace(input.workspaceId);
-				if (workspace === void 0) throw new ProjectError("找不到这个工作区。");
+				if (workspace === void 0) throw new ProjectError(msg().workspaceNotFound);
 			}
 			mainSessionId = await host.createMainSession(workspace.id, title);
 		}
@@ -179,7 +423,7 @@ var Projects = class {
 	}
 	require(id) {
 		const project = this.deps.store.project(id);
-		if (project === void 0) throw new ProjectError("找不到这个项目。");
+		if (project === void 0) throw new ProjectError(msg().projectNotFound);
 		return project;
 	}
 	async update(id, patch) {
@@ -187,7 +431,7 @@ var Projects = class {
 		if (patch.mainModel !== void 0 && !sameModel(patch.mainModel, project.mainModel)) try {
 			await this.deps.host.applyModel(project.mainSessionId, patch.mainModel);
 		} catch (error) {
-			throw new ProjectError(`主对话没法换成这个模型：${error instanceof Error ? error.message : String(error)}`);
+			throw new ProjectError(msg().modelRefused(error instanceof Error ? error.message : String(error)));
 		}
 		const next = {
 			...project,
@@ -224,11 +468,11 @@ var Projects = class {
 	async archive(id) {
 		const project = this.require(id);
 		const threads = this.deps.store.threadsOf(project.mainSessionId);
-		if (threads.some((t) => t.status === "running" || t.status === "starting")) throw new ProjectError("还有讨论串在运行，等它们结束再归档。");
+		if (threads.some((t) => t.status === "running" || t.status === "starting")) throw new ProjectError(msg().archiveWhileRunning);
 		try {
 			await this.deps.host.archiveSession(project.mainSessionId);
 		} catch (error) {
-			throw new ProjectError(`主对话现在没法归档（可能还在运行）：${error instanceof Error ? error.message : String(error)}`);
+			throw new ProjectError(msg().mainBusy(error instanceof Error ? error.message : String(error)));
 		}
 		for (const thread of threads) await this.deps.host.archiveSession(thread.id).catch(() => {});
 		const next = {
@@ -292,7 +536,7 @@ var Projects = class {
 	/** Forget the project. Its main conversation and threads stay as ordinary sessions. Refused while a thread is running. */
 	async remove(id) {
 		const project = this.require(id);
-		if (this.deps.store.threadsOf(project.mainSessionId).some((t) => t.status === "running" || t.status === "starting")) throw new ProjectError("还有讨论串在运行，等它们结束再删除。");
+		if (this.deps.store.threadsOf(project.mainSessionId).some((t) => t.status === "running" || t.status === "starting")) throw new ProjectError(msg().deleteWhileRunning);
 		await this.deps.store.removeProject(id);
 		this.changed();
 	}
@@ -399,7 +643,7 @@ function isWaiting(thread) {
 }
 function parse(schema, payload) {
 	const result = schema.safeParse(payload);
-	if (!result.success) throw new ProjectError(`请求参数不对：${result.error.issues.map((issue) => issue.message).join("；")}`);
+	if (!result.success) throw new ProjectError(msg().badRequest(result.error.issues.map((issue) => issue.message)));
 	return result.data;
 }
 function apiHandlers(deps) {
@@ -407,7 +651,7 @@ function apiHandlers(deps) {
 	const projectThreads = () => deps.threads().filter((t) => projects.ofMain(t.mainSessionId) !== void 0);
 	const requireThread = (id) => {
 		const thread = deps.thread(id);
-		if (thread === void 0) throw new ProjectError("找不到这个讨论串。");
+		if (thread === void 0) throw new ProjectError(msg().threadNotFound);
 		return thread;
 	};
 	return {
@@ -555,7 +799,7 @@ function metaOf(notes, wake) {
 }
 function summaryOf(notes) {
 	const first = notes[0]?.text.split("\n", 1)[0] ?? "";
-	return notes.length === 1 ? first : `${notes.length} 个讨论串回报`;
+	return notes.length === 1 ? first : msg().reportsSummary(notes.length);
 }
 // src/worktree.ts
 const execFileAsync = promisify(execFile);
@@ -592,7 +836,7 @@ async function createWorktree(git, folder, name) {
 		repositoryRoot = (await git(folder, ["rev-parse", "--show-toplevel"])).trim();
 		subdir = (await git(folder, ["rev-parse", "--show-prefix"])).trim().replace(/\/+$/, "");
 	} catch {
-		throw new WorktreeError(`项目文件夹 ${folder} 不是 git 仓库，没法开 worktree。不用 worktree 再开，或者请用户先初始化仓库。`);
+		throw new WorktreeError(msg().notARepository(folder));
 	}
 	let baseCommit;
 	try {
@@ -602,7 +846,7 @@ async function createWorktree(git, folder, name) {
 			"HEAD^{commit}"
 		])).trim();
 	} catch {
-		throw new WorktreeError("仓库还没有任何提交，没法从 HEAD 开 worktree。");
+		throw new WorktreeError(msg().noCommits);
 	}
 	if (subdir.length > 0) try {
 		await git(repositoryRoot, [
@@ -611,7 +855,7 @@ async function createWorktree(git, folder, name) {
 			`${baseCommit}:${subdir}`
 		]);
 	} catch {
-		throw new WorktreeError(`项目文件夹 ${subdir} 还没有提交进仓库，worktree 里不会有它。不用 worktree 再开，或者请用户先提交。`);
+		throw new WorktreeError(msg().subfolderNotCommitted(subdir));
 	}
 	await preparePool(join(repositoryRoot, ...POOL));
 	const branch = `${BRANCH_PREFIX}${name}`;
@@ -706,36 +950,35 @@ function cardOf(thread) {
 /** A refusal the model should read and act on (not a bug). */
 var ThreadError = class extends Error {};
 const TITLE_MAX = 30;
-const NOT_A_PROJECT = "只有项目的主对话能开讨论串。先在左侧\"项目\"里新建项目，或在会话菜单里选\"设为项目\"。";
 function titleFrom(task) {
 	return truncate(task.trim().split("\n", 1)[0]?.trim() ?? "", TITLE_MAX);
 }
 /** First message of a dispatched round: the brief, framed so the thread knows where it came from. */
 function briefText(thread, task) {
 	return [
-		`[来自主对话的任务 · 讨论串 #${thread.n}「${thread.title}」]`,
+		msg().briefHeader(thread.n, thread.title),
 		"",
 		task.trim(),
 		"",
-		"（重要：结束本轮回复之前，必须调用一次 thread_report。主对话只能收到 thread_report 的内容，收不到你的回复正文。）"
+		msg().briefFooter
 	].join("\n");
 }
 /** Sent once when a task round ended without thread_report. */
 function reminderText(thread) {
 	return [
-		`[dsh-threads 提醒 · 讨论串 #${thread.n}「${thread.title}」]`,
+		msg().reminderHeader(thread.n, thread.title),
 		"",
-		"你结束了这一轮，但没有调用 thread_report，主对话收不到结果。现在调用一次 thread_report 汇报这一轮的结果（status、summary、changedFiles、decisions）。不用重做任务，也不要做别的事。"
+		msg().reminderBody
 	].join("\n");
 }
 /** A follow-up instruction from the main conversation (thread_reply). */
 function replyText(thread, message) {
 	return [
-		`[来自主对话的追加指令 · 讨论串 #${thread.n}「${thread.title}」]`,
+		msg().replyHeader(thread.n, thread.title),
 		"",
 		message.trim(),
 		"",
-		"（做完后同样要调用一次 thread_report。）"
+		msg().replyFooter
 	].join("\n");
 }
 var ThreadManager = class {
@@ -785,12 +1028,12 @@ var ThreadManager = class {
 	}
 	async openNow(mainSessionId, input) {
 		const { store, host, config, now } = this.deps;
-		if (this.isThread(mainSessionId)) throw new ThreadError("讨论串里不能再开讨论串；把这个需要写进 thread_report 的 decisions，交给主对话决定。");
-		if (!this.isDispatcher(mainSessionId)) throw new ThreadError(NOT_A_PROJECT);
+		if (this.isThread(mainSessionId)) throw new ThreadError(msg().noNestedThreads);
+		if (!this.isDispatcher(mainSessionId)) throw new ThreadError(msg().notAProject);
 		const task = input.task.trim();
-		if (task.length === 0) throw new ThreadError("task 不能为空：写一份完整的简报。");
+		if (task.length === 0) throw new ThreadError(msg().emptyTask);
 		const running = this.runningCount(mainSessionId);
-		if (running >= config.maxRunning) throw new ThreadError(`已有 ${running} 个讨论串在运行（上限 ${config.maxRunning}）。等有讨论串回报后再开，或者这件事在主对话里做。`);
+		if (running >= config.maxRunning) throw new ThreadError(msg().runningLimit(running, config.maxRunning));
 		const n = Math.max(0, ...store.threadsOf(mainSessionId).map((t) => t.n)) + 1;
 		const title = truncate(input.title.trim(), TITLE_MAX) || titleFrom(task);
 		const id = this.deps.newSessionId();
@@ -799,7 +1042,7 @@ var ThreadManager = class {
 			try {
 				preset = await host.permissionOf(mainSessionId);
 			} catch (error) {
-				throw new ThreadError(`没有开讨论串：没法让它沿用主对话的审批模式（${error instanceof Error ? error.message : String(error)}）。`);
+				throw new ThreadError(msg().noPreset(error instanceof Error ? error.message : String(error)));
 			}
 			if (preset === void 0) this.deps.warn("dsh-threads: DSH has no permission presets; the thread follows its default");
 		}
@@ -807,7 +1050,7 @@ var ThreadManager = class {
 		if (input.worktree === true) try {
 			worktree = await host.createWorktree(mainSessionId, `${n}-${id.replace(/^session-/, "").slice(0, 6)}`);
 		} catch (error) {
-			throw new ThreadError(`没法给讨论串开 worktree：${error instanceof Error ? error.message : String(error)}`);
+			throw new ThreadError(msg().noWorktree(error instanceof Error ? error.message : String(error)));
 		}
 		const createdAt = now();
 		let record = {
@@ -875,7 +1118,7 @@ var ThreadManager = class {
 			updatedAt: at
 		};
 		await this.deps.store.putThread(next);
-		agent.followup(text, noticeSummary(next, "任务"), {
+		agent.followup(text, noticeSummary(next, msg().noticeBrief), {
 			role: "brief",
 			threads: [cardOf(next)],
 			wake: true
@@ -889,13 +1132,13 @@ var ThreadManager = class {
 	*/
 	async reply(mainSessionId, n, message) {
 		const text = message.trim();
-		if (text.length === 0) throw new ThreadError("message 不能为空。");
+		if (text.length === 0) throw new ThreadError(msg().emptyMessage);
 		const thread = this.deps.store.threadsOf(mainSessionId).find((t) => t.n === n);
-		if (thread === void 0) throw new ThreadError(`这个主对话没有讨论串 #${n}。`);
-		if (thread.status === "failed" || thread.status === "starting") throw new ThreadError(`讨论串 #${n} 没有建好（${thread.status}），不能追加；需要的话重新开一个。`);
-		if (thread.archived) throw new ThreadError(`讨论串 #${n} 已被用户归档。需要继续就请用户在讨论串列表里取消归档，或者开一个新的。`);
+		if (thread === void 0) throw new ThreadError(msg().noThreadNumber(n));
+		if (thread.status === "failed" || thread.status === "starting") throw new ThreadError(msg().notReady(n, thread.status));
+		if (thread.archived) throw new ThreadError(msg().archivedNoReply(n));
 		const agent = await this.deps.host.resolve(thread.id);
-		if (agent === void 0) throw new ThreadError(`讨论串 #${n} 现在连不上（会话可能已被归档或删除）。`);
+		if (agent === void 0) throw new ThreadError(msg().unreachable(n));
 		const at = this.deps.now();
 		const next = thread.round === null ? {
 			...thread,
@@ -915,7 +1158,7 @@ var ThreadManager = class {
 			updatedAt: at
 		};
 		await this.deps.store.putThread(next);
-		agent.followup(replyText(next, text), noticeSummary(next, "追加指令"), {
+		agent.followup(replyText(next, text), noticeSummary(next, msg().noticeReply), {
 			role: "reply",
 			threads: [cardOf(next)],
 			wake: true
@@ -934,7 +1177,7 @@ var ThreadManager = class {
 				await store.putThread({
 					...thread,
 					status: "failed",
-					error: "DSH 重启时讨论串还没建好。",
+					error: msg().failedAtRestart,
 					updatedAt: now()
 				});
 				continue;
@@ -946,7 +1189,7 @@ var ThreadManager = class {
 					...thread,
 					status: "failed",
 					round: null,
-					error: "DSH 重启后连不上这个讨论串。",
+					error: msg().unreachableAfterRestart,
 					updatedAt: now()
 				});
 				continue;
@@ -1035,7 +1278,7 @@ var ThreadManager = class {
 			reminder: { fallback },
 			updatedAt: this.deps.now()
 		});
-		agent.followup(reminderText(thread), noticeSummary(thread, "提醒回报"), {
+		agent.followup(reminderText(thread), noticeSummary(thread, msg().noticeReminder), {
 			role: "reminder",
 			threads: [cardOf(thread)],
 			wake: true
@@ -1084,14 +1327,14 @@ var ThreadManager = class {
 	*/
 	async propose(mainSessionId, items) {
 		const { store, config, now } = this.deps;
-		if (!this.isDispatcher(mainSessionId)) throw new ThreadError(NOT_A_PROJECT);
+		if (!this.isDispatcher(mainSessionId)) throw new ThreadError(msg().notAProject);
 		const cleaned = items.map((item) => ({
 			task: item.task.trim(),
 			title: truncate(item.title.trim(), TITLE_MAX),
 			worktree: item.worktree === true
 		})).filter((item) => item.task.length > 0);
-		if (cleaned.length === 0) throw new ThreadError("至少要有一个带完整简报的提议。");
-		if (cleaned.length > config.maxProposalsPerTurn) throw new ThreadError(`一次最多提 ${config.maxProposalsPerTurn} 个讨论串；挑最值得做的。`);
+		if (cleaned.length === 0) throw new ThreadError(msg().noProposals);
+		if (cleaned.length > config.maxProposalsPerTurn) throw new ThreadError(msg().proposalLimit(config.maxProposalsPerTurn));
 		const createdAt = now();
 		const expiresAt = new Date(Date.parse(createdAt) + config.proposalTtlDays * 864e5).toISOString();
 		const records = cleaned.map((item) => ({
@@ -1171,7 +1414,7 @@ var ThreadManager = class {
 	/** "标记已解决 / 重新打开" from the thread pane. A resolved thread's composer is locked in the UI. */
 	async setResolved(threadId, resolved) {
 		const thread = this.deps.store.thread(threadId);
-		if (thread === void 0) throw new ThreadError("找不到这个讨论串。");
+		if (thread === void 0) throw new ThreadError(msg().threadNotFound);
 		if (thread.resolved === resolved) return thread;
 		const next = {
 			...thread,
@@ -1187,15 +1430,15 @@ var ThreadManager = class {
 	*/
 	async stop(threadId) {
 		const thread = this.deps.store.thread(threadId);
-		if (thread === void 0) throw new ThreadError("找不到这个讨论串。");
-		if (thread.status === "starting") throw new ThreadError(`讨论串 #${thread.n} 还在建，稍后再停。`);
-		if (thread.status !== "running" || !await this.deps.host.cancel(threadId)) throw new ThreadError(`讨论串 #${thread.n} 现在没有在运行。`);
+		if (thread === void 0) throw new ThreadError(msg().threadNotFound);
+		if (thread.status === "starting") throw new ThreadError(msg().stillStarting(thread.n));
+		if (thread.status !== "running" || !await this.deps.host.cancel(threadId)) throw new ThreadError(msg().notRunning(thread.n));
 		return thread;
 	}
 	/** `/thread stop <n>` from a main conversation. */
 	stopNumber(mainSessionId, n) {
 		const thread = this.deps.store.threadsOf(mainSessionId).find((t) => t.n === n);
-		if (thread === void 0) return Promise.reject(new ThreadError(`这个主对话没有讨论串 #${n}。`));
+		if (thread === void 0) return Promise.reject(new ThreadError(msg().noThreadNumber(n)));
 		return this.stop(thread.id);
 	}
 	/**
@@ -1204,10 +1447,10 @@ var ThreadManager = class {
 	*/
 	async setArchived(threadId, archived) {
 		const thread = this.deps.store.thread(threadId);
-		if (thread === void 0) throw new ThreadError("找不到这个讨论串。");
+		if (thread === void 0) throw new ThreadError(msg().threadNotFound);
 		if (thread.archived === archived) return thread;
 		if (archived) {
-			if (thread.status === "running" || thread.status === "starting") throw new ThreadError(`讨论串 #${thread.n} 还在运行，先停止再归档。`);
+			if (thread.status === "running" || thread.status === "starting") throw new ThreadError(msg().stopBeforeArchive(thread.n));
 			await this.deps.host.archiveSession(threadId);
 		} else await this.deps.host.unarchiveSession(threadId);
 		const next = {
@@ -1220,7 +1463,7 @@ var ThreadManager = class {
 	}
 	async recordReport(threadId, input) {
 		const thread = this.deps.store.thread(threadId);
-		if (thread === void 0) throw new ThreadError("只有讨论串会话能调用 thread_report。");
+		if (thread === void 0) throw new ThreadError(msg().reportFromThreadsOnly);
 		const report = normalizeReport(input, this.deps.config.summaryMaxChars, this.deps.now());
 		await this.deps.store.putThread({
 			...thread,
@@ -1262,11 +1505,11 @@ var ThreadManager = class {
 			try {
 				result = await this.deps.host.removeWorktree(worktree);
 			} catch (error) {
-				lines.push(`#${thread.n}：删除失败（${error instanceof Error ? error.message : String(error)}）`);
+				lines.push(msg().cleanupFailed(thread.n, error instanceof Error ? error.message : String(error)));
 				continue;
 			}
 			if (result.outcome === "dirty") {
-				lines.push(`#${thread.n}：${worktree.path} 里有没提交的改动，没删；先提交或丢弃。`);
+				lines.push(msg().cleanupDirty(thread.n, worktree.path));
 				continue;
 			}
 			await this.deps.store.putThread({
@@ -1277,38 +1520,38 @@ var ThreadManager = class {
 				},
 				updatedAt: this.deps.now()
 			});
-			lines.push(`#${thread.n}：已删除 worktree，${result.branchKept ? `分支 ${worktree.branch} 还有没合并的提交，保留` : `分支 ${worktree.branch} 已合并，一并删除`}。`);
+			lines.push(msg().cleanupRemoved(thread.n, worktree.branch, result.branchKept));
 		}
 		return lines;
 	}
 	/** Text for thread_status: every thread of this main conversation, or one thread in detail. */
 	describe(mainSessionId, n) {
+		const m = msg();
 		const threads = this.deps.store.threadsOf(mainSessionId);
 		if (n !== void 0) {
 			const thread = threads.find((t) => t.n === n);
-			if (thread === void 0) throw new ThreadError(`没有讨论串 #${n}。`);
+			if (thread === void 0) throw new ThreadError(msg().noSuchThread(n));
 			const report = thread.lastReport;
 			return [
-				`讨论串 #${thread.n}「${thread.title}」· ${thread.status}${thread.archived ? " · 已归档" : ""}（会话 ${thread.id}）`,
-				thread.worktree === null ? "" : `worktree：${thread.worktree.path}，分支 ${thread.worktree.branch}${thread.worktree.removed ? "（已删除 worktree）" : ""}`,
-				`任务：${truncate(thread.task, 600)}`,
-				report === null ? "最新回报：无" : [
-					`最新回报（${report.at}，${report.status}）：${report.summary}`,
-					report.changedFiles.length > 0 ? `改动：${report.changedFiles.join("、")}` : "",
-					report.decisions.length > 0 ? `待用户决定：${report.decisions.join("；")}` : ""
+				m.describeHead(thread.n, thread.title, thread.status, thread.archived ? m.archivedMark : "", thread.id),
+				thread.worktree === null ? "" : m.describeWorktree(thread.worktree.path, thread.worktree.branch, thread.worktree.removed),
+				m.describeTask(truncate(thread.task, 600)),
+				report === null ? m.describeNoReport : [
+					m.describeReport(report.at, report.status, report.summary),
+					report.changedFiles.length > 0 ? m.changedFiles(report.changedFiles) : "",
+					report.decisions.length > 0 ? m.decisionsLine(report.decisions) : ""
 				].filter((line) => line.length > 0).join("\n"),
-				thread.error === null ? "" : `错误：${thread.error}`
+				thread.error === null ? "" : m.describeError(thread.error)
 			].filter((line) => line.length > 0).join("\n");
 		}
-		if (threads.length === 0) return "这个主对话还没有讨论串。";
+		if (threads.length === 0) return m.noThreads;
 		return threads.map((t) => {
-			const latest = t.lastReport === null ? "无回报" : `${t.lastReport.status}：${truncate(t.lastReport.summary, 80)}`;
-			return `#${t.n}「${t.title}」· ${t.status}${t.archived ? " · 已归档" : ""} · ${latest}`;
+			const latest = t.lastReport === null ? m.listNoReport : m.listLatest(t.lastReport.status, truncate(t.lastReport.summary, 80));
+			return m.listLine(t.n, t.title, t.status, t.archived ? m.archivedMark : "", latest);
 		}).join("\n");
 	}
 };
 // src/command.ts
-const USAGE = "用法：/thread <任务>；/thread -w <任务> 在独立 worktree 里做；/thread stop <n> 停止讨论串 #n；/thread cleanup 清理做完的 worktree。";
 /**
 * `/thread <task>`: the manual entry point, for when the model does not open a thread itself.
 * `-w` gives the thread its own worktree; `stop <n>` stops thread #n; `cleanup` lists finished
@@ -1318,13 +1561,14 @@ function registerThreadCommand(ctx, manager, packageName) {
 	ctx.commands.register({
 		definitionId: CommandDefinitionId(packageName),
 		name: "thread",
-		description: "开一个讨论串：/thread [-w] <任务>；/thread stop <n>；/thread cleanup",
-		input: { hint: "[-w] <任务> | stop <n> | cleanup" },
+		description: "Open a thread / 开一个讨论串: /thread [-w] <task>; /thread stop <n>; /thread cleanup",
+		input: { hint: "[-w] <task> | stop <n> | cleanup" },
 		handler: async ({ agent, rawInput }) => {
+			const m = msg();
 			const input = rawInput.trim();
 			if (!manager.isDispatcher(agent.id)) return {
 				kind: "error",
-				text: NOT_A_PROJECT
+				text: m.notAProject
 			};
 			if (input === "cleanup" || input === "cleanup confirm") return cleanup(manager, agent.id, input === "cleanup confirm");
 			const stop = /^stop\s+#?(\d+)$/.exec(input);
@@ -1332,19 +1576,19 @@ function registerThreadCommand(ctx, manager, packageName) {
 				const thread = await manager.stopNumber(agent.id, Number(stop[1]));
 				return {
 					kind: "success",
-					text: `已停止讨论串 #${thread.n}「${thread.title}」。`
+					text: m.commandStopped(thread.n, thread.title)
 				};
 			} catch (error) {
 				return {
 					kind: "error",
-					text: error instanceof ThreadError ? error.message : `停止失败：${String(error)}`
+					text: error instanceof ThreadError ? error.message : m.stopFailed(String(error))
 				};
 			}
 			const worktree = /^(-w|--worktree)(\s|$)/.test(input);
 			const task = worktree ? input.replace(/^(-w|--worktree)/, "").trim() : input;
 			if (task.length === 0) return {
 				kind: "error",
-				text: `${USAGE}任务要写清目标、相关文件和完成标准。`
+				text: `${m.usage}${m.usageTask}`
 			};
 			try {
 				const thread = await manager.open(agent.id, {
@@ -1353,29 +1597,29 @@ function registerThreadCommand(ctx, manager, packageName) {
 					initiation: "user_asked",
 					worktree
 				});
-				const branch = thread.worktree === null ? "" : `（分支 ${thread.worktree.branch}）`;
 				return {
 					kind: "success",
-					text: `已开讨论串 #${thread.n}「${thread.title}」${branch}，做完会把摘要发回这里。`
+					text: m.commandOpened(thread.n, thread.title, thread.worktree?.branch ?? null)
 				};
 			} catch (error) {
 				return {
 					kind: "error",
-					text: error instanceof ThreadError ? error.message : `开讨论串失败：${String(error)}`
+					text: error instanceof ThreadError ? error.message : m.openFailed(String(error))
 				};
 			}
 		}
 	});
 }
 async function cleanup(manager, mainSessionId, confirmed) {
+	const m = msg();
 	const candidates = manager.cleanupCandidates(mainSessionId);
 	if (candidates.length === 0) return {
 		kind: "success",
-		text: "没有可以清理的 worktree（运行中的讨论串不算）。"
+		text: m.cleanupNone
 	};
 	if (!confirmed) return {
 		kind: "success",
-		text: `会删除这些讨论串的 worktree：${candidates.map((t) => `#${t.n}「${t.title}」${t.worktree?.branch ?? ""}`).join("；")}。有没提交改动的会跳过；分支只在已合并时删除。确认请输入 /thread cleanup confirm。`
+		text: m.cleanupList(candidates.map((t) => m.cleanupItem(t.n, t.title, t.worktree?.branch ?? "")))
 	};
 	return {
 		kind: "success",
@@ -1529,15 +1773,15 @@ function createHost(ctx) {
 			const presets = optional(ctx, "permissionPresets");
 			if (presets === void 0) return void 0;
 			const main = await resolveAgent(mainSessionId);
-			if (main === void 0) throw new Error(`主对话 ${mainSessionId} 连不上`);
+			if (main === void 0) throw new Error(msg().mainUnreachable(mainSessionId));
 			const preset = presets.current(main.session);
-			if (preset === "custom") throw new Error("主对话的审批设置是自定义的（custom），不对应任何模式；先在主对话里选一个审批模式");
+			if (preset === "custom") throw new Error(msg().customPreset);
 			return preset;
 		},
 		setPermission(threadId, preset) {
 			const presets = optional(ctx, "permissionPresets");
 			const thread = live(threadId);
-			if (presets === void 0 || thread === void 0) throw new Error(`没法给讨论串 ${threadId} 设审批模式。`);
+			if (presets === void 0 || thread === void 0) throw new Error(msg().cannotSetPreset(threadId));
 			presets.set(thread.session, preset);
 		},
 		async createWorktree(mainSessionId, name) {
@@ -1545,13 +1789,13 @@ function createHost(ctx) {
 				const main = live(mainSessionId);
 				return main === void 0 ? void 0 : optional(ctx, "workingDirectory")?.get(main.session);
 			})();
-			if (folder === void 0) throw new Error("找不到主对话所在的文件夹。");
+			if (folder === void 0) throw new Error(msg().noMainFolder);
 			return createWorktree(systemGit, folder, name);
 		},
 		async enterDirectory(threadId, path) {
 			const agent = live(threadId);
 			const directories = optional(ctx, "workingDirectory");
-			if (agent === void 0 || directories === void 0) throw new Error(`没法把讨论串 ${threadId} 切到 ${path}。`);
+			if (agent === void 0 || directories === void 0) throw new Error(msg().cannotEnter(threadId, path));
 			await directories.set(agent, path);
 		},
 		removeWorktree: (worktree) => removeWorktree(systemGit, worktree),
@@ -1667,9 +1911,6 @@ function roleOf(agent, manager) {
 }
 // src/tools/thread-open.ts
 const OFFER_ID = "dsh-threads-offer";
-const OPEN = "开讨论串";
-const HERE = "在主对话里做";
-const SKIP = "先不做";
 const DESCRIPTION = "Open a thread: a real background session for a self-contained task. It reports back here with a short summary when it finishes. See the \"Threads (dsh-threads)\" section of your instructions for when to use it and which initiation to pass.";
 function threadOpenTool(ctx, manager) {
 	return defineTool({
@@ -1724,27 +1965,28 @@ function threadOpenTool(ctx, manager) {
 		async execute(args, exec) {
 			const caller = exec.agent;
 			if (caller === void 0) throw new Error("thread_open needs a calling session");
+			const m = msg();
 			if (args.initiation === "offer") {
 				const questions = optional(ctx, "userQuestions");
-				if (questions === void 0) return { text: "没法在界面上询问用户（userQuestions 不可用）。请在回复里直接问用户要不要开讨论串。" };
+				if (questions === void 0) return { text: m.offerUnavailable };
 				const item = (await questions.ask({
 					questions: [{
 						id: OFFER_ID,
-						header: "讨论串",
-						question: `要为「${truncate(args.title, 30)}」开一个讨论串吗？`,
+						header: m.offerHeader,
+						question: m.offerQuestion(truncate(args.title, 30)),
 						detail: truncate(args.task, 600),
 						options: [
 							{
-								label: OPEN,
-								description: "在后台的新会话里做，做完把摘要发回这里"
+								label: m.offerOpen,
+								description: m.offerOpenDetail
 							},
 							{
-								label: HERE,
-								description: "就在当前对话里做"
+								label: m.offerHere,
+								description: m.offerHereDetail
 							},
 							{
-								label: SKIP,
-								description: "先不做"
+								label: m.offerSkip,
+								description: m.offerSkipDetail
 							}
 						]
 					}],
@@ -1752,10 +1994,10 @@ function threadOpenTool(ctx, manager) {
 					signal: exec.signal,
 					wait: { callId: exec.callId }
 				})).answers.find((entry) => entry.id === OFFER_ID);
-				const choice = item?.selected[0];
-				if (choice === HERE) return { text: "用户选择在主对话里做：不要开讨论串，直接在这里做这件事。" };
-				if (choice === SKIP) return { text: "用户选择先不做这件事：不要开讨论串，也不要开始做。" };
-				if (choice !== OPEN) return { text: `用户没有选择开讨论串，回答是：${item?.custom ?? "（无）"}。按用户的回答处理，不要开讨论串。` };
+				const choice = item?.selected[0] ?? "";
+				if (inEveryLanguage("offerHere").includes(choice)) return { text: msg().offerChoseHere };
+				if (inEveryLanguage("offerSkip").includes(choice)) return { text: msg().offerChoseSkip };
+				if (!inEveryLanguage("offerOpen").includes(choice)) return { text: msg().offerChoseOther(item?.custom) };
 			}
 			try {
 				const thread = await manager.open(caller.id, {
@@ -1764,15 +2006,15 @@ function threadOpenTool(ctx, manager) {
 					initiation: args.initiation,
 					worktree: args.worktree === true
 				});
-				const where = thread.worktree === null ? "" : `它在自己的 worktree 里工作（分支 ${thread.worktree.branch}，从 ${thread.worktree.baseCommit.slice(0, 7)} 开出）。`;
+				const where = thread.worktree === null ? "" : msg().toolOpenedWorktree(thread.worktree.branch, thread.worktree.baseCommit.slice(0, 7));
 				return {
-					text: `已开讨论串 #${thread.n}「${thread.title}」（会话 ${thread.id}），它在后台运行，用户可以在侧栏点开它。${where}它做完会把摘要发回这里；不要等待或轮询，继续做别的事或结束本轮。`,
+					text: msg().toolOpened(thread.n, thread.title, thread.id, where),
 					threadId: thread.id,
 					n: thread.n,
 					title: thread.title
 				};
 			} catch (error) {
-				if (error instanceof ThreadError) return { text: `没有开讨论串：${error.message}` };
+				if (error instanceof ThreadError) return { text: msg().toolNotOpened(error.message) };
 				throw error;
 			}
 		}
@@ -1820,9 +2062,9 @@ function threadProposeTool(manager, maxPerCall) {
 			if (caller === void 0) throw new Error("thread_propose needs a calling session");
 			try {
 				const proposals = await manager.propose(caller.id, args.items);
-				return `已把 ${proposals.length} 个提议放进输入框上方的卡片：${proposals.map((p) => `「${p.title}」`).join("、")}。用户勾选后才会开讨论串；不要等待，也不要在回复里重复列出。`;
+				return msg().toolProposed(proposals.map((p) => p.title));
 			} catch (error) {
-				if (error instanceof ThreadError) return `没有提议：${error.message}`;
+				if (error instanceof ThreadError) return msg().toolNotProposed(error.message);
 				throw error;
 			}
 		}
@@ -1857,9 +2099,9 @@ function threadReplyTool(manager) {
 			if (caller === void 0) throw new Error("thread_reply needs a calling session");
 			try {
 				const thread = await manager.reply(caller.id, args.n, args.message);
-				return `已把追加指令发给讨论串 #${thread.n}「${thread.title}」。它做完会再回报；不要等待或轮询。`;
+				return msg().toolReplied(thread.n, thread.title);
 			} catch (error) {
-				if (error instanceof ThreadError) return `没有发送：${error.message}`;
+				if (error instanceof ThreadError) return msg().toolNotSent(error.message);
 				throw error;
 			}
 		}
@@ -1915,7 +2157,7 @@ function threadReportTool(manager, summaryMaxChars) {
 					changedFiles: args.changedFiles ?? [],
 					decisions: args.decisions ?? []
 				});
-				return "回报已记录，结束本轮时会发给主对话。现在用一两句话结束回复，不要再调用工具。";
+				return msg().toolReported;
 			} catch (error) {
 				if (error instanceof ThreadError) return error.message;
 				throw error;
@@ -2045,6 +2287,7 @@ async function dispatchRpc(handlers, request) {
 	} catch {
 		return Response.json({ error: "body is not JSON" }, { status: 400 });
 	}
+	if (typeof body.locale === "string") setLanguage(languageOf(body.locale));
 	const handler = typeof body.method === "string" ? handlers[body.method] : void 0;
 	if (handler === void 0) return Response.json({ error: `unknown method ${JSON.stringify(body.method)}` }, { status: 404 });
 	try {

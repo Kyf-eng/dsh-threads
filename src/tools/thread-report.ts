@@ -1,6 +1,7 @@
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { type ThreadManager, ThreadError } from '../manager.ts'
+import { msg } from '../messages.ts'
 
 export function threadReportTool(manager: ThreadManager, summaryMaxChars: number): ToolDefinition {
   return defineTool({
@@ -37,7 +38,7 @@ export function threadReportTool(manager: ThreadManager, summaryMaxChars: number
           changedFiles: args.changedFiles ?? [],
           decisions: args.decisions ?? [],
         })
-        return '回报已记录，结束本轮时会发给主对话。现在用一两句话结束回复，不要再调用工具。'
+        return msg().toolReported
       } catch (error) {
         if (error instanceof ThreadError) return error.message
         throw error

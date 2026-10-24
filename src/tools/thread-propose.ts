@@ -1,6 +1,7 @@
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { type ThreadManager, ThreadError } from '../manager.ts'
+import { msg } from '../messages.ts'
 
 export function threadProposeTool(manager: ThreadManager, maxPerCall: number): ToolDefinition {
   return defineTool({
@@ -36,10 +37,9 @@ export function threadProposeTool(manager: ThreadManager, maxPerCall: number): T
       if (caller === undefined) throw new Error('thread_propose needs a calling session')
       try {
         const proposals = await manager.propose(caller.id, args.items)
-        return `已把 ${proposals.length} 个提议放进输入框上方的卡片：${proposals.map((p) => `「${p.title}」`).join('、')}。`
-          + '用户勾选后才会开讨论串；不要等待，也不要在回复里重复列出。'
+        return msg().toolProposed(proposals.map((p) => p.title))
       } catch (error) {
-        if (error instanceof ThreadError) return `没有提议：${error.message}`
+        if (error instanceof ThreadError) return msg().toolNotProposed(error.message)
         throw error
       }
     },

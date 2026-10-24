@@ -1,6 +1,7 @@
 import type { Config } from './config.ts'
 import type { MainAgent } from './delivery.ts'
 import { flushNotes } from './delivery.ts'
+import { msg } from './messages.ts'
 import { composeNote, currentReport, normalizeReport, noticeSummary, plainLine, truncate } from './report.ts'
 import type { ThreadCardInfo } from './source.ts'
 import type { ThreadStore } from './store.ts'
@@ -81,41 +82,23 @@ export class ThreadError extends Error {}
 
 const TITLE_MAX = 30
 
-export const NOT_A_PROJECT = '只有项目的主对话能开讨论串。先在左侧"项目"里新建项目，或在会话菜单里选"设为项目"。'
-
 export function titleFrom(task: string): string {
   return truncate(task.trim().split('\n', 1)[0]?.trim() ?? '', TITLE_MAX)
 }
 
 /** First message of a dispatched round: the brief, framed so the thread knows where it came from. */
 export function briefText(thread: Pick<ThreadRecord, 'n' | 'title'>, task: string): string {
-  return [
-    `[来自主对话的任务 · 讨论串 #${thread.n}「${thread.title}」]`,
-    '',
-    task.trim(),
-    '',
-    '（重要：结束本轮回复之前，必须调用一次 thread_report。主对话只能收到 thread_report 的内容，收不到你的回复正文。）',
-  ].join('\n')
+  return [msg().briefHeader(thread.n, thread.title), '', task.trim(), '', msg().briefFooter].join('\n')
 }
 
 /** Sent once when a task round ended without thread_report. */
 export function reminderText(thread: Pick<ThreadRecord, 'n' | 'title'>): string {
-  return [
-    `[dsh-threads 提醒 · 讨论串 #${thread.n}「${thread.title}」]`,
-    '',
-    '你结束了这一轮，但没有调用 thread_report，主对话收不到结果。现在调用一次 thread_report 汇报这一轮的结果（status、summary、changedFiles、decisions）。不用重做任务，也不要做别的事。',
-  ].join('\n')
+  return [msg().reminderHeader(thread.n, thread.title), '', msg().reminderBody].join('\n')
 }
 
 /** A follow-up instruction from the main conversation (thread_reply). */
 export function replyText(thread: Pick<ThreadRecord, 'n' | 'title'>, message: string): string {
-  return [
-    `[来自主对话的追加指令 · 讨论串 #${thread.n}「${thread.title}」]`,
-    '',
-    message.trim(),
-    '',
-    '（做完后同样要调用一次 thread_report。）',
-  ].join('\n')
+  return [msg().replyHeader(thread.n, thread.title), '', message.trim(), '', msg().replyFooter].join('\n')
 }
 
 export class ThreadManager {
@@ -172,13 +155,13 @@ export class ThreadManager {
 
   private async openNow(mainSessionId: string, input: OpenInput): Promise<ThreadRecord> {
     const { store, host, config, now } = this.deps
-    if (this.isThread(mainSessionId)) throw new ThreadError('讨论串里不能再开讨论串；把这个需要写进 thread_report 的 decisions，交给主对话决定。')
-    if (!this.isDispatcher(mainSessionId)) throw new ThreadError(NOT_A_PROJECT)
+    if (this.isThread(mainSessionId)) throw new ThreadError(msg().noNestedThreads)
+    if (!this.isDispatcher(mainSessionId)) throw new ThreadError(msg().notAProject)
     const task = input.task.trim()
-    if (task.length === 0) throw new ThreadError('task 不能为空：写一份完整的简报。')
+    if (task.length === 0) throw new ThreadError(msg().emptyTask)
     const running = this.runningCount(mainSessionId)
     if (running >= config.maxRunning) {
-      throw new ThreadError(`已有 ${running} 个讨论串在运行（上限 ${config.maxRunning}）。等有讨论串回报后再开，或者这件事在主对话里做。`)
+      throw new ThreadError(msg().runningLimit(running, config.maxRunning))
     }
 
     const n = Math.max(0, ...store.threadsOf(mainSessionId).map((t) => t.n)) + 1
@@ -191,7 +174,7 @@ export class ThreadManager {
       try {
         preset = await host.permissionOf(mainSessionId)
       } catch (error) {
-        throw new ThreadError(`没有开讨论串：没法让它沿用主对话的审批模式（${error instanceof Error ? error.message : String(error)}）。`)
+        throw new ThreadError(msg().noPreset(error instanceof Error ? error.message : String(error)))
       }
       if (preset === undefined) this.deps.warn('dsh-threads: DSH has no permission presets; the thread follows its default')
     }
@@ -201,7 +184,7 @@ export class ThreadManager {
       try {
         worktree = await host.createWorktree(mainSessionId, `${n}-${id.replace(/^session-/, '').slice(0, 6)}`)
       } catch (error) {
-        throw new ThreadError(`没法给讨论串开 worktree：${error instanceof Error ? error.message : String(error)}`)
+        throw new ThreadError(msg().noWorktree(error instanceof Error ? error.message : String(error)))
       }
     }
     const createdAt = now()
@@ -251,7 +234,7 @@ export class ThreadManager {
     const at = this.deps.now()
     const next: ThreadRecord = { ...record, status: 'running', round: 'dispatch', userMessages: [], roundStartSeq: agent.seq, roundStartedAt: at, reminder: null, updatedAt: at }
     await this.deps.store.putThread(next)
-    agent.followup(text, noticeSummary(next, '任务'), { role: 'brief', threads: [cardOf(next)], wake: true })
+    agent.followup(text, noticeSummary(next, msg().noticeBrief), { role: 'brief', threads: [cardOf(next)], wake: true })
     return next
   }
 
@@ -262,21 +245,21 @@ export class ThreadManager {
    */
   async reply(mainSessionId: string, n: number, message: string): Promise<ThreadRecord> {
     const text = message.trim()
-    if (text.length === 0) throw new ThreadError('message 不能为空。')
+    if (text.length === 0) throw new ThreadError(msg().emptyMessage)
     const thread = this.deps.store.threadsOf(mainSessionId).find((t) => t.n === n)
-    if (thread === undefined) throw new ThreadError(`这个主对话没有讨论串 #${n}。`)
+    if (thread === undefined) throw new ThreadError(msg().noThreadNumber(n))
     if (thread.status === 'failed' || thread.status === 'starting') {
-      throw new ThreadError(`讨论串 #${n} 没有建好（${thread.status}），不能追加；需要的话重新开一个。`)
+      throw new ThreadError(msg().notReady(n, thread.status))
     }
-    if (thread.archived) throw new ThreadError(`讨论串 #${n} 已被用户归档。需要继续就请用户在讨论串列表里取消归档，或者开一个新的。`)
+    if (thread.archived) throw new ThreadError(msg().archivedNoReply(n))
     const agent = await this.deps.host.resolve(thread.id)
-    if (agent === undefined) throw new ThreadError(`讨论串 #${n} 现在连不上（会话可能已被归档或删除）。`)
+    if (agent === undefined) throw new ThreadError(msg().unreachable(n))
     const at = this.deps.now()
     const next: ThreadRecord = thread.round === null
       ? { ...thread, status: 'running', round: 'dispatch', userMessages: [], roundStartSeq: agent.seq, roundStartedAt: at, resolved: false, reminder: null, updatedAt: at }
       : { ...thread, round: 'dispatch', resolved: false, reminder: null, updatedAt: at }
     await this.deps.store.putThread(next)
-    agent.followup(replyText(next, text), noticeSummary(next, '追加指令'), { role: 'reply', threads: [cardOf(next)], wake: true })
+    agent.followup(replyText(next, text), noticeSummary(next, msg().noticeReply), { role: 'reply', threads: [cardOf(next)], wake: true })
     return next
   }
 
@@ -289,13 +272,13 @@ export class ThreadManager {
     const { store, host, now } = this.deps
     for (const thread of store.threads()) {
       if (thread.status === 'starting') {
-        await store.putThread({ ...thread, status: 'failed', error: 'DSH 重启时讨论串还没建好。', updatedAt: now() })
+        await store.putThread({ ...thread, status: 'failed', error: msg().failedAtRestart, updatedAt: now() })
         continue
       }
       if (thread.status !== 'running') continue
       const agent = await host.resolve(thread.id)
       if (agent === undefined) {
-        await store.putThread({ ...thread, status: 'failed', round: null, error: 'DSH 重启后连不上这个讨论串。', updatedAt: now() })
+        await store.putThread({ ...thread, status: 'failed', round: null, error: msg().unreachableAfterRestart, updatedAt: now() })
         continue
       }
       if (agent.status === 'idle') await this.onIdle(thread.id)
@@ -372,7 +355,7 @@ export class ThreadManager {
     // Saved now: after the reminder, the last reply is the answer to the reminder, not the work.
     const fallback = this.deps.host.roundOutput(thread.id, thread.roundStartSeq ?? 0) ?? null
     await this.deps.store.putThread({ ...thread, reminder: { fallback }, updatedAt: this.deps.now() })
-    agent.followup(reminderText(thread), noticeSummary(thread, '提醒回报'), { role: 'reminder', threads: [cardOf(thread)], wake: true })
+    agent.followup(reminderText(thread), noticeSummary(thread, msg().noticeReminder), { role: 'reminder', threads: [cardOf(thread)], wake: true })
     return true
   }
 
@@ -413,13 +396,13 @@ export class ThreadManager {
    */
   async propose(mainSessionId: string, items: readonly { title: string; task: string; worktree?: boolean }[]): Promise<ProposalRecord[]> {
     const { store, config, now } = this.deps
-    if (!this.isDispatcher(mainSessionId)) throw new ThreadError(NOT_A_PROJECT)
+    if (!this.isDispatcher(mainSessionId)) throw new ThreadError(msg().notAProject)
     const cleaned = items
       .map((item) => ({ task: item.task.trim(), title: truncate(item.title.trim(), TITLE_MAX), worktree: item.worktree === true }))
       .filter((item) => item.task.length > 0)
-    if (cleaned.length === 0) throw new ThreadError('至少要有一个带完整简报的提议。')
+    if (cleaned.length === 0) throw new ThreadError(msg().noProposals)
     if (cleaned.length > config.maxProposalsPerTurn) {
-      throw new ThreadError(`一次最多提 ${config.maxProposalsPerTurn} 个讨论串；挑最值得做的。`)
+      throw new ThreadError(msg().proposalLimit(config.maxProposalsPerTurn))
     }
     const createdAt = now()
     const expiresAt = new Date(Date.parse(createdAt) + config.proposalTtlDays * 86_400_000).toISOString()
@@ -488,7 +471,7 @@ export class ThreadManager {
   /** "标记已解决 / 重新打开" from the thread pane. A resolved thread's composer is locked in the UI. */
   async setResolved(threadId: string, resolved: boolean): Promise<ThreadRecord> {
     const thread = this.deps.store.thread(threadId)
-    if (thread === undefined) throw new ThreadError('找不到这个讨论串。')
+    if (thread === undefined) throw new ThreadError(msg().threadNotFound)
     if (thread.resolved === resolved) return thread
     const next = { ...thread, resolved, updatedAt: this.deps.now() }
     await this.deps.store.putThread(next)
@@ -501,16 +484,16 @@ export class ThreadManager {
    */
   async stop(threadId: string): Promise<ThreadRecord> {
     const thread = this.deps.store.thread(threadId)
-    if (thread === undefined) throw new ThreadError('找不到这个讨论串。')
-    if (thread.status === 'starting') throw new ThreadError(`讨论串 #${thread.n} 还在建，稍后再停。`)
-    if (thread.status !== 'running' || !await this.deps.host.cancel(threadId)) throw new ThreadError(`讨论串 #${thread.n} 现在没有在运行。`)
+    if (thread === undefined) throw new ThreadError(msg().threadNotFound)
+    if (thread.status === 'starting') throw new ThreadError(msg().stillStarting(thread.n))
+    if (thread.status !== 'running' || !await this.deps.host.cancel(threadId)) throw new ThreadError(msg().notRunning(thread.n))
     return thread
   }
 
   /** `/thread stop <n>` from a main conversation. */
   stopNumber(mainSessionId: string, n: number): Promise<ThreadRecord> {
     const thread = this.deps.store.threadsOf(mainSessionId).find((t) => t.n === n)
-    if (thread === undefined) return Promise.reject(new ThreadError(`这个主对话没有讨论串 #${n}。`))
+    if (thread === undefined) return Promise.reject(new ThreadError(msg().noThreadNumber(n)))
     return this.stop(thread.id)
   }
 
@@ -520,10 +503,10 @@ export class ThreadManager {
    */
   async setArchived(threadId: string, archived: boolean): Promise<ThreadRecord> {
     const thread = this.deps.store.thread(threadId)
-    if (thread === undefined) throw new ThreadError('找不到这个讨论串。')
+    if (thread === undefined) throw new ThreadError(msg().threadNotFound)
     if (thread.archived === archived) return thread
     if (archived) {
-      if (thread.status === 'running' || thread.status === 'starting') throw new ThreadError(`讨论串 #${thread.n} 还在运行，先停止再归档。`)
+      if (thread.status === 'running' || thread.status === 'starting') throw new ThreadError(msg().stopBeforeArchive(thread.n))
       await this.deps.host.archiveSession(threadId)
     } else {
       await this.deps.host.unarchiveSession(threadId)
@@ -535,7 +518,7 @@ export class ThreadManager {
 
   async recordReport(threadId: string, input: Omit<ThreadReport, 'at'>): Promise<ThreadReport> {
     const thread = this.deps.store.thread(threadId)
-    if (thread === undefined) throw new ThreadError('只有讨论串会话能调用 thread_report。')
+    if (thread === undefined) throw new ThreadError(msg().reportFromThreadsOnly)
     const report = normalizeReport(input, this.deps.config.summaryMaxChars, this.deps.now())
     await this.deps.store.putThread({ ...thread, lastReport: report, updatedAt: report.at })
     return report
@@ -579,44 +562,45 @@ export class ThreadManager {
       try {
         result = await this.deps.host.removeWorktree(worktree)
       } catch (error) {
-        lines.push(`#${thread.n}：删除失败（${error instanceof Error ? error.message : String(error)}）`)
+        lines.push(msg().cleanupFailed(thread.n, error instanceof Error ? error.message : String(error)))
         continue
       }
       if (result.outcome === 'dirty') {
-        lines.push(`#${thread.n}：${worktree.path} 里有没提交的改动，没删；先提交或丢弃。`)
+        lines.push(msg().cleanupDirty(thread.n, worktree.path))
         continue
       }
       await this.deps.store.putThread({ ...thread, worktree: { ...worktree, removed: true }, updatedAt: this.deps.now() })
-      lines.push(`#${thread.n}：已删除 worktree，${result.branchKept ? `分支 ${worktree.branch} 还有没合并的提交，保留` : `分支 ${worktree.branch} 已合并，一并删除`}。`)
+      lines.push(msg().cleanupRemoved(thread.n, worktree.branch, result.branchKept))
     }
     return lines
   }
 
   /** Text for thread_status: every thread of this main conversation, or one thread in detail. */
   describe(mainSessionId: string, n?: number): string {
+    const m = msg()
     const threads = this.deps.store.threadsOf(mainSessionId)
     if (n !== undefined) {
       const thread = threads.find((t) => t.n === n)
-      if (thread === undefined) throw new ThreadError(`没有讨论串 #${n}。`)
+      if (thread === undefined) throw new ThreadError(msg().noSuchThread(n))
       const report = thread.lastReport
       return [
-        `讨论串 #${thread.n}「${thread.title}」· ${thread.status}${thread.archived ? ' · 已归档' : ''}（会话 ${thread.id}）`,
-        thread.worktree === null ? '' : `worktree：${thread.worktree.path}，分支 ${thread.worktree.branch}${thread.worktree.removed ? '（已删除 worktree）' : ''}`,
-        `任务：${truncate(thread.task, 600)}`,
+        m.describeHead(thread.n, thread.title, thread.status, thread.archived ? m.archivedMark : '', thread.id),
+        thread.worktree === null ? '' : m.describeWorktree(thread.worktree.path, thread.worktree.branch, thread.worktree.removed),
+        m.describeTask(truncate(thread.task, 600)),
         report === null
-          ? '最新回报：无'
+          ? m.describeNoReport
           : [
-              `最新回报（${report.at}，${report.status}）：${report.summary}`,
-              report.changedFiles.length > 0 ? `改动：${report.changedFiles.join('、')}` : '',
-              report.decisions.length > 0 ? `待用户决定：${report.decisions.join('；')}` : '',
+              m.describeReport(report.at, report.status, report.summary),
+              report.changedFiles.length > 0 ? m.changedFiles(report.changedFiles) : '',
+              report.decisions.length > 0 ? m.decisionsLine(report.decisions) : '',
             ].filter((line) => line.length > 0).join('\n'),
-        thread.error === null ? '' : `错误：${thread.error}`,
+        thread.error === null ? '' : m.describeError(thread.error),
       ].filter((line) => line.length > 0).join('\n')
     }
-    if (threads.length === 0) return '这个主对话还没有讨论串。'
+    if (threads.length === 0) return m.noThreads
     return threads.map((t) => {
-      const latest = t.lastReport === null ? '无回报' : `${t.lastReport.status}：${truncate(t.lastReport.summary, 80)}`
-      return `#${t.n}「${t.title}」· ${t.status}${t.archived ? ' · 已归档' : ''} · ${latest}`
+      const latest = t.lastReport === null ? m.listNoReport : m.listLatest(t.lastReport.status, truncate(t.lastReport.summary, 80))
+      return m.listLine(t.n, t.title, t.status, t.archived ? m.archivedMark : '', latest)
     }).join('\n')
   }
 }

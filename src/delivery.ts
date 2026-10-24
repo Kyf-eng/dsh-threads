@@ -2,6 +2,7 @@
 // (docs/IMPLEMENTATION.md §三 "唤醒规则"): wake an idle main conversation only when none of
 // its threads is still running, hold while it is busy, and stop waking after
 // `maxAutoWakes` consecutive wake-ups until the user speaks again.
+import { msg } from './messages.ts'
 import type { NoticeMeta } from './source.ts'
 import type { MainRecord, PendingNote } from './types.ts'
 
@@ -74,5 +75,5 @@ function metaOf(notes: readonly PendingNote[], wake: boolean): NoticeMeta {
 
 function summaryOf(notes: readonly PendingNote[]): string {
   const first = notes[0]?.text.split('\n', 1)[0] ?? ''
-  return notes.length === 1 ? first : `${notes.length} 个讨论串回报`
+  return notes.length === 1 ? first : msg().reportsSummary(notes.length)
 }

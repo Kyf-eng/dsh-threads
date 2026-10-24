@@ -6,6 +6,8 @@
  * which is not visible to profile bundles on Desktop. `connection.fetch.register` is
  * dispatched by the Connection plugin itself and admits only the owner principal.
  */
+import { languageOf, setLanguage } from './messages.ts'
+
 export const RPC_PATH = '/api/dsh-threads'
 
 export type RpcHandlers = Record<string, (payload: unknown) => unknown>
@@ -21,10 +23,12 @@ export interface ConnectionLike {
   fetch: { register(route: FetchRoute): unknown }
 }
 
-/** Body the client sends: `{ method, payload }`. */
+/** Body the client sends: `{ method, payload, locale }`. */
 interface RpcRequest {
   method?: unknown
   payload?: unknown
+  /** The page's language; the host's own text follows the latest one (src/messages.ts). */
+  locale?: unknown
 }
 
 export async function dispatchRpc(handlers: RpcHandlers, request: Request): Promise<Response> {
@@ -34,6 +38,7 @@ export async function dispatchRpc(handlers: RpcHandlers, request: Request): Prom
   } catch {
     return Response.json({ error: 'body is not JSON' }, { status: 400 })
   }
+  if (typeof body.locale === 'string') setLanguage(languageOf(body.locale))
   const handler = typeof body.method === 'string' ? handlers[body.method] : undefined
   if (handler === undefined) return Response.json({ error: `unknown method ${JSON.stringify(body.method)}` }, { status: 404 })
   try {

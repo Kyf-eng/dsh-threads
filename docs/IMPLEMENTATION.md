@@ -783,6 +783,11 @@ M2c 时 DeepSeek Flash 常常不调 `thread_report`（3 个里 2 个），卡片
   - 现在“讨论串”按两种算：`isThread` 只看有没有记录（讨论串不能设为项目、不能再开讨论串，照旧）；`isProjectThread` 还要求它的主对话仍是项目的主对话，角色、侧栏隐藏、已解决锁定都看这个。用户在这种会话里说话不再开一轮、也不再往原主对话送回报。
   - 删除项目和归档一样，有讨论串在跑时拒绝。
   - 把原来的主对话重新“设为项目”，这些讨论串会自动回来。
+- **审批继承取不到主对话就不开串**（分支 `fix/inherit-permission`）：
+  - 原来 `inheritPermission` 只用 `ctx.agents.get` 拿已加载的主对话，拿不到就什么都不做。新会话由 `pinInitialPermission` 钉成**用户默认**模式，所以 DSH 重启后由 `recover()` 启动的排队提议、或主对话被卸载时开的讨论串，可能比主对话更宽。
+  - 现在开串第一步（建 worktree 和会话之前）就用 `resolveAgent` 读主对话的模式（`host.permissionOf`），读不到就拒绝，什么都不留下；会话建好后 `setPermission`，失败则讨论串记为 failed，简报不发。
+  - 主对话是 `custom`（沙箱和审批开关对不上任何模式）时也拒绝：`permissionPresets.set` 只接受真实的模式名，原来这种情况会在建好会话后抛错，留下一个失败的讨论串。
+  - DSH 没有 `permissionPresets` 服务时照旧开串，记一条 warn。
 
 #### 之后
 - 发布：

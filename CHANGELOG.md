@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Fix: after a project is deleted, its threads are ordinary conversations again, as the delete dialog says: they show in DSH's session list, lose the thread tools, and no longer report to the old main conversation. Deleting a project, like archiving it, waits until no thread is running.
+- Fix: a thread could start under DSH's default permission mode when its main conversation was not loaded (for example a queued suggestion starting after a restart). The main conversation is now loaded first, and when its mode cannot be read — or it uses custom settings that match no mode — the thread is not opened.
 
 ## 0.1.0-rc.5 — 2026-10-24
 

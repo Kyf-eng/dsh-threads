@@ -1,13 +1,14 @@
 // Browser half. dist/client.js is wrapped in window.__ModuleLoader__.load by tsdown.config.ts.
 // M2a: the "Projects" sidebar entry and page, and "Make project" in the session menu.
-// M2c: thread cards in the transcript, "N 条回复", proposals above the composer, sidebar badges.
+// M2c: thread cards in the transcript, "N 条回复", proposals above the composer.
+// The sidebar's "Projects" section; project sessions leave DSH's workspace list (kinds.ts).
 // M2b: threads open in the right sidebar with their own composer; a thread list tab;
 // "讨论串 · N" / "回到主对话" in the conversation header; resolved threads lock their composer.
 import type { Context } from '@deepseek-ai/cordis'
 import type { ComponentType } from 'react'
 import { NOTICE_NODE, noticeDefinition, OPENED_KEY, openedDefinition } from './chat.ts'
 import { ProjectsIcon } from './icons.tsx'
-import { MainRowMark, syncKinds } from './kinds.ts'
+import { syncKinds } from './kinds.ts'
 import { startNotifications } from './notify.ts'
 import { ProposalsDock } from './ProposalsDock.tsx'
 import { NoticeCard, TurnThreadsCard } from './ThreadCards.tsx'
@@ -15,6 +16,7 @@ import { en, NS, type Translate, zh } from './locale.ts'
 import { MakeProjectMenuItem } from './MakeProjectMenuItem.tsx'
 import { ProjectsPage } from './ProjectsPage.tsx'
 import { RESOLVED_KIND, type ResolvedInteraction, syncResolved } from './resolved.ts'
+import { SidebarProjectsHost, useSidebarAnchor } from './SidebarProjects.tsx'
 import { injectStyles } from './styles.ts'
 import { ResolvedComposer, THREAD_CONVERSATION_SLOT, ThreadChatTab, ThreadConversation } from './ThreadChatTab.tsx'
 import { ThreadsHeaderAction, ThreadsListTab } from './ThreadsList.tsx'
@@ -87,7 +89,9 @@ interface ClientContext {
 }
 
 function PanelIcon({ size }: { size: number; active: boolean }) {
-  return <ProjectsIcon size={size} />
+  // Also marks the sidebar's panel <nav>, after which the "Projects" section is placed.
+  const ref = useSidebarAnchor(size)
+  return <span ref={ref} className="dsht-panel-icon"><ProjectsIcon size={size} /></span>
 }
 
 function waitForAbort(signal: AbortSignal): Promise<void> {
@@ -128,6 +132,11 @@ export function apply(root: Context): void {
   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register(
     { name: 'sidebar.panellist', id: PANEL_ID, order: 20, locale: NS, label: () => t('panel') },
     PanelIcon as ComponentType<never>,
+  ))
+  // The sidebar's own "Projects" section (SidebarProjects.tsx), portalled from an overlay entry.
+  ctx.slots.inject('shell.overlay', () => ctx.slots.register(
+    { name: 'shell.overlay', id: 'dsh-threads-sidebar-projects', locale: NS, inject: () => ({ openSession, pinSession, pickFolder }) },
+    SidebarProjectsHost as ComponentType<never>,
   ))
   ctx.slots.inject('sidebar.workspaces.session.menu.item', () => ctx.slots.register(
     { name: 'sidebar.workspaces.session.menu.item', id: 'dsh-threads-make-project', order: 150, locale: NS, inject: () => ({ showProjects }) },
@@ -210,10 +219,6 @@ export function apply(root: Context): void {
   ))
   ctx.effect(() => syncKinds(ctx.uiSession.sessionStatus), 'dsh-threads: session kinds')
   ctx.effect(() => startNotifications({ status: ctx.uiSession.sessionStatus, openSession, openThread, t }), 'dsh-threads: notifications')
-  ctx.slots.inject('sidebar.session.row.leading', () => ctx.slots.register(
-    { name: 'sidebar.session.row.leading', id: 'dsh-threads-main', order: 50, locale: NS },
-    MainRowMark as ComponentType<never>,
-  ))
 
   // Resolved threads: a pending interaction per thread selects ResolvedComposer.
   const publishResolved = ctx.uiSession.registerPendingInteraction(() => 0)

@@ -1,33 +1,23 @@
 // The "Projects" page (full-page `main` panel), modelled on Claude's projects page: a sort menu,
-// a split "New project" button, and cards whose "⋮" menu pins, sets notifications, opens the
-// project settings, archives and deletes (with Claude's single-key shortcuts while it is open).
+// a split "New project" button, and cards with the project's "⋮" menu (ProjectActions.tsx).
 import {
   Button,
-  IconArchiveOutlineRegular,
-  IconCheckOutlineRegular,
   IconChevronDownOutlineRegular,
-  IconEllipsisOutlineRegular,
   IconPinFillRegular,
-  IconPinOutlineRegular,
-  IconSettingsOutlineRegular,
-  IconTrashOutlineRegular,
-  IconUnarchiveOutlineRegular,
   Menu,
   type MenuEntry,
-  Modal,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { useEffect, useMemo, useState } from 'react'
-import { callHost, type NotifyLevel, projectsStore, type ProjectView, useProjects } from './api.ts'
-import { BellIcon, FolderIcon, PlusIcon, ProjectIcon, SearchIcon } from './icons.tsx'
+import { projectsStore, type ProjectView, useProjects } from './api.ts'
+import { FolderIcon, PlusIcon, ProjectIcon, SearchIcon } from './icons.tsx'
 import { type MessageKey, relativeTime, type Translate } from './locale.ts'
 import { NewProjectDialog, type PickFolder, type WorkspaceOption } from './NewProjectDialog.tsx'
-import { ProjectSettings } from './ProjectSettings.tsx'
+import { type ProjectActions, ProjectMenu, useProjectActions } from './ProjectActions.tsx'
 import { threadsRevision } from './threads.ts'
 
 type Sort = 'activity' | 'created' | 'title'
 
 const SORT_LABELS: Record<Sort, MessageKey> = { activity: 'page.sort.activity', created: 'page.sort.created', title: 'page.sort.title' }
-const NOTIFY_LEVELS: readonly NotifyLevel[] = ['all', 'attention', 'waiting', 'none']
 
 export interface ProjectsPageProps {
   t: Translate
@@ -42,10 +32,10 @@ export interface ProjectsPageProps {
   showProjects: () => void
 }
 
-const sameList = (a: readonly WorkspaceOption[], b: readonly WorkspaceOption[]) =>
+export const sameList = (a: readonly WorkspaceOption[], b: readonly WorkspaceOption[]) =>
   a.length === b.length && a.every((item, index) => item.workspaceId === b[index]?.workspaceId && item.title === b[index]?.title)
 
-function sortProjects(projects: readonly ProjectView[], sort: Sort): ProjectView[] {
+export function sortProjects(projects: readonly ProjectView[], sort: Sort): ProjectView[] {
   const key = (p: ProjectView) => (sort === 'created' ? p.createdAt : p.lastActivity)
   return [...projects].sort((a, b) => {
     if (a.pinned !== b.pinned) return a.pinned ? -1 : 1
@@ -61,10 +51,8 @@ export function ProjectsPage({ t, useWorkspaces, useSessionStatus, openSession, 
   const [sortOpen, setSortOpen] = useState(false)
   const [newOpen, setNewOpen] = useState(false)
   const [creating, setCreating] = useState<{ folder: string | null } | null>(null)
-  const [settingsId, setSettingsId] = useState<string | null>(null)
-  const [deleting, setDeleting] = useState<ProjectView | null>(null)
   const [showArchived, setShowArchived] = useState(false)
-  const [actionError, setActionError] = useState<string | null>(null)
+  const { actions, dialogs, error: actionError } = useProjectActions({ projects, t, pinSession, afterArchive: showProjects })
   const workspaces = useWorkspaces((snapshot) => snapshot.items, sameList)
   // Any session starting or stopping may change thread counts: reload then.
   const runningKey = useSessionStatus((statuses) =>
@@ -80,38 +68,6 @@ export function ProjectsPage({ t, useWorkspaces, useSessionStatus, openSession, 
     const sorted = sortProjects(matched, sort)
     return { active: sorted.filter((p) => !p.archived), archived: sorted.filter((p) => p.archived) }
   }, [projects, query, sort])
-
-  const run = async (action: () => Promise<unknown>) => {
-    setActionError(null)
-    try {
-      await action()
-    } catch (failure) {
-      setActionError(failure instanceof Error ? failure.message : String(failure))
-    } finally {
-      threadsRevision.bump()
-      await projectsStore.refresh()
-    }
-  }
-
-  const actions: CardActions = {
-    togglePin: (project) => run(async () => {
-      await callHost('projects.pin', { id: project.id, pinned: !project.pinned })
-      await pinSession(project.mainSessionId, !project.pinned).catch(() => {})
-    }),
-    setNotify: (project, notify) => run(() => callHost('projects.update', { id: project.id, notify })),
-    openSettings: (project) => setSettingsId(project.id),
-    toggleArchive: (project) => run(async () => {
-      await callHost(project.archived ? 'projects.unarchive' : 'projects.archive', { id: project.id })
-      setTimeout(showProjects, 120)
-    }),
-    askDelete: (project) => setDeleting(project),
-  }
-
-  const remove = (project: ProjectView) => run(async () => {
-    setDeleting(null)
-    await callHost('projects.remove', { id: project.id })
-    if (project.pinned) await pinSession(project.mainSessionId, false).catch(() => {})
-  })
 
   const newFromItems: MenuEntry[] = [
     { type: 'label', id: 'from', text: t('page.newFrom') },
@@ -187,95 +143,18 @@ export function ProjectsPage({ t, useWorkspaces, useSessionStatus, openSession, 
         t={t}
       />
 
-      <ProjectSettings project={projects.find((p) => p.id === settingsId) ?? null} open={settingsId !== null} onClose={() => setSettingsId(null)} t={t} />
-
-      <Modal
-        open={deleting !== null}
-        onClose={() => setDeleting(null)}
-        title={deleting === null ? '' : t('delete.title', { title: deleting.title })}
-        description={t('delete.description')}
-        closeLabel={t('common.close')}
-        footer={(
-          <div className="dsht-buttons">
-            <Button variant="ghost" onClick={() => setDeleting(null)}>{t('common.cancel')}</Button>
-            <Button variant="primary" className="dsht-danger" onClick={() => { if (deleting !== null) void remove(deleting) }}>{t('delete.confirm')}</Button>
-          </div>
-        )}
-      />
+      {dialogs}
     </div>
   )
 }
 
-interface CardActions {
-  togglePin: (project: ProjectView) => Promise<void>
-  setNotify: (project: ProjectView, level: NotifyLevel) => Promise<void>
-  openSettings: (project: ProjectView) => void
-  toggleArchive: (project: ProjectView) => Promise<void>
-  askDelete: (project: ProjectView) => void
-}
-
-const SHORTCUTS: Record<string, 'pin' | 'settings' | 'archive' | 'delete'> = { p: 'pin', s: 'settings', a: 'archive', d: 'delete' }
-
 function ProjectCard({ project, actions, openSession, t }: {
   project: ProjectView
-  actions: CardActions
+  actions: ProjectActions
   openSession: (sessionId: string) => void
   t: Translate
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
-
-  const act = (id: string) => {
-    setMenuOpen(false)
-    if (id === 'pin') void actions.togglePin(project)
-    else if (id === 'settings') actions.openSettings(project)
-    else if (id === 'archive') void actions.toggleArchive(project)
-    else if (id === 'delete') actions.askDelete(project)
-    else if (id.startsWith('notify:')) void actions.setNotify(project, id.slice('notify:'.length) as NotifyLevel)
-  }
-
-  // Claude's menu takes single keys while it is open: P pin, S settings, A archive, D delete.
-  useEffect(() => {
-    if (!menuOpen) return
-    const onKey = (event: KeyboardEvent) => {
-      if (event.metaKey || event.ctrlKey || event.altKey) return
-      const id = SHORTCUTS[event.key.toLowerCase()]
-      if (id === undefined || (id === 'pin' && project.archived)) return
-      event.preventDefault()
-      event.stopPropagation()
-      act(id)
-    }
-    document.addEventListener('keydown', onKey, true)
-    return () => document.removeEventListener('keydown', onKey, true)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [menuOpen, project])
-
-  const items: MenuEntry[] = [
-    ...(project.archived ? [] : [{
-      id: 'pin',
-      label: project.pinned ? t('menu.unpin') : t('menu.pin'),
-      icon: project.pinned ? <IconPinFillRegular size={16} /> : <IconPinOutlineRegular size={16} />,
-      shortcut: { keys: ['P'] },
-    }]),
-    {
-      id: 'notify',
-      label: <span className="dsht-menu-aside-row"><span>{t('menu.notify')}</span><span className="dsht-menu-aside">{t(`notify.${project.notify}.short`)}</span></span>,
-      icon: <BellIcon size={16} />,
-      submenu: NOTIFY_LEVELS.map((level) => ({
-        id: `notify:${level}`,
-        icon: project.notify === level ? <IconCheckOutlineRegular size={16} /> : <span className="dsht-menu-icon-space" />,
-        label: <span className="dsht-menu-two"><span>{t(`notify.${level}`)}</span><span className="dsht-menu-sub">{t(`notify.${level}.hint`)}</span></span>,
-      })),
-    },
-    { id: 'settings', label: t('menu.settings'), icon: <IconSettingsOutlineRegular size={16} />, shortcut: { keys: ['S'] } },
-    { type: 'separator', id: 'separator' },
-    {
-      id: 'archive',
-      label: project.archived ? t('menu.unarchive') : t('menu.archive'),
-      icon: project.archived ? <IconUnarchiveOutlineRegular size={16} /> : <IconArchiveOutlineRegular size={16} />,
-      shortcut: { keys: ['A'] },
-    },
-    { id: 'delete', label: t('menu.delete'), icon: <IconTrashOutlineRegular size={16} />, danger: true, shortcut: { keys: ['D'] } },
-  ]
 
   const open = () => { if (!project.archived) openSession(project.mainSessionId) }
 
@@ -285,13 +164,7 @@ function ProjectCard({ project, actions, openSession, t }: {
       <div className="dsht-project-top">
         <span className="dsht-project-icon"><ProjectIcon id={project.icon} size={16} /></span>
         <div className="dsht-project-tools" onClick={(event) => event.stopPropagation()}>
-          <Menu open={menuOpen} onClose={() => setMenuOpen(false)} align="end" portal items={items} onSelect={act}
-            anchor={(
-              <button type="button" className="dsht-icon-button" aria-label={t('menu.more')} title={t('menu.more')}
-                aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}>
-                <IconEllipsisOutlineRegular size={16} />
-              </button>
-            )} />
+          <ProjectMenu project={project} actions={actions} t={t} onOpenChange={setMenuOpen} />
         </div>
       </div>
       <div className="dsht-project-title">

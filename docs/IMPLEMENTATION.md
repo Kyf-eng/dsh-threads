@@ -709,6 +709,46 @@ M2c 时 DeepSeek Flash 常常不调 `thread_report`（3 个里 2 个），卡片
   - 用临时调试日志（之后删掉了）确认：主对话结束时窗口在后台，权限是 `granted`，`new Notification(...)` 确实为主对话调用了。
   - 我的截图工具会隐藏白名单以外的窗口，看不到系统通知横幅本身。横幅是否显示还取决于 macOS 对 DeepSeek Harness 的通知设置，需要用户自己看一眼。
 
+#### 侧栏单独的“项目”分组（2026-10-24，分支 `feat/sidebar-projects`）
+
+用户说还不够“项目”：主对话混在“工作区 → 文件夹 → 会话”里，看起来就是一条普通对话。要像 Claude 那样，侧栏有单独的“项目”分组，每个项目一行，点进去就是主对话。
+- **DSH 没有给插件在侧栏加分组的插槽**：
+  - 侧栏是 新会话 → `<nav>`（`sidebar.panellist`）→ `regionArea` 里的 `sidebar.workspaces` → 底部。
+  - `sidebar.workspaces` 是 single 插槽，DSH 的 `WorkspaceBrowser` 占着。
+- **实验：包住 `sidebar.workspaces`，失败。**
+  - `ctx.slots.entries('sidebar.workspaces')` 能拿到官方登记项：`component`、`inject`、5 个子插槽声明、`store`（持久化键 `dsh.workspace.view.v5`）、`locale: 'workspace'`。
+  - 登记同名项要显式 `priority: -1`；否则报“single slot already has a registration at priority 0”。
+  - 照抄子插槽声明会报 `slot "sidebar.workspaces.directoryFlow" is already declared`：一个子插槽只能声明一次。不声明的话，官方组件自己的会话菜单、行前置格都渲染不了（`SlotOwnershipError`）。所以不能包。
+- **做法：portal 插到 `<nav>` 后面**（`src/client/SidebarProjects.tsx`）。
+  - 我们“项目”导航图标（`PanelIcon`）用 `useSidebarAnchor` 报告它所在的 `<nav>`，以及侧栏是否展开（图标 16px 是展开，18px 是窄条）。
+  - `shell.overlay`（list 插槽，常驻、可叠加）里登记 `SidebarProjectsHost`：在 nav 后面插一个 `div.dsht-side`，`createPortal` 渲染分组。`react-dom` 在宿主模块表里（first-party 包都在 `require("react-dom")`），类型来自新加的 devDependency `@types/react-dom`。
+  - 找不到 nav 就不渲染。侧栏隐藏再打开时，图标重新挂载，分组跟着回来。
+- **分组**：
+  - 样式照 DSH 的“工作区”量过：标题 36px、14px 灰字；行高 32px、左右 8px、16px 前置格；悬停和选中用 `--dsw-alias-interactive-bg-hover`。
+  - 前置格：讨论串等你 → 举手；主对话或讨论串在跑 → 呼吸点；否则显示项目图标。右侧显示置顶图钉和 ↳N，悬停时换成“⋯”。
+  - 排序：置顶在前，再按最近活动；不显示已归档的。超过 8 个时显示“展开其余 N 个”。
+  - 标题点一下可以折叠，状态存 `localStorage`。“+”新建项目。
+  - 高亮照 DSH 自己的规则：没有选中的面板时，`retainedBy.mainView > 0` 的会话就是当前会话（`dsh-client-ui-workspace` 的 `FlatList`）。
+  - 卡片的“⋮”菜单、设置对话框、删除确认框抽成 `src/client/ProjectActions.tsx`，项目页卡片和侧栏行共用。
+- **从“工作区”里拿掉项目**（`src/client/kinds.ts`）：
+  - 主对话的行和讨论串一样，用生成的 CSS 按 `data-row-key="session:<id>"` 隐藏。原来主对话行的 ↳N 和 `MainRowMark` 删掉了。
+  - DSH 的行 key 还有 `workspace:<id>`（工作区标题行）和 `overflow:<id>`（“展开其余 N 个会话”）。
+  - 只剩项目会话的工作区整组隐藏，在浏览器端算（`projectOnlyWorkspaces`），规则照抄 DSH 的 `sessionVisible`：
+    - 不算的会话：列表里没有的、空的（当前打开的除外）、子代理的、归档的；
+    - 一开始放在宿主算，结果默认工作区里一个没用过的空会话让它“不空”，所以改到浏览器端，用 DSH 的工作区快照（`items[].sessionIds`、`archivedSessionIds`）和会话列表（`blank`、`origin`）。
+- **测试**：`sidebarCss`、`sidebarProjects` 排序、`projectOnlyWorkspaces`（空会话、归档、子代理、当前空会话），共 84 个。
+- **实机**：
+  - 桌面版：Playground（置顶，↳7）、test1（↳3）、测试项目（↳9）出现在“项目”里；dsh-threads-playground 和 dsh-threads-test1 两个工作区整组消失，默认工作区（有普通会话）照常。
+  - 点行打开主对话并高亮；“⋯”菜单能用，点它不会误开项目；“+”打开新建对话框；折叠、展开正常；侧栏隐藏再打开后分组还在。
+  - 隔离的 Web 版：浅色、深色都正常。
+- **整体实测**（用户要求：不提讨论串，给几件事；开串后马上再提新需求），test1 项目：
+  - 一次给三件事：最高分记录、GitHub Pages 部署调研文档、README。主对话自己开了 #4（最高分）和 #5（部署文档），README 说等两个分支合并后按最终代码写。
+  - 开串后马上提“把网页标题改成 Snake · 霓虹版”。主对话 6 秒就回了：转给正在改 `index.html` 的 #4，没有重复开串，理由是避免合并时撞同一行。
+  - #5 先做完，回报按规则压着（还有讨论串在跑就不唤醒）。#4 做完后主对话被唤醒，合并两个分支，写 README 和截图，`node test.js` 13 个全过。侧栏 test1 一直显示呼吸点和 ↳5，做完变回项目图标。
+  - **发现的问题**：#5 先做完时，主对话里的回复卡片和标题栏还显示它“运行中”。
+    - 原因：卡片只在运行集合变化时重新加载，加载时宿主还没把 #5 记成完成。之后 #4 一直在跑，运行集合没再变化，所以一直没刷新。
+    - 修法：`syncKinds` 发现有会话停下，1.5 秒后再 `threadsRevision.bump()` 一次，所有讨论串视图都会重新加载。
+
 #### 之后
 - 发布：
   - GitHub Release 附 `.tgz`；

@@ -3,6 +3,9 @@
 ## Unreleased
 
 - The running mark breathes in place, dim to bright, instead of a spreading blue ring.
+- The sidebar has its own "Projects" section, after Claude's: one row per project (a raised hand, a breathing dot or the project icon; ↳N; the "⋮" menu on hover), pinned first, then by latest activity. A row opens the project's main conversation. "+" creates a project.
+- Project main conversations no longer appear in DSH's workspace list, and a workspace drops out when nothing but project sessions would show in it.
+- Fix: a thread that finished while another was still running kept showing "running" in the reply card and the header (they reloaded just before the host recorded the finish); thread views now reload once more shortly after a session stops.
 
 ## 0.1.0-rc.3 — 2026-10-24
 

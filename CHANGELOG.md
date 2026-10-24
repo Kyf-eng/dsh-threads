@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.1.0-rc.3 — 2026-10-24
+
+The projects page, the card menu and project settings, reworked after Claude's.
 
 - Projects page and dialogs after Claude's:
   - "New project" picks the folder with the system folder chooser (a typed path only where no chooser exists), fills the name from the folder, and offers recent folders.

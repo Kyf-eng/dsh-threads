@@ -614,6 +614,7 @@ M2c 时 DeepSeek Flash 常常不调 `thread_report`（3 个里 2 个），卡片
 - 发布：合并后在 `main` 上打 `v0.1.0-rc.1` 标签，`gh release create --prerelease`，附 `npm pack` 出来的 `fky-dsh-threads-0.1.0-rc.1.tgz`，说明取自 CHANGELOG。
 
 - **v0.1.0-rc.2**（同日，用户确认后发布）：只加 rc.1 之后合并的两个修复（唤醒计数清零的竞态 #10、主题颜色变量失效 #11）和对应的界面小改动；版本号、README 安装地址、CHANGELOG 跟着改。
+- **v0.1.0-rc.3**（同日，用户确认后发布）：照 Claude 重做的项目页、新建项目对话框和卡片菜单（#13），项目设置里的模型和使用情况（#14），项目桌面通知（#15）；版本号、README 安装地址、CHANGELOG 跟着改。
 
 #### 完整流程实测（2026-10-24，v0.1.0-rc.1）
 

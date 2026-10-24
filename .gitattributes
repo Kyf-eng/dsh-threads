@@ -1,0 +1,2 @@
+# dist/ is committed and checked byte for byte in CI: keep every text file LF on every platform.
+* text=auto eol=lf

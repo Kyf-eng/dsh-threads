@@ -34,3 +34,27 @@ jobs:
       # dist/ is committed for GitHub installs, so it must match the sources.
       - name: dist/ is up to date
         run: git diff --exit-code -- dist
+      - name: package contents
+        run: node scripts/check-pack.mjs
+
+  platforms:
+    # Windows and macOS on the newest supported Node: path handling, and the worktree tests
+    # that run real git, behave differently there.
+    name: check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: dist/ is up to date
+        run: git diff --exit-code -- dist

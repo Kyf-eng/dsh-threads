@@ -8,7 +8,7 @@ A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) plugin, mo
 
 ## What it does
 
-- **Projects**: one folder plus one standing main conversation, with an icon, a goal for the coordinator, and instructions every thread also gets. Create one from **Projects** in the sidebar (the system folder chooser picks the folder), or turn a conversation into a project from its "…" menu. A card's "⋮" menu pins, archives, deletes and opens the project's settings.
+- **Projects**: one folder plus one standing main conversation, with an icon, a goal for the coordinator, and instructions every thread also gets. Create one from **Projects** in the sidebar (the system folder chooser picks the folder), or turn a conversation into a project from its "…" menu. A card's "⋮" menu pins, archives, deletes, sets the project's desktop notifications, and opens its settings (models for the coordinator and threads, usage).
 - **Threads**: the main conversation opens threads for self-contained work, sends follow-ups to them, and suggests threads you did not ask for (they wait in a card above the composer until you start them). Each thread is a real session: open it in the right sidebar and talk to it directly.
 - **Reports**: threads report what is done, what changed and what you need to decide. The main conversation is woken once, when none of its threads is still running, with a guard against wake-up loops. A thread that forgets to report is reminded once.
 - **Parallel and isolated**: up to 3 threads run at once. Threads that change files work in their own git worktree and branch (`dsh-threads/<n>-<id>`), so the project folder is never touched; the main conversation merges only when you ask, and `/thread cleanup` removes finished worktrees.

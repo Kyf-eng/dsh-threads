@@ -10,6 +10,7 @@
   - The main conversation's sidebar row shows the project icon.
   - Project settings → Models: coordinator model and thinking (applied to the main conversation at once) and thread model and thinking (applied to new threads), from DSH's own model catalog; DSH's default for new sessions is left unchanged.
   - Project settings → Usage: input and output tokens of the main conversation and every thread.
+  - Notifications: while DeepSeek Harness is in the background, a project raises desktop notifications at its level (all new messages; the main conversation and threads waiting for you; only threads waiting for you; none). Clicking one opens the conversation or thread.
 
 ## 0.1.0-rc.2 — 2026-10-24
 

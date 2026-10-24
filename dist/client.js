@@ -549,6 +549,85 @@ function MainRowMark({ sessionId, t }) {
 		size: 14
 	}));
 }
+// src/client/notify.ts
+/** Whether a project at `level` wants to hear that this session finished. */
+function wantsNotification(level, kind, waiting) {
+	switch (level) {
+		case "all": return true;
+		case "attention": return kind === "main" || waiting;
+		case "waiting": return kind === "thread" && waiting;
+		case "none": return false;
+	}
+}
+const STATUS_KEYS$1 = {
+	done: "status.done",
+	blocked: "status.blocked",
+	needs_decision: "status.needsDecision",
+	failed: "status.failed",
+	"no-report": "status.noReport"
+};
+function message(target, t) {
+	if (target.kind === "main") return {
+		title: target.projectTitle,
+		body: t("notifyMsg.main", { text: target.text || "…" })
+	};
+	const title = `${target.projectTitle} · #${target.n} ${target.title}`;
+	if (target.waiting) return {
+		title,
+		body: t("notifyMsg.waiting", { text: target.text || "…" })
+	};
+	return {
+		title,
+		body: `${t(STATUS_KEYS$1[target.status ?? "no-report"] ?? "status.noReport")}${target.text.length > 0 ? `：${target.text}` : ""}`
+	};
+}
+const inBackground = () => typeof document === "undefined" || document.visibilityState !== "visible" || !document.hasFocus();
+function startNotifications(deps) {
+	const { status } = deps;
+	if (status === void 0 || typeof Notification === "undefined") return () => {};
+	let running = /* @__PURE__ */ new Set();
+	let finished = /* @__PURE__ */ new Set();
+	let pending;
+	let disposed = false;
+	const flush = async () => {
+		const ids = [...finished];
+		finished = /* @__PURE__ */ new Set();
+		if (ids.length === 0 || !inBackground()) return;
+		const wanted = (await callHost("notifications.describe", { ids }).catch(() => [])).filter((target) => wantsNotification(target.level, target.kind, target.waiting));
+		if (disposed || wanted.length === 0) return;
+		if (Notification.permission === "default") await Notification.requestPermission().catch(() => "denied");
+		if (Notification.permission !== "granted") return;
+		for (const target of wanted) {
+			const { title, body } = message(target, deps.t);
+			const shown = new Notification(title, {
+				body,
+				tag: `dsh-threads:${target.sessionId}`
+			});
+			shown.onclick = () => {
+				window.focus();
+				deps.openSession(target.mainSessionId);
+				if (target.kind === "thread") deps.openThread(target.sessionId);
+				shown.close();
+			};
+		}
+	};
+	const off = status.subscribe(() => {
+		const next = new Set([...status.getSnapshot()].filter(([, state]) => state.running === true).map(([id]) => id));
+		for (const id of running) if (!next.has(id)) finished.add(id);
+		running = next;
+		if (finished.size === 0) return;
+		if (pending !== void 0) clearTimeout(pending);
+		pending = setTimeout(() => {
+			flush();
+		}, 600);
+	});
+	running = new Set([...status.getSnapshot()].filter(([, state]) => state.running === true).map(([id]) => id));
+	return () => {
+		disposed = true;
+		if (pending !== void 0) clearTimeout(pending);
+		off();
+	};
+}
 // src/client/ui.tsx
 function Svg({ children, size = 14, ...rest }) {
 	return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("svg", {
@@ -1085,6 +1164,8 @@ const zh = {
 	"usage.input": "输入",
 	"usage.output": "输出",
 	"usage.main": "主对话",
+	"notifyMsg.main": "主对话回复了：{text}",
+	"notifyMsg.waiting": "等你决定：{text}",
 	"menu.makeProject": "设为项目",
 	"time.justNow": "刚刚",
 	"time.minutes": "{count} 分钟前",
@@ -1215,6 +1296,8 @@ const en = {
 	"usage.input": "Input",
 	"usage.output": "Output",
 	"usage.main": "Main conversation",
+	"notifyMsg.main": "Main conversation replied: {text}",
+	"notifyMsg.waiting": "Waiting for you: {text}",
 	"menu.makeProject": "Make project",
 	"time.justNow": "just now",
 	"time.minutes": "{count} min ago",
@@ -3105,6 +3188,12 @@ function apply(root) {
 		inject: (sessionId) => ({ sessionId })
 	}, ProposalsDock));
 	ctx.effect(() => syncKinds(ctx.uiSession.sessionStatus), "dsh-threads: session kinds");
+	ctx.effect(() => startNotifications({
+		status: ctx.uiSession.sessionStatus,
+		openSession,
+		openThread,
+		t
+	}), "dsh-threads: notifications");
 	ctx.slots.inject("sidebar.session.row.leading", () => ctx.slots.register({
 		name: "sidebar.session.row.leading",
 		id: "dsh-threads-main",

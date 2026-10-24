@@ -274,10 +274,14 @@ export class ThreadManager {
   }
 
   /** The user spoke in a main conversation: automatic wake-ups may start again. */
-  private async onMainUserMessage(mainSessionId: string): Promise<void> {
-    const main = this.deps.store.main(mainSessionId)
-    if (main.autoWakeStreak === 0) return
-    await this.deps.store.putMain({ ...main, autoWakeStreak: 0 })
+  private onMainUserMessage(mainSessionId: string): Promise<void> {
+    // In the delivery chain: a flush in flight writes back the record it read, which would
+    // otherwise undo this reset.
+    return this.serial(mainSessionId, async () => {
+      const main = this.deps.store.main(mainSessionId)
+      if (main.autoWakeStreak === 0) return
+      await this.deps.store.putMain({ ...main, autoWakeStreak: 0 })
+    })
   }
 
   /** A session went idle: settle a thread's round, or deliver notes held for a main conversation. */

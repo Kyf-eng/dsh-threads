@@ -51,7 +51,7 @@ Add a `config` to the plugin's entry in your profile's `cordis.patch.yml` (for D
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `maxRunning` | 3 | Threads one main conversation may run at once |
-| `maxAutoWakes` | 5 | Automatic wake-ups in a row before reports wait for you |
+| `maxAutoWakes` | 5 | Automatic wake-ups in a row before reports wait for you (0: never wake automatically) |
 | `noteMaxChars` | 400 | Longest report delivered to the main conversation |
 | `summaryMaxChars` | 300 | Longest summary a thread may submit |
 | `proposalTtlDays` | 7 | Days before an unstarted suggestion expires |

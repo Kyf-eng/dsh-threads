@@ -4,7 +4,7 @@ export const Config = z.object({
   maxRunning: z.natural().min(1).default(3)
     .description('How many threads one main conversation may run at once.'),
   maxAutoWakes: z.natural().default(5)
-    .description('Consecutive automatic wake-ups of the main conversation before reports wait for the user.'),
+    .description('Consecutive automatic wake-ups of the main conversation before reports wait for the user; 0 never wakes it automatically.'),
   noteMaxChars: z.natural().min(80).default(400)
     .description('Longest report delivered back to the main conversation.'),
   summaryMaxChars: z.natural().min(40).default(300)

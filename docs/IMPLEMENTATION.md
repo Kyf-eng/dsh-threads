@@ -613,6 +613,20 @@ M2c 时 DeepSeek Flash 常常不调 `thread_report`（3 个里 2 个），卡片
   - 审批继承还是没法在这里验证：隔离环境没有模型登录，需要用户自己登录后再测。
 - 发布：合并后在 `main` 上打 `v0.1.0-rc.1` 标签，`gh release create --prerelease`，附 `npm pack` 出来的 `fky-dsh-threads-0.1.0-rc.1.tgz`，说明取自 CHANGELOG。
 
+#### 完整流程实测（2026-10-24，v0.1.0-rc.1）
+
+在 playground 仓库（push 已关）的 Playground 项目里，像普通用户一样提了一个两件事的真实请求：修 `plainLine` 对 markdown 链接和表格的处理并补测试；审查 `src/delivery.ts` 的唤醒规则（只读）。
+- 主对话自己决定分工：审查开成讨论串 #6（只读，没开 worktree），`plainLine` 这件小改动自己做（照 Claude 的"几个工具调用就能做完的事自己做"）。两边并行。
+- #6 正常回报（`done`），主对话被唤醒一次，自己复核后给出结论，还补了两点；`plainLine` 改完 113 个测试全过。按用户要求提交到本地 `main`（`beff024`，没推送）。
+- `/thread cleanup` → `confirm`：删掉了 #2 的 worktree，分支因为有没合并的提交而保留。
+- 这次审查找出插件自己的一个真问题，已修（分支 `fix/streak-reset-race`）：
+  - **用户开口时清零唤醒计数不在投递链里**。`flush` 先读主对话记录，等 `host.resolve` 返回后再把读到的那份写回；这中间用户说话做的清零会被覆盖，之后自动唤醒继续被压着。修法：`onMainUserMessage` 也走 `serial`。测试先复现（失败），修后通过。
+  - `maxAutoWakes: 0` 的含义写进配置说明和 README："从不自动唤醒"。
+- 审查的另外几点，判断后没改：
+  - "streak 到顶后 note 从 `pendingNotes` 里删掉、只靠 inject"：quiet 的 note 一直都是 inject 进收件箱，靠 DSH 把收件箱记进会话日志；和"用户自己聊的轮次"走的是同一条路。
+  - "dispatch 轮里用户插话也该算安静"：主对话派的任务按设计要大声回报，主对话在等结果。
+  - "两个讨论串同时结束时 settling 有竞态"：M3a 已经处理，并有测试（第二个在第一个投递途中结束）。
+
 #### 之后
 - 发布：
   - GitHub Release 附 `.tgz`；

@@ -1,6 +1,8 @@
 import type { ThreadRecord, ThreadReport } from './types.ts'
 
 const ELLIPSIS = '…'
+/** Longest quote of one user message in a report. */
+const USER_WORDS_MAX = 200
 
 /** Cut `text` to at most `max` characters (code points), marking the cut. */
 export function truncate(text: string, max: number): string {
@@ -62,7 +64,7 @@ export function noticeSummary(thread: Pick<ThreadRecord, 'n' | 'title'>, status:
  * open decisions; the details stay in the thread (docs/IMPLEMENTATION.md §三).
  */
 export function composeNote(
-  thread: Pick<ThreadRecord, 'n' | 'title' | 'id'> & { worktree?: ThreadRecord['worktree'] },
+  thread: Pick<ThreadRecord, 'n' | 'title' | 'id'> & Partial<Pick<ThreadRecord, 'worktree' | 'round' | 'userMessages'>>,
   report: ThreadReport | null,
   fallbackText: string | undefined,
   maxChars: number,
@@ -72,6 +74,13 @@ export function composeNote(
   // Right under the header so truncation never drops it.
   if (thread.worktree != null) {
     lines.push(`分支：${thread.worktree.branch}（讨论串自己的 worktree；改动不在项目文件夹里，用户要求时再合并）`)
+  }
+  // Also near the top: without it a change the user asked for in the thread reads as the thread's own idea.
+  const said = (thread.userMessages ?? []).map((text) => `「${truncate(plainLine(text), USER_WORDS_MAX)}」`).join(' ')
+  if (said.length > 0) {
+    lines.push(thread.round === 'user'
+      ? `这一轮是用户自己在讨论串里要求的，不是讨论串自作主张。用户的原话：${said}`
+      : `这一轮中用户在讨论串里说过：${said}`)
   }
   if (report !== null) {
     lines.push(`摘要：${report.summary}`)

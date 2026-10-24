@@ -48,12 +48,21 @@ describe('composeNote', () => {
   it('says so when there is neither a report nor a reply', () => {
     expect(composeNote(thread, null, undefined, 400)).toContain('没有回报也没有回复')
   })
+
+  it('quotes the user when they asked for the change in the thread', () => {
+    const report = normalizeReport({ status: 'done', summary: '困难起步改为 60ms' }, 300, 'now')
+    const asked = composeNote({ ...thread, round: 'user', userMessages: ['困难模式再快一点，起始速度提到 60ms。'] }, report, undefined, 400)
+    expect(asked.split('\n')[1]).toBe('这一轮是用户自己在讨论串里要求的，不是讨论串自作主张。用户的原话：「困难模式再快一点，起始速度提到 60ms。」')
+    const chimedIn = composeNote({ ...thread, round: 'dispatch', userMessages: ['顺便改下标题'] }, report, undefined, 400)
+    expect(chimedIn).toContain('这一轮中用户在讨论串里说过：「顺便改下标题」')
+    expect(composeNote({ ...thread, round: 'user', userMessages: [] }, report, undefined, 400)).not.toContain('用户的原话')
+  })
 })
 
 describe('currentReport', () => {
   const base: ThreadRecord = {
     id: 'session-1', mainSessionId: 'main', n: 1, title: 't', task: 'x', initiation: 'user_asked',
-    status: 'running', resolved: false, round: 'dispatch', roundStartSeq: 0, roundStartedAt: '2026-10-23T10:00:00.000Z',
+    status: 'running', resolved: false, round: 'dispatch', userMessages: [], roundStartSeq: 0, roundStartedAt: '2026-10-23T10:00:00.000Z',
     lastReport: null, error: null, worktree: null, reminder: null, createdAt: '', updatedAt: '',
   }
   const report = (at: string) => normalizeReport({ status: 'done', summary: 's' }, 300, at)

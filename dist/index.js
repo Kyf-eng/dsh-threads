@@ -75,6 +75,8 @@ const zh = {
 	noteDetails: (n) => `详情：thread_status { n: ${n} }，或让用户在侧栏打开该讨论串。`,
 	reportsSummary: (count) => `${count} 个讨论串回报`,
 	notARepository: (folder) => `项目文件夹 ${folder} 不是 git 仓库，没法开 worktree。不用 worktree 再开，或者请用户先初始化仓库。`,
+	gitMissing: "找不到 git：DeepSeek Harness 运行环境的 PATH 里没有 git 命令，没法开 worktree。请用户安装 Git（Windows 上是 Git for Windows），完全退出并重开 DeepSeek Harness；或者不用 worktree 再开。",
+	gitFailed: (folder, detail) => `在项目文件夹 ${folder} 里运行 git 失败，没法开 worktree。git 的原话：${detail}。不用 worktree 再开，或者请用户先处理这个 git 错误。`,
 	noCommits: "仓库还没有任何提交，没法从 HEAD 开 worktree。",
 	subfolderNotCommitted: (subdir) => `项目文件夹 ${subdir} 还没有提交进仓库，worktree 里不会有它。不用 worktree 再开，或者请用户先提交。`,
 	mainUnreachable: (id) => `主对话 ${id} 连不上`,
@@ -185,6 +187,8 @@ const en = {
 	noteDetails: (n) => `Details: thread_status { n: ${n} }, or have the user open the thread in the sidebar.`,
 	reportsSummary: (count) => `${count} thread reports`,
 	notARepository: (folder) => `The project folder ${folder} is not a git repository, so it cannot have a worktree. Open the thread without a worktree, or ask the user to initialize the repository first.`,
+	gitMissing: "git was not found: there is no git command on DeepSeek Harness's PATH, so the thread cannot have a worktree. Ask the user to install Git (Git for Windows on Windows), then quit DeepSeek Harness completely and reopen it; or open the thread without a worktree.",
+	gitFailed: (folder, detail) => `git failed in the project folder ${folder}, so the thread cannot have a worktree. git said: ${detail}. Open the thread without a worktree, or ask the user to sort out this git error first.`,
 	noCommits: "The repository has no commits yet, so there is no HEAD to start a worktree from.",
 	subfolderNotCommitted: (subdir) => `The project folder ${subdir} is not committed to the repository yet, so a worktree would not contain it. Open the thread without a worktree, or ask the user to commit it first.`,
 	mainUnreachable: (id) => `the main conversation ${id} cannot be reached`,
@@ -825,6 +829,18 @@ const POOL = [".agents", "worktrees"];
 /** A refusal the model should read (not a bug). */
 var WorktreeError = class extends Error {};
 /**
+* Why git could not find the repository: git is not on DSH's PATH (a Windows machine without Git
+* for Windows), the folder is not a repository, or git refused for its own reason (on Windows often
+* "dubious ownership"), which the user needs to read as git wrote it.
+*/
+function notARepository(error, folder) {
+	const { code, stderr } = error;
+	if (code === "ENOENT") return new WorktreeError(msg().gitMissing);
+	const detail = typeof stderr === "string" ? stderr.trim().split(/\r?\n/)[0] ?? "" : "";
+	if (detail === "" || /not a git repository/i.test(detail)) return new WorktreeError(msg().notARepository(folder));
+	return new WorktreeError(msg().gitFailed(folder, detail.replace(/^fatal:\s*/, "")));
+}
+/**
 * New branch `dsh-threads/<name>` checked out at `<repo>/.agents/worktrees/dsh-threads-<name>`,
 * from the folder's current HEAD. Uncommitted files in the folder are not carried over. When the
 * folder is a subfolder of the repository (a monorepo package), `subdir` names it, and the thread
@@ -836,8 +852,8 @@ async function createWorktree(git, folder, name) {
 	try {
 		repositoryRoot = (await git(folder, ["rev-parse", "--show-toplevel"])).trim();
 		subdir = (await git(folder, ["rev-parse", "--show-prefix"])).trim().replace(/\/+$/, "");
-	} catch {
-		throw new WorktreeError(msg().notARepository(folder));
+	} catch (error) {
+		throw notARepository(error, folder);
 	}
 	let baseCommit;
 	try {

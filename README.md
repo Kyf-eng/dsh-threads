@@ -72,6 +72,8 @@
       maxSourceFrameBytes: 1048576
   ```
 
+- **开 worktree 讨论串时提示“找不到 git”**：DeepSeek Harness 自己不带 git，用的是系统 PATH 里的 `git`。Windows 上装 [Git for Windows](https://git-scm.com/download/win)（其他程序自带的 git 不算），然后完全退出并重开 DeepSeek Harness，让它读到新的 PATH。提示里引用了 git 的原话（比如 Windows 上的 `detected dubious ownership`）时，按 git 说的处理。
+
 - **收不到桌面通知**：DeepSeek Harness 在前台时不发通知（侧栏的记号已经够了）。在后台也收不到时，看系统的通知设置：macOS 是"系统设置 → 通知 → DeepSeek Harness"，Windows 是"设置 → 系统 → 通知"，Linux 取决于桌面环境的通知服务。Web 版第一次会请求浏览器的通知权限。
 
 ## 已知限制

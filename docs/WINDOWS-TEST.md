@@ -15,7 +15,7 @@
 - 开 worktree 时报“不是 git 仓库”：机器上只有 Codex 自带的 git，DSH 找不到 git。装上 Git for Windows 并重开 DSH 后正常。0.1.0-rc.7 起改成直接提示“找不到 git”。
 - 讨论串提交时碰上会失败的 pre-commit hook，就用 `--no-verify` 绕过去了，还删掉了 hook 写的文件。插件只在自己调用 git（开、删 worktree）时关掉 hook，讨论串自己的提交本来就该走仓库的 hook。第一轮把这当成“插件关不掉 hook”来测，是测试写错了。0.1.0-rc.7 起要求讨论串遇到这种情况回报“受阻”，不要绕过；第二轮按改过的方法测。
 - `SetNamedSecurityInfoW failed (Win32 5): grantWrite(D:\dsh-test\playground)`：DSH 的沙箱没能给项目文件夹加写权限。这是 DSH 自己的问题，可能和 `D:\dsh-test` 是 Codex 建的有关。主对话还试着自己修这个文件夹的权限，临时放开了 PowerShell 的脚本执行策略。0.1.0-rc.7 起，主对话遇到这种错误只告诉用户，不自己动系统设置。
-- 同一条 `/thread` 命令每次都发了两到五遍。第二轮请每条只发一次。
+- 同一条 `/thread` 命令每次都发了两到五遍，开出了重复的讨论串：这是操作失误。第二轮请每条只发一次。
 
 ---
 
@@ -24,7 +24,7 @@
 ## 规矩
 
 - 规矩和上次一样：文件只放在 `D:\dsh-test` 下；DSH 的数据目录 `%USERPROFILE%\.dsh` 只读；不输入、保存或打印任何密码和 API Key；不改系统设置（注册表、组策略、`LongPathsEnabled`、Defender、执行策略、文件夹权限 ACL），也不全局改 git 配置；测试仓库不 push；删 `D:\dsh-test` 以外的东西先问操作者；失败了就记下完整报错，再接着做不依赖它的步骤；全程用 PowerShell。
-- **每条 `/thread` 命令只发一次。** 发完等主对话里出现以 `thread ·` 开头的回复行，或者一张讨论串卡片，再做下一步。10 秒内什么都没出现，就告诉你，不要重发。上次每条命令都发了两到五遍，开出了重复的讨论串。也请操作者留意：命令发出去以后，输入框里的字有没有自动清空？记进报告。
+- **每条 `/thread` 命令只发一次。** 发完等主对话里出现以 `thread ·` 开头的回复行，或者一张讨论串卡片，再做下一步。10 秒内什么都没出现，就告诉你，不要重发。上次每条命令都发了两到五遍，开出了重复的讨论串。
 - 讨论串编号接着上次往下排（上次到 #7），核对时以存储里的实际编号为准。
 - 新的日志都放 `D:\dsh-test\logs\r2-*`，不要覆盖上次的文件。
 
@@ -87,7 +87,7 @@
 
 ## R13：报告
 
-写 `D:\dsh-test\report-r2.md`，格式和上次一样：环境复查结果（git 路径和版本、`r2-acl.txt` 的要点）、升级结果、一张“编号 | 结果（通过 / 失败 / 部分通过 / 未执行）| 现象 | 证据”的表、失败或可疑的地方（完整报错原文和复现步骤），以及输入框会不会自动清空。把 `%USERPROFILE%\.dsh\storages\dsh_threads.json` 复制成 `D:\dsh-test\logs\r2-dsh_threads.json`。最后把 `report-r2.md` 和 `D:\dsh-test\logs\r2-*` 打包成 `D:\dsh-test\dsh-threads-windows-report-r2.zip`，告诉操作者文件位置。不要卸载 DSH，也不要删测试目录。
+写 `D:\dsh-test\report-r2.md`，格式和上次一样：环境复查结果（git 路径和版本、`r2-acl.txt` 的要点）、升级结果、一张“编号 | 结果（通过 / 失败 / 部分通过 / 未执行）| 现象 | 证据”的表、失败或可疑的地方（完整报错原文和复现步骤）。把 `%USERPROFILE%\.dsh\storages\dsh_threads.json` 复制成 `D:\dsh-test\logs\r2-dsh_threads.json`。最后把 `report-r2.md` 和 `D:\dsh-test\logs\r2-*` 打包成 `D:\dsh-test\dsh-threads-windows-report-r2.zip`，告诉操作者文件位置。不要卸载 DSH，也不要删测试目录。
 
 ---
 

@@ -4,7 +4,7 @@ import { isAbsolute, join } from "node:path";
 import { CommandDefinitionId } from "@deepseek-ai/dsh-commands/brand";
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import z$1 from "@deepseek-ai/schemastery";
 import { boundContextSummary, createUserMessage } from "@deepseek-ai/dsh-llm";
@@ -77,6 +77,8 @@ const zh = {
 	notARepository: (folder) => `项目文件夹 ${folder} 不是 git 仓库，没法开 worktree。不用 worktree 再开，或者请用户先初始化仓库。`,
 	gitMissing: "找不到 git：DeepSeek Harness 运行环境的 PATH 里没有 git 命令，没法开 worktree。请用户安装 Git（Windows 上是 Git for Windows），完全退出并重开 DeepSeek Harness；或者不用 worktree 再开。",
 	gitFailed: (folder, detail) => `在项目文件夹 ${folder} 里运行 git 失败，没法开 worktree。git 的原话：${detail}。不用 worktree 再开，或者请用户先处理这个 git 错误。`,
+	pathTooLong: (repository) => `worktree 里的完整路径超过了 Windows 默认的 260 字符上限，git 建不了里面的文件（Filename too long）。可以请用户只为这个仓库打开长路径支持（git -C "${repository}" config core.longpaths true），或者把仓库挪到更短的路径下；也可以不用 worktree 再开。`,
+	checkoutFailed: (detail) => `git 没能检出 worktree：${detail}。不用 worktree 再开，或者请用户先处理这个 git 错误。`,
 	noCommits: "仓库还没有任何提交，没法从 HEAD 开 worktree。",
 	subfolderNotCommitted: (subdir) => `项目文件夹 ${subdir} 还没有提交进仓库，worktree 里不会有它。不用 worktree 再开，或者请用户先提交。`,
 	mainUnreachable: (id) => `主对话 ${id} 连不上`,
@@ -189,6 +191,8 @@ const en = {
 	notARepository: (folder) => `The project folder ${folder} is not a git repository, so it cannot have a worktree. Open the thread without a worktree, or ask the user to initialize the repository first.`,
 	gitMissing: "git was not found: there is no git command on DeepSeek Harness's PATH, so the thread cannot have a worktree. Ask the user to install Git (Git for Windows on Windows), then quit DeepSeek Harness completely and reopen it; or open the thread without a worktree.",
 	gitFailed: (folder, detail) => `git failed in the project folder ${folder}, so the thread cannot have a worktree. git said: ${detail}. Open the thread without a worktree, or ask the user to sort out this git error first.`,
+	pathTooLong: (repository) => `The worktree's full paths exceed Windows' default 260-character limit, so git could not create its files (Filename too long). Ask the user to turn on long paths for this repository only (git -C "${repository}" config core.longpaths true), or to move the repository to a shorter path; or open the thread without a worktree.`,
+	checkoutFailed: (detail) => `git could not check out the worktree: ${detail}. Open the thread without a worktree, or ask the user to sort out this git error first.`,
 	noCommits: "The repository has no commits yet, so there is no HEAD to start a worktree from.",
 	subfolderNotCommitted: (subdir) => `The project folder ${subdir} is not committed to the repository yet, so a worktree would not contain it. Open the thread without a worktree, or ask the user to commit it first.`,
 	mainUnreachable: (id) => `the main conversation ${id} cannot be reached`,
@@ -828,17 +832,30 @@ const BRANCH_PREFIX = "dsh-threads/";
 const POOL = [".agents", "worktrees"];
 /** A refusal the model should read (not a bug). */
 var WorktreeError = class extends Error {};
+/** git's own words: the first `error:` or `fatal:` line it wrote, else its first line. */
+function gitSaid(error) {
+	const { stderr } = error;
+	const lines = typeof stderr === "string" ? stderr.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0) : [];
+	return lines.find((line) => /^(error|fatal):/.test(line)) ?? lines[0] ?? "";
+}
+const withoutPrefix = (line) => line.replace(/^(error|fatal):\s*/, "");
 /**
 * Why git could not find the repository: git is not on DSH's PATH (a Windows machine without Git
 * for Windows), the folder is not a repository, or git refused for its own reason (on Windows often
 * "dubious ownership"), which the user needs to read as git wrote it.
 */
 function notARepository(error, folder) {
-	const { code, stderr } = error;
-	if (code === "ENOENT") return new WorktreeError(msg().gitMissing);
-	const detail = typeof stderr === "string" ? stderr.trim().split(/\r?\n/)[0] ?? "" : "";
+	if (error.code === "ENOENT") return new WorktreeError(msg().gitMissing);
+	const detail = gitSaid(error);
 	if (detail === "" || /not a git repository/i.test(detail)) return new WorktreeError(msg().notARepository(folder));
-	return new WorktreeError(msg().gitFailed(folder, detail.replace(/^fatal:\s*/, "")));
+	return new WorktreeError(msg().gitFailed(folder, withoutPrefix(detail)));
+}
+/** Why `git worktree add` failed; on Windows most often paths over 260 characters. */
+function checkoutFailed(error, repositoryRoot) {
+	const { stderr } = error;
+	if (typeof stderr === "string" && /filename too long/i.test(stderr)) return new WorktreeError(msg().pathTooLong(repositoryRoot));
+	const detail = gitSaid(error);
+	return new WorktreeError(msg().checkoutFailed(detail === "" ? String(error) : withoutPrefix(detail)));
 }
 /**
 * New branch `dsh-threads/<name>` checked out at `<repo>/.agents/worktrees/dsh-threads-<name>`,
@@ -877,15 +894,29 @@ async function createWorktree(git, folder, name) {
 	await preparePool(join(repositoryRoot, ...POOL));
 	const branch = `${BRANCH_PREFIX}${name}`;
 	const path = join(repositoryRoot, ...POOL, `dsh-threads-${name}`);
-	await git(repositoryRoot, [
-		"worktree",
-		"add",
-		"-b",
-		branch,
-		"--",
-		path,
-		baseCommit
-	]);
+	const before = {
+		folder: existsSync(path),
+		branch: await hasBranch(git, repositoryRoot, branch)
+	};
+	try {
+		await git(repositoryRoot, [
+			"worktree",
+			"add",
+			"-b",
+			branch,
+			"--",
+			path,
+			baseCommit
+		]);
+	} catch (error) {
+		await discardFailedCheckout(git, {
+			repositoryRoot,
+			path,
+			branch,
+			baseCommit
+		}, before);
+		throw checkoutFailed(error, repositoryRoot);
+	}
 	return {
 		path,
 		subdir,
@@ -894,6 +925,54 @@ async function createWorktree(git, folder, name) {
 		repositoryRoot,
 		removed: false
 	};
+}
+async function hasBranch(git, repositoryRoot, branch) {
+	try {
+		await git(repositoryRoot, [
+			"rev-parse",
+			"--verify",
+			"--quiet",
+			`refs/heads/${branch}`
+		]);
+		return true;
+	} catch {
+		return false;
+	}
+}
+/**
+* Take back what a failed `worktree add -b` left behind (git keeps the new branch, and may keep the
+* half-filled folder): only what this attempt created, and the branch only while it is still at
+* the commit it was made from.
+*/
+async function discardFailedCheckout(git, worktree, before) {
+	const { repositoryRoot, path, branch, baseCommit } = worktree;
+	if (!before.folder) {
+		await git(repositoryRoot, [
+			"worktree",
+			"remove",
+			"--force",
+			"--",
+			path
+		]).catch(() => void 0);
+		await rm(path, {
+			recursive: true,
+			force: true
+		}).catch(() => void 0);
+		await git(repositoryRoot, ["worktree", "prune"]).catch(() => void 0);
+	}
+	if (before.branch) return;
+	try {
+		if ((await git(repositoryRoot, [
+			"rev-parse",
+			"--verify",
+			"--quiet",
+			`refs/heads/${branch}`
+		])).trim() === baseCommit) await git(repositoryRoot, [
+			"branch",
+			"-D",
+			branch
+		]);
+	} catch {}
 }
 /** Where a worktree thread works: the project folder's counterpart inside its checkout. */
 function worktreeFolder(worktree) {

@@ -75,6 +75,32 @@ describe('createWorktree', () => {
     await expect(createWorktree(git, plain, '1-x')).rejects.toThrow(msg().notARepository(plain))
   })
 
+  // The Windows test of rc.7: a 172-character repository root went over 260 characters inside the worktree.
+  it('takes back the branch and folder a failed checkout left, and says when paths are too long', async () => {
+    const root = await repo()
+    const longPaths: Git = async (cwd, args) => {
+      if (args[0] !== 'worktree' || args[1] !== 'add') return git(cwd, args)
+      const [, , , branch, , path, base] = args
+      await git(cwd, ['branch', branch as string, base as string])
+      await mkdir(join(path as string, 'docs'), { recursive: true })
+      throw Object.assign(new Error('Command failed: git worktree add'), {
+        code: 128,
+        stderr: "Preparing worktree (new branch 'x')\nerror: unable to create file docs/a-long-name.md: Filename too long\nfatal: Could not reset index file to revision 'HEAD'.\n",
+      })
+    }
+    await expect(createWorktree(longPaths, root, '1-l')).rejects.toThrow(msg().pathTooLong((await git(root, ['rev-parse', '--show-toplevel'])).trim()))
+    expect((await git(root, ['branch', '--list', 'dsh-threads/*'])).trim()).toBe('')
+    expect(existsSync(join(root, '.agents', 'worktrees', 'dsh-threads-1-l'))).toBe(false)
+  })
+
+  it('quotes git when a checkout fails otherwise, and leaves a branch it did not create', async () => {
+    const root = await repo()
+    await git(root, ['branch', 'dsh-threads/1-k'])
+    // git refuses -b for an existing branch; the branch is someone else's and stays.
+    await expect(createWorktree(git, root, '1-k')).rejects.toThrow(msg().checkoutFailed("a branch named 'dsh-threads/1-k' already exists"))
+    expect((await git(root, ['branch', '--list', 'dsh-threads/1-k'])).trim()).toContain('dsh-threads/1-k')
+  })
+
   it('says when git itself is missing or refuses, instead of calling the folder no repository', async () => {
     const failing = (error: object): Git => () => Promise.reject(Object.assign(new Error('git failed'), error))
     await expect(createWorktree(failing({ code: 'ENOENT' }), 'D:\\repo', '1-x')).rejects.toThrow(msg().gitMissing)

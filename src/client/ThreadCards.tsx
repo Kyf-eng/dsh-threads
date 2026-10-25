@@ -1,15 +1,14 @@
 // Thread cards in the transcript, modelled on Claude's: the notice that replaces "收到执行请求",
 // and the turn-tail "↳ N 条回复" card listing the threads a turn opened.
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import type { NoticeData } from './chat.ts'
 import { OPENED_KEY } from './chat.ts'
 import { glyphState, reportGlyph } from './glyphs.tsx'
 import { ThreadsIcon } from './icons.tsx'
 import type { MessageKey, Translate } from './locale.ts'
-import { type ThreadCardInfo, type ThreadView, useHostValue, useThreadsRevision } from './threads.ts'
+import { type ThreadCardInfo, type ThreadView, useHostValue, useLive, type UseStatus, useThreadsRevision } from './threads.ts'
 import { CardHead, RepliesIcon, ThreadItem } from './ui.tsx'
 
-type UseStatus = <T>(selector: (statuses: ReadonlyMap<string, { running?: boolean }>) => T) => T
 
 export const STATUS_KEYS: Record<string, MessageKey> = {
   done: 'status.done',
@@ -71,10 +70,8 @@ function ReportCard({ cards, sessionId, useSessionStatus, t, openThread }: {
   openThread: (threadId: string) => void
 }) {
   const revision = useThreadsRevision()
-  const runningKey = useSessionStatus((statuses) =>
-    [...statuses].filter(([, state]) => state.running === true).map(([id]) => id).sort().join(','))
-  const running = useMemo(() => new Set(runningKey.split(',')), [runningKey])
-  const threads = useHostValue<ThreadView[]>('threads.list', { mainSessionId: sessionId }, [sessionId, runningKey, revision])
+  const live = useLive(useSessionStatus)
+  const threads = useHostValue<ThreadView[]>('threads.list', { mainSessionId: sessionId }, [sessionId, live.key, revision])
   const byId = new Map((threads ?? []).map((thread) => [thread.id, thread]))
   return (
     <div className="dsht-card">
@@ -82,7 +79,7 @@ function ReportCard({ cards, sessionId, useSessionStatus, t, openThread }: {
       <div className="dsht-items">
         {waitingFirst(cards).map((card) => {
           const thread = byId.get(card.threadId)
-          const state = thread === undefined ? reportGlyph(card.status) : glyphState(thread, running.has(card.threadId))
+          const state = thread === undefined ? reportGlyph(card.status) : glyphState(thread, live.running.has(card.threadId), live.asking.has(card.threadId))
           const status = state === 'running' ? t('status.running') : state === 'resolved' ? t('list.resolved')
             : t(STATUS_KEYS[thread?.lastReport?.status ?? card.status ?? 'no-report'] ?? 'status.noReport')
           return (
@@ -106,10 +103,8 @@ export function TurnThreadsCard({ turn, sessionId, useSessionStatus, t, openThre
 }) {
   const opened = (turn.data.get(OPENED_KEY) as { opened?: ThreadCardInfo[] } | undefined)?.opened ?? []
   const revision = useThreadsRevision()
-  const runningKey = useSessionStatus((statuses) =>
-    [...statuses].filter(([, state]) => state.running === true).map(([id]) => id).sort().join(','))
-  const running = useMemo(() => new Set(runningKey.split(',')), [runningKey])
-  const threads = useHostValue<ThreadView[]>(opened.length === 0 ? null : 'threads.list', { mainSessionId: sessionId }, [sessionId, runningKey, revision])
+  const live = useLive(useSessionStatus)
+  const threads = useHostValue<ThreadView[]>(opened.length === 0 ? null : 'threads.list', { mainSessionId: sessionId }, [sessionId, live.key, revision])
   if (opened.length === 0) return null
   const byId = new Map((threads ?? []).map((thread) => [thread.id, thread]))
   return (
@@ -118,7 +113,7 @@ export function TurnThreadsCard({ turn, sessionId, useSessionStatus, t, openThre
       <div className="dsht-items">
         {opened.map((card) => {
           const thread = byId.get(card.threadId)
-          const state = thread === undefined ? 'running' : glyphState(thread, running.has(card.threadId))
+          const state = thread === undefined ? 'running' : glyphState(thread, live.running.has(card.threadId), live.asking.has(card.threadId))
           const report = thread?.lastReport ?? null
           const status = state === 'running' ? t('status.running') : state === 'resolved' ? t('list.resolved')
             : report === null ? undefined : t(STATUS_KEYS[report.status] ?? 'status.noReport')

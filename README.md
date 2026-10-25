@@ -4,7 +4,7 @@ English | [中文](README.zh.md)
 
 A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) plugin, modelled on Claude's projects and threads. Your project's main conversation acts as a dispatcher: when a task is self-contained, it opens a **thread** (a real session you can click into and keep talking to), and when the thread finishes, a short report comes back to the main conversation.
 
-> Status: **0.1.0-rc.5**, a pre-release. Built and tested against DeepSeek Harness 0.2.1-rc.2. See [CHANGELOG.md](CHANGELOG.md) and the design notes in [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md).
+> Status: **0.1.0-rc.5**, a pre-release. Built against DeepSeek Harness 0.2.1-rc.2 and tested on 0.2.1-rc.2 and 0.2.1-rc.3. See [CHANGELOG.md](CHANGELOG.md) and the design notes in [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md).
 
 ## What it does
 
@@ -16,7 +16,7 @@ A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) plugin, mo
 
 ## Install
 
-Requires DeepSeek Harness **0.2.x** (Desktop or Web; built and tested against 0.2.1-rc.2) and its `dsh` command line. On Desktop it is set up from the app menu (**Manage dsh command…**). Without it, the command line from npm at your DeepSeek Harness version works too, for example `npx -y @deepseek-ai/dsh@0.2.1-rc.2 plugin --profile web add <address below>`.
+Requires DeepSeek Harness **0.2.x** (Desktop or Web; tested on 0.2.1-rc.2 and 0.2.1-rc.3) and its `dsh` command line. On Desktop it is set up from the app menu (**Manage dsh command…**). Without it, the command line from npm at your DeepSeek Harness version works too, for example `npx -y @deepseek-ai/dsh@0.2.1-rc.2 plugin --profile web add <address below>`.
 
 1. Quit DeepSeek Harness completely (⌘Q on macOS; also quit from its menu-bar or tray icon if it has one).
 2. Add the plugin to your profile:
@@ -76,7 +76,6 @@ Add a `config` to the plugin's entry in your profile's `cordis.patch.yml` (for D
 
 - DeepSeek Harness lists 5 sessions per workspace and counts hidden threads among them, so a workspace with many threads shows fewer rows, and its "show N more" count includes threads.
 - A worktree starts from the folder's last commit: uncommitted changes are not in it, and dependencies (`node_modules`, …) have to be installed there.
-- That threads keep the main conversation's approval mode has only been checked on a modified local install so far, not on a stock one.
 - There is no spending cap: apart from how many run at once, threads may use as many tokens as they need. Project settings → Usage shows what they used.
 
 ## Development

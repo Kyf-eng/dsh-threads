@@ -23,7 +23,7 @@ import type { Translate } from './locale.ts'
 import { NewProjectDialog, type PickFolder, type WorkspaceOption } from './NewProjectDialog.tsx'
 import { ProjectMenu, useProjectActions } from './ProjectActions.tsx'
 import { sameList } from './ProjectsPage.tsx'
-import { threadsRevision } from './threads.ts'
+import { type Live, threadsRevision, useLive, type UseStatus } from './threads.ts'
 
 interface Anchor {
   nav: HTMLElement
@@ -67,7 +67,7 @@ export interface SidebarProjectsProps {
   /** Standard props of root-scope slots. */
   useWorkspaces: <T>(selector: (snapshot: WorkspaceSnapshot) => T, equal?: (a: T, b: T) => boolean) => T
   useSessions: <T>(selector: (list: { byId: Record<string, (SessionSummary & { retainedBy?: { mainView?: number } }) | undefined> }) => T) => T
-  useSessionStatus: <T>(selector: (statuses: ReadonlyMap<string, { running: boolean }>) => T) => T
+  useSessionStatus: UseStatus
   usePanelInfo: <T>(selector: (info: { activePanelId: string | null }) => T) => T
   /** Injected by src/client/index.tsx. */
   openSession: (sessionId: string) => void
@@ -135,12 +135,11 @@ function SidebarProjects({ t, useWorkspaces, useSessions, useSessionStatus, useP
   const [menuFor, setMenuFor] = useState<string | null>(null)
   const { actions, dialogs } = useProjectActions({ projects, t, pinSession })
   const workspaces = useWorkspaces((snapshot) => snapshot.items, sameList)
-  const runningKey = useSessionStatus((statuses) =>
-    [...statuses].filter(([, state]) => state.running).map(([id]) => id).sort().join(','))
+  const live = useLive(useSessionStatus)
   const currentId = useCurrentSession({ useSessions, usePanelInfo })
 
   // Thread counts and activity change whenever a session starts or stops.
-  useEffect(() => { void projectsStore.refresh() }, [runningKey])
+  useEffect(() => { void projectsStore.refresh() }, [live.key])
 
   const toggle = () => {
     const next = !collapsed
@@ -154,7 +153,6 @@ function SidebarProjects({ t, useWorkspaces, useSessions, useSessionStatus, useP
 
   const rows = sidebarProjects(projects)
   const shown = expanded ? rows : rows.slice(0, SIDEBAR_VISIBLE)
-  const running = new Set(runningKey.split(','))
 
   return (
     <>
@@ -181,7 +179,7 @@ function SidebarProjects({ t, useWorkspaces, useSessions, useSessionStatus, useP
                 onClick={() => openSession(project.mainSessionId)}
                 onKeyDown={(event) => { if (event.key === 'Enter' && event.target === event.currentTarget) openSession(project.mainSessionId) }}>
                 <span className="dsht-side-slot">
-                  <RowMark project={project} main={mains.get(project.mainSessionId)} mainRunning={running.has(project.mainSessionId)} t={t} />
+                  <RowMark project={project} main={mains.get(project.mainSessionId)} live={live} t={t} />
                 </span>
                 <span className="dsht-side-title">{project.title}</span>
                 <span className="dsht-side-meta">
@@ -216,12 +214,16 @@ function SidebarProjects({ t, useWorkspaces, useSessions, useSessionStatus, useP
   )
 }
 
-/** A raised hand when a thread waits on the user, a breathing dot while anything runs, else the project's icon. */
-function RowMark({ project, main, mainRunning, t }: { project: ProjectView; main: MainKind | undefined; mainRunning: boolean; t: Translate }) {
-  const waiting = main?.waiting ?? 0
+/**
+ * A raised hand when the main conversation or a thread waits on the user (a decision, an approval,
+ * a question), a breathing dot while anything runs, else the project's icon.
+ */
+function RowMark({ project, main, live, t }: { project: ProjectView; main: MainKind | undefined; live: Live; t: Translate }) {
+  const asking = [project.mainSessionId, ...(main?.threadIds ?? [])].filter((id) => live.asking.has(id)).length
+  const waiting = (main?.waiting ?? 0) + asking
   const threadsRunning = main?.running ?? project.running
   if (waiting > 0) return <ThreadGlyph state="waiting" label={t('badge.waiting', { count: waiting })} />
   if (threadsRunning > 0) return <ThreadGlyph state="running" label={t('badge.running', { count: threadsRunning })} />
-  if (mainRunning) return <ThreadGlyph state="running" label={t('side.mainRunning')} />
+  if (live.running.has(project.mainSessionId)) return <ThreadGlyph state="running" label={t('side.mainRunning')} />
   return <span className="dsht-row-icon"><ProjectIcon id={project.icon} size={14} /></span>
 }

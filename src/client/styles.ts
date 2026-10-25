@@ -135,13 +135,33 @@ body,[class*="dsht-"]{
 
 /* Thread list tab */
 .dsht-tab{padding:12px;font-size:13px;line-height:1.6;color:var(--dsw-alias-label-secondary)}
-.dsht-list{box-sizing:border-box;display:flex;flex-direction:column;gap:4px;height:100%;min-height:0;overflow-y:auto;padding:6px 8px}
-.dsht-list-fold{display:flex;align-items:center;gap:4px;width:100%;margin-top:6px;padding:6px 10px;border:0;border-radius:8px;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:12px;cursor:pointer}
-.dsht-list-fold:hover{background:var(--dsht-press);color:var(--dsw-alias-label-secondary)}
-.dsht-list-fold svg{transition:transform .15s var(--dsht-ease)}
-.dsht-list-fold.is-open svg{transform:rotate(90deg)}
-.dsht-items-archived{opacity:.72}
-.dsht-list-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 10px 6px;font-size:12px;color:var(--dsw-alias-label-tertiary)}
+.dsht-list{box-sizing:border-box;display:flex;flex-direction:column;gap:14px;height:100%;min-height:0;overflow-y:auto;padding:8px 10px 16px}
+.dsht-list-top{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:30px;padding:0 2px 0 8px}
+.dsht-list-title{font-size:15px;font-weight:600;color:var(--dsw-alias-label-primary)}
+.dsht-list-tools{display:flex;align-items:center;gap:2px}
+.dsht-list-search{box-sizing:border-box;height:32px;margin:-6px 4px 0;padding:0 11px;border:1px solid var(--dsht-line-strong);border-radius:9px;background:var(--dsht-field);color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;outline:none;transition:border-color .15s var(--dsht-ease),box-shadow .15s var(--dsht-ease)}
+.dsht-list-search:focus{border-color:var(--dsht-ring);box-shadow:0 0 0 3px var(--dsht-ring-soft)}
+.dsht-section{display:flex;flex-direction:column;gap:4px}
+.dsht-section-head{display:flex;align-items:center;gap:6px;align-self:flex-start;padding:2px 8px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:12.5px;line-height:20px;cursor:pointer}
+.dsht-section-head:not(:disabled):hover{color:var(--dsw-alias-label-secondary)}
+.dsht-section-head:disabled{cursor:default}
+.dsht-section-head svg{transform:rotate(-90deg);transition:transform .15s var(--dsht-ease)}
+.dsht-section-head.is-open svg{transform:rotate(90deg)}
+.dsht-section-empty{margin:2px 4px 0;padding:22px 14px;border:1px dashed var(--dsht-line-strong);border-radius:12px;text-align:center;font-size:13px;color:var(--dsw-alias-label-tertiary)}
+.dsht-rows{display:flex;flex-direction:column;gap:2px}
+.dsht-row{display:flex;align-items:flex-start;gap:10px;padding:9px 10px;border-radius:10px;cursor:pointer;outline:none;transition:background .15s var(--dsht-ease)}
+.dsht-row:hover{background:var(--dsht-hover)}
+.dsht-row:focus-visible{box-shadow:inset 0 0 0 2px var(--dsht-ring)}
+.dsht-row>.dsht-glyph{margin-top:2px}
+.dsht-row-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
+.dsht-row-top{display:flex;align-items:baseline;gap:10px;min-width:0}
+.dsht-row-title{flex:1;min-width:0;font-size:13.5px;font-weight:550;line-height:20px;color:var(--dsw-alias-label-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dsht-row-title .dsht-item-n{margin-right:6px}
+.dsht-row-time{flex:none;font-size:12px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums}
+.dsht-row-decision{padding:6px 9px;border-radius:8px;background:color-mix(in srgb,var(--dsht-waiting) 11%,transparent);font-size:12.5px;line-height:18px;color:var(--dsw-alias-label-primary);overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.dsht-row-chips{display:flex;flex-wrap:wrap;gap:6px}
+.dsht-count{border-radius:999px;padding:0 9px 0 7px;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-secondary)}
+.dsht-section-archived .dsht-row{opacity:.72}
 
 .dsht-error{font-size:13px;line-height:19px;color:var(--dsw-alias-state-error-primary)}
 .dsht-hint{font-size:12px;line-height:17px;color:var(--dsw-alias-label-tertiary)}

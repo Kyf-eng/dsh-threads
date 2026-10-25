@@ -11,7 +11,10 @@ export interface MainKind {
   icon: string
   threads: number
   running: number
+  /** Threads that reported needs_decision or blocked. */
   waiting: number
+  /** The project's threads, to see which of them wait on an approval or a question. */
+  threadIds: readonly string[]
 }
 
 interface Kinds {

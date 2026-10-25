@@ -1,6 +1,7 @@
 // Thread data for the panes: host calls, a refresh signal, and the right-sidebar address.
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { callHost } from './api.ts'
+import type { GlyphState } from './glyphs.tsx'
 
 /** Mirrors ThreadSummary in src/api.ts. */
 export interface ThreadView {
@@ -100,6 +101,94 @@ export function useHostValue<T>(method: string | null, payload: unknown, deps: r
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [method, ...deps])
   return value
+}
+
+/** What DSH's client knows about a live session (uiSession.sessionStatus). */
+export interface LiveStatus {
+  running?: boolean
+  pendingInteraction?: { kind?: string }
+}
+
+export type UseStatus = <T>(selector: (statuses: ReadonlyMap<string, LiveStatus>) => T) => T
+
+/** Interactions that wait on the user; the ones DSH's own session list marks (dsh-client-ui-workspace). */
+export type AskKind = 'approval' | 'question' | 'plan-review'
+const ASK_KINDS: ReadonlySet<string> = new Set(['approval', 'question', 'plan-review'])
+
+/** Sessions that run, and sessions that wait on the user (an approval, a question, a plan to review). */
+export interface Live {
+  running: ReadonlySet<string>
+  asking: ReadonlyMap<string, AskKind>
+}
+
+/** Every session's live state as one string: selectors must return stable values. */
+export function liveKey(statuses: ReadonlyMap<string, LiveStatus>): string {
+  const tokens: string[] = []
+  for (const [id, status] of statuses) {
+    if (status.running === true) tokens.push(`r:${id}`)
+    const kind = status.pendingInteraction?.kind
+    if (kind !== undefined && ASK_KINDS.has(kind)) tokens.push(`a:${id}:${kind}`)
+  }
+  return tokens.sort().join(',')
+}
+
+export function parseLive(key: string): Live {
+  const running = new Set<string>()
+  const asking = new Map<string, AskKind>()
+  for (const token of key.split(',')) {
+    if (token.startsWith('r:')) running.add(token.slice(2))
+    else if (token.startsWith('a:')) {
+      const at = token.lastIndexOf(':')
+      asking.set(token.slice(2, at), token.slice(at + 1) as AskKind)
+    }
+  }
+  return { running, asking }
+}
+
+/** Live state of every session, re-rendering only when it changes; `key` also serves as a reload dependency. */
+export function useLive(useSessionStatus: UseStatus): Live & { key: string } {
+  const key = useSessionStatus(liveKey)
+  return useMemo(() => ({ ...parseLive(key), key }), [key])
+}
+
+/** Sections of the threads list, as in Claude's threads panel. */
+export interface ThreadGroups<T> {
+  /** Raised hand: the thread stopped to ask the user something. */
+  waiting: T[]
+  running: T[]
+  /** Not running and not waiting: done, stopped, failed, or never reported. */
+  idle: T[]
+  resolved: T[]
+  archived: T[]
+}
+
+/**
+ * Sort threads into the list's sections, newest activity first, keeping those whose number,
+ * title or latest summary contains `query`. `stateOf` is glyphState with the live running set.
+ */
+export function groupThreads<T extends Pick<ThreadView, 'n' | 'title' | 'archived' | 'lastReport' | 'updatedAt'>>(
+  threads: readonly T[],
+  stateOf: (thread: T) => GlyphState,
+  query = '',
+): ThreadGroups<T> {
+  const needle = query.trim().toLowerCase().replace(/^#/, '')
+  const matches = (thread: T) => needle.length === 0 || String(thread.n) === needle
+    || thread.title.toLowerCase().includes(needle) || (thread.lastReport?.summary.toLowerCase().includes(needle) ?? false)
+  const groups: ThreadGroups<T> = { waiting: [], running: [], idle: [], resolved: [], archived: [] }
+  const newestFirst = [...threads].filter(matches).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.n - a.n)
+  for (const thread of newestFirst) {
+    if (thread.archived) {
+      groups.archived.push(thread)
+      continue
+    }
+    const state = stateOf(thread)
+    const group = state === 'waiting' ? groups.waiting
+      : state === 'running' || state === 'queued' ? groups.running
+      : state === 'resolved' ? groups.resolved
+      : groups.idle
+    group.push(thread)
+  }
+  return groups
 }
 
 /** Right-sidebar resource address of a thread's conversation. */

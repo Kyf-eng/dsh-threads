@@ -5,14 +5,13 @@ import { useState, type ReactNode } from 'react'
 import { glyphState, ThreadGlyph } from './glyphs.tsx'
 import type { Translate } from './locale.ts'
 import { setThreadArchived, setThreadResolved, stopThread } from './resolved.ts'
-import { parseThreadAddress, type ThreadDetail, useHostValue, useThreadsRevision } from './threads.ts'
+import { parseThreadAddress, type ThreadDetail, useHostValue, useLive, type UseStatus, useThreadsRevision } from './threads.ts'
 import { ArchiveIcon, BranchChip, CheckIcon, ExpandIcon, Pill, ReopenIcon, StopIcon } from './ui.tsx'
 
 /** Session-scoped child slot this tab declares; only the declaring entry may render it. */
 export const THREAD_CONVERSATION_SLOT = 'dsh-threads.chat.conversation'
 
 type RenderSlot = (name: string, props: Record<string, unknown>, options?: unknown) => ReactNode
-type UseStatus = <T>(selector: (statuses: ReadonlyMap<string, { running?: boolean }>) => T) => T
 
 export function ThreadChatTab({ useTabInfo, useResource, SessionProvider, renderSlot, useSessionStatus, t, openSession }: {
   useTabInfo: () => { tab: { contentId: string } }
@@ -44,7 +43,8 @@ function ThreadPaneHeader({ threadId, useSessionStatus, t, openSession }: {
   t: Translate
   openSession: (sessionId: string) => void
 }) {
-  const running = useSessionStatus((statuses) => statuses.get(threadId)?.running === true)
+  const live = useLive(useSessionStatus)
+  const running = live.running.has(threadId)
   const revision = useThreadsRevision()
   const thread = useHostValue<ThreadDetail>('threads.get', { id: threadId }, [threadId, running, revision])
   const [busy, setBusy] = useState(false)
@@ -56,7 +56,7 @@ function ThreadPaneHeader({ threadId, useSessionStatus, t, openSession }: {
   }
   return (
     <div className="dsht-pane-head">
-      <ThreadGlyph state={glyphState(thread, running)} />
+      <ThreadGlyph state={glyphState(thread, running, live.asking.has(threadId))} />
       <div className="dsht-pane-text">
         <div className="dsht-pane-title" title={thread.title}><span className="dsht-item-n">#{thread.n}</span>{thread.title}</div>
         <div className="dsht-pane-meta">

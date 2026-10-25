@@ -166,6 +166,15 @@ describe('ThreadManager', () => {
     expect(t.archived.has('session-1')).toBe(false)
   })
 
+  it('counts the messages a main conversation receives, not a thread\'s', async () => {
+    await t.manager.open('main', { title: 'a', task: 'x', initiation: 'user_asked' })
+    await t.manager.onInbox('main', 'user', 1, 'hi')
+    await t.manager.onInbox('main', 'dsh-threads', 2)
+    await t.manager.onInbox('session-1', 'user', 3, 'in the thread')
+    expect(t.manager.inboxCount('main')).toBe(2)
+    expect(t.manager.inboxCount('session-1')).toBe(0)
+  })
+
   it('treats a deleted project\'s threads as ordinary conversations', async () => {
     await t.manager.open('main', { title: 'a', task: 'x', initiation: 'user_asked' })
     await t.manager.onIdle('session-1')

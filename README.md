@@ -1,46 +1,46 @@
 # dsh-threads
 
-English | [中文](README.zh.md)
+中文 | [English](README.en.md)
 
-A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) plugin, modelled on Claude's projects and threads. Your project's main conversation acts as a dispatcher: when a task is self-contained, it opens a **thread** (a real session you can click into and keep talking to), and when the thread finishes, a short report comes back to the main conversation.
+一个 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 插件，照着 Claude 的"项目 + 讨论串"做。项目的主对话当调度员：遇到能独立完成的任务，就开一个**讨论串**——一个你能点进去接着聊的真实会话；讨论串做完后，把简短的回报发回主对话。
 
-> Status: **0.1.0-rc.6**, a pre-release. Built against DeepSeek Harness 0.2.1-rc.2 and tested on 0.2.1-rc.2 and 0.2.1-rc.3. See [CHANGELOG.md](CHANGELOG.md) and the design notes in [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md).
+> 状态：**0.1.0-rc.6**，预发布版。基于 DeepSeek Harness 0.2.1-rc.2 开发，在 0.2.1-rc.2 和 0.2.1-rc.3 上测试过。更新记录见 [CHANGELOG.md](CHANGELOG.md)，设计说明见 [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)。
 
-## What it does
+## 功能
 
-- **Projects**: one folder plus one standing main conversation, with an icon, a goal for the coordinator, and instructions every thread also gets. Create one from **Projects** in the sidebar (the system folder chooser picks the folder), or turn a conversation into a project from its "…" menu. A card's "⋮" menu pins, archives, deletes, sets the project's desktop notifications, and opens its settings (models for the coordinator and threads, usage).
-- **Threads**: the main conversation opens threads for self-contained work, sends follow-ups to them, and suggests threads you did not ask for (they wait in a card above the composer until you start them). Each thread is a real session: open it in the right sidebar and talk to it directly.
-- **Reports**: threads report what is done, what changed and what you need to decide. The main conversation is woken once, when none of its threads is still running, with a guard against wake-up loops. A thread that forgets to report is reminded once.
-- **Parallel and isolated**: up to 3 threads run at once. Threads that change files work in their own git worktree and branch (`dsh-threads/<n>-<id>`), so the project folder is never touched; the main conversation merges only when you ask, and `/thread cleanup` removes finished worktrees.
-- **Claude-style UI**: thread cards in the conversation, "↳ N replies", a raised hand for threads waiting on you, a breathing dot for running ones, file and branch chips. The sidebar has its own **Projects** section: one row per project (its state and ↳N), which opens the main conversation. Project conversations and threads stay out of the workspace list.
+- **项目**：一个文件夹 + 一个常驻主对话，有图标、给协调者的目标，以及所有讨论串也会收到的项目说明。在左侧"项目"里新建（用系统的文件夹选择器选文件夹），或者在会话的"…"菜单里选"设为项目"。卡片的"⋮"菜单可以置顶、归档、删除、设置这个项目的桌面通知，以及打开项目设置（协调器和讨论串的模型、使用情况）。
+- **讨论串**：主对话为能独立完成的工作开讨论串、给讨论串追加指令，也会提出你没要求的建议（放在输入框上方的卡片里，你点了才开始）。每个讨论串都是真实会话：在右侧面板打开，直接和它对话。
+- **回报**：讨论串回报做完了什么、改了哪些文件、要你决定什么。主对话只在它的讨论串都结束后被唤醒一次，并防止反复唤醒；忘了回报的讨论串会被提醒一次。
+- **并行和隔离**：最多 3 个讨论串同时运行。会改文件的讨论串在自己的 git worktree 和分支（`dsh-threads/<n>-<id>`）里工作，不碰项目文件夹；你要求时主对话才合并，`/thread cleanup` 清理做完的 worktree。
+- **Claude 式界面**：对话里的讨论串卡片、"↳ N 条回复"、等你回复时的举手、运行中的呼吸点、文件和分支小标签。左侧有单独的"项目"分组：每个项目一行（显示状态和 ↳N），点进去就是主对话。项目的主对话和讨论串都不出现在"工作区"列表里。
 
-## Install
+## 安装
 
-Requires DeepSeek Harness **0.2.x** (Desktop or Web; tested on 0.2.1-rc.2 and 0.2.1-rc.3) and its `dsh` command line. On Desktop it is set up from the app menu (**Manage dsh command…**). Without it, the command line from npm at your DeepSeek Harness version works too, for example `npx -y @deepseek-ai/dsh@0.2.1-rc.2 plugin --profile web add <address below>`.
+需要 DeepSeek Harness **0.2.x**（桌面版或 Web 版；在 0.2.1-rc.2 和 0.2.1-rc.3 上测试过）和它的 `dsh` 命令行。桌面版在应用菜单的"管理 dsh 命令…"里设置；没有这个命令时，可以用 npm 上和你的 DeepSeek Harness 同版本的命令行，例如 `npx -y @deepseek-ai/dsh@0.2.1-rc.2 plugin --profile web add <下面的地址>`。
 
-1. Quit DeepSeek Harness completely (⌘Q on macOS; also quit from its menu-bar or tray icon if it has one).
-2. Add the plugin to your profile:
+1. 完全退出 DeepSeek Harness（macOS 上按 ⌘Q；有菜单栏或托盘图标的，也要从那里退出）。
+2. 把插件加到你的 profile：
 
    ```sh
    dsh plugin --profile desktop add https://github.com/Kyf-eng/dsh-threads/releases/download/v0.1.0-rc.6/fky-dsh-threads-0.1.0-rc.6.tgz
    ```
 
-   Use `--profile web` for the Web app. `github:Kyf-eng/dsh-threads#v0.1.0-rc.6` works too.
-3. Start DeepSeek Harness. **Projects** appears in the sidebar.
+   Web 版用 `--profile web`。也可以用 `github:Kyf-eng/dsh-threads#v0.1.0-rc.6`。
+3. 启动 DeepSeek Harness，左侧出现"项目"。
 
-To remove it: `dsh plugin --profile desktop remove @fky/dsh-threads`.
+卸载：`dsh plugin --profile desktop remove @fky/dsh-threads`。
 
-## Use
+## 使用
 
-1. **Projects → New project**: name it and pick a folder (any folder; it becomes a workspace if it is not one).
-2. In the project's main conversation, ask for work in the background ("open a thread to…"). You can also type `/thread <task>`, or `/thread -w <task>` for a thread with its own worktree.
-3. Click a thread card to open the thread on the right. Talk to it there; **Stop** it while it runs (or `/thread stop <n>`), **Mark resolved** when you are done with it, and archive it to put it away (archived threads are listed apart and can be unarchived).
-4. When the model suggests threads, start one, all, or none from the card above the composer.
-5. A worktree thread's changes stay on its branch. Merge it yourself or ask the main conversation to, then run `/thread cleanup` (and `/thread cleanup confirm`).
+1. **项目 → 新建项目**：起名，选一个文件夹（任意文件夹，还不是工作区的会自动添加）。
+2. 在项目主对话里让它在后台做事（"开个讨论串去……"）。也可以输入 `/thread <任务>`，或 `/thread -w <任务>` 开一个有独立 worktree 的讨论串。
+3. 点讨论串卡片，在右侧打开它，可以直接聊；运行中可以点"停止"（或 `/thread stop <n>`），做完了点"标记已解决"，不再需要的可以归档（已归档的单独列在最下面，可以取消归档）。
+4. 模型提出建议时，在输入框上方的卡片里开始一个、全部开始或都不要。
+5. worktree 讨论串的改动在它自己的分支上。自己合并或让主对话合并，然后 `/thread cleanup`（再 `/thread cleanup confirm`）。
 
-## Configuration
+## 配置
 
-Add a `config` to the plugin's entry in your profile's `cordis.patch.yml` (for Desktop, `~/.dsh/profiles/desktop/cordis.patch.yml`):
+在 profile 的 `cordis.patch.yml`（桌面版是 `~/.dsh/profiles/desktop/cordis.patch.yml`）里给插件加 `config`：
 
 ```yaml
 - id: dsh-threads
@@ -48,20 +48,20 @@ Add a `config` to the plugin's entry in your profile's `cordis.patch.yml` (for D
     maxRunning: 2
 ```
 
-| Option | Default | Meaning |
+| 配置项 | 默认值 | 含义 |
 | --- | --- | --- |
-| `maxRunning` | 3 | Threads one main conversation may run at once |
-| `maxAutoWakes` | 5 | Automatic wake-ups in a row before reports wait for you (0: never wake automatically) |
-| `noteMaxChars` | 400 | Longest report delivered to the main conversation |
-| `summaryMaxChars` | 300 | Longest summary a thread may submit |
-| `proposalTtlDays` | 7 | Days before an unstarted suggestion expires |
-| `maxProposalsPerTurn` | 3 | Suggestions the model may make at once |
-| `reportReminder` | true | Remind a thread once when it ends a task without reporting |
-| `inheritPermissionPreset` | true | Threads get the main conversation's permission preset |
+| `maxRunning` | 3 | 一个主对话同时能跑几个讨论串 |
+| `maxAutoWakes` | 5 | 连续自动唤醒几次后，回报改为等你开口（0 表示从不自动唤醒） |
+| `noteMaxChars` | 400 | 发回主对话的回报最长多少字 |
+| `summaryMaxChars` | 300 | 讨论串摘要最长多少字 |
+| `proposalTtlDays` | 7 | 没开始的建议几天后过期 |
+| `maxProposalsPerTurn` | 3 | 模型一次最多提几个建议 |
+| `reportReminder` | true | 讨论串做完任务却没回报时，提醒它一次 |
+| `inheritPermissionPreset` | true | 讨论串沿用主对话的权限模式 |
 
-## Troubleshooting
+## 排错
 
-- **DeepSeek Harness crashes while Developer tools are on**, with `inspector: source state exceeds the source-frame byte limit` in the log: this is DSH's experimental inspector, and any profile with many plugins can hit it. Add the following to the end of your profile's `cordis.patch.yml` to raise the frame limit to 1 MB (keep `captureFetch: true` in it). Do **not** choose "disable third-party plugins" in the crash dialog: it disables every third-party plugin.
+- **开着"开发者工具"时 DeepSeek Harness 崩溃**，日志里有 `inspector: source state exceeds the source-frame byte limit`：这是 DSH 实验性检查器的问题，插件多的 profile 都可能碰到。在 profile 的 `cordis.patch.yml` 末尾加下面一段，把单帧上限调到 1MB（要连 `captureFetch: true` 一起写）。**不要**点崩溃对话框里的"禁用第三方插件"，那会把所有第三方插件一起禁掉。
 
   ```yaml
   - id: experimental-inspector
@@ -70,27 +70,27 @@ Add a `config` to the plugin's entry in your profile's `cordis.patch.yml` (for D
       maxSourceFrameBytes: 1048576
   ```
 
-- **No desktop notifications**: none are sent while DeepSeek Harness is in front (the sidebar marks are enough). If they also do not arrive while it is in the background, check the system's notification settings: System Settings → Notifications → DeepSeek Harness on macOS, Settings → System → Notifications on Windows, and your desktop environment's notification service on Linux. The Web app asks for the browser's permission the first time.
+- **收不到桌面通知**：DeepSeek Harness 在前台时不发通知（侧栏的记号已经够了）。在后台也收不到时，看系统的通知设置：macOS 是"系统设置 → 通知 → DeepSeek Harness"，Windows 是"设置 → 系统 → 通知"，Linux 取决于桌面环境的通知服务。Web 版第一次会请求浏览器的通知权限。
 
-## Known limitations
+## 已知限制
 
-- DeepSeek Harness lists 5 sessions per workspace and counts hidden threads among them, so a workspace with many threads shows fewer rows, and its "show N more" count includes threads.
-- A worktree starts from the folder's last commit: uncommitted changes are not in it, and dependencies (`node_modules`, …) have to be installed there.
-- There is no spending cap: apart from how many run at once, threads may use as many tokens as they need. Project settings → Usage shows what they used.
+- DeepSeek Harness 每个工作区默认只列 5 个会话，隐藏的讨论串也算在里面，所以讨论串多的工作区里可见的行会变少，"展开其余 N 个会话"的 N 也包含讨论串。
+- worktree 从文件夹最后一次提交开出：没提交的改动不在里面，依赖（`node_modules` 等）要在 worktree 里重新装。
+- 没有花费上限：除了同时运行的数量，讨论串用多少 token 不设限。用量在项目设置的"使用情况"里看。
 
-## Development
+## 开发
 
-Requires Node ≥ 22.19.
+需要 Node ≥ 22.19。
 
 ```sh
 npm install
 npm run check
-# quit DeepSeek Harness completely, then:
+# 完全退出 DeepSeek Harness 后：
 npm run dev:install
 ```
 
-`dev:install` uses the `dsh` inside the macOS Desktop app. For any other install, run `DSH_CLI=<path to dsh> npm run dev:install`; `DSH_PROFILE` picks the profile (default `desktop`). Conventions and how to test: [CONTRIBUTING.md](CONTRIBUTING.md).
+`dev:install` 默认用 macOS 桌面版自带的 `dsh`。其他安装方式用 `DSH_CLI=<dsh 命令的路径> npm run dev:install`，`DSH_PROFILE` 指定 profile（默认 `desktop`）。约定和测试方法见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
-## License
+## 协议
 
 MIT

@@ -290,7 +290,7 @@ dsh-thread/                    # 本地目录名不变；GitHub 仓库叫 dsh-th
   locale/en.json  locale/zh.json   # { meta: { title, description } }
   tests/                       # vitest：store、delivery 规则、report、状态机，ctx 用假对象
   docs/Plan.md  docs/IMPLEMENTATION.md
-  CLAUDE.md  README.md  README.zh.md  LICENSE  CHANGELOG.md  .gitignore
+  CLAUDE.md  README.md  README.en.md  LICENSE  CHANGELOG.md  .gitignore
 ```
 
 **依赖**

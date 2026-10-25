@@ -1,6 +1,6 @@
 {
   "name": "@kyf-eng/dsh-threads",
-  "version": "0.1.0-rc.6",
+  "version": "0.1.0-rc.7",
   "description": "DeepSeek Harness plugin: the main conversation dispatches work into real thread sessions and gets short summaries back.",
   "keywords": [
     "deepseek-harness",

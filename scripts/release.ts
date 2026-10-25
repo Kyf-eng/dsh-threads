@@ -60,7 +60,7 @@ export function prepareRelease(input: ReleaseInput): Release {
     `dsh plugin --profile desktop add ${download}`,
     '```',
     '',
-    `Use \`--profile web\` for the Web app. If an earlier version is installed, this command replaces it. Usage, configuration and known limitations: [README（中文）](https://github.com/${repository}#readme) · [English](https://github.com/${repository}/blob/main/README.en.md).`,
+    `Use \`--profile web\` for the Web app. If an earlier version of \`${pkg.name}\` is installed, this command replaces it. Usage, configuration and known limitations: [README（中文）](https://github.com/${repository}#readme) · [English](https://github.com/${repository}/blob/main/README.en.md).`,
     '',
     '## Changes',
     '',

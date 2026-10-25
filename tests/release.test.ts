@@ -31,6 +31,7 @@ describe('release', () => {
     expect(release).toMatchObject({ version: '0.2.0', prerelease: false, tarball: 'kyf-eng-dsh-threads-0.2.0.tgz' })
     expect(release.notes.startsWith('Projects learn to wait.\n\n## Install\n')).toBe(true)
     expect(release.notes).toContain(`dsh plugin --profile desktop add ${url}`)
+    expect(release.notes).toContain('If an earlier version of `@kyf-eng/dsh-threads` is installed, this command replaces it.')
     expect(release.notes.endsWith('## Changes\n\n- Waiting projects.\n- Fix: a thing.\n')).toBe(true)
     expect(prepareRelease({ ...input, tag: 'v0.2.0-rc.1', pkg: { ...input.pkg, version: '0.2.0-rc.1' }, changelog: changelog.replace('0.2.0 —', '0.2.0-rc.1 —'), readmes: {} }).prerelease).toBe(true)
   })

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.0-rc.7 — 2026-10-24
+
+Fixes from the first test on Windows, and a new package name: **`@kyf-eng/dsh-threads`** (it was `@fky/dsh-threads`). The new name does not replace the old one: quit DeepSeek Harness completely, run `dsh plugin --profile desktop remove @fky/dsh-threads`, then install this version. Projects and threads are kept.
+
+- The package is now `@kyf-eng/dsh-threads`, under the maintainer's own npm name (the same as on GitHub); `fky` on npm belongs to someone else. Projects and threads live in DeepSeek Harness's own storage, so removing the old package does not lose them.
+- Fix: where DeepSeek Harness cannot find git (Windows without Git for Windows), a worktree thread was refused with "the project folder is not a git repository". It now says git was not found and how to fix it; other git errors (such as Windows' "dubious ownership") are quoted as git wrote them.
+- Threads and the coordinator no longer get around checks: no skipping git hooks with `--no-verify`, no editing hooks or deleting what they wrote, no changing file permissions, execution policies, the sandbox or global git settings to make a command work. A thread stopped by a hook or a permission reports "blocked" with the error; the coordinator tells you what failed instead of repairing the system itself. On Windows, a thread had committed past a failing hook and the coordinator had loosened PowerShell's execution policy.
+- The README is in Chinese by default; the English one is `README.en.md`.
+
 ## 0.1.0-rc.6 — 2026-10-24
 
 Release candidate after the release review: fixes found in it, stopping and archiving threads, both languages on the host side, a threads panel after Claude's, a coordinator that leads instead of doing the work itself, and testing on DeepSeek Harness 0.2.1-rc.3.

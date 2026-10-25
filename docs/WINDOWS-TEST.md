@@ -152,13 +152,13 @@
    一般在 `resources\runtime\cli\bin` 下。找不到时，请操作者打开 DSH，在应用菜单里找“管理 dsh 命令…”，照提示装好后用 `Get-Command dsh` 找。
 5. 请操作者：打开 DeepSeek Harness，用自己的 DeepSeek 账号登录，随便发一句“你好”确认能回复；然后**完全退出** DSH（右下角托盘图标里也要退出）。你用 `Get-Process | Where-Object ProcessName -like '*DeepSeek*'` 确认没有残留进程。
 
-## 第 2 步：安装插件 dsh-threads 0.1.0-rc.7
+## 第 2 步：安装插件 dsh-threads 0.1.0-rc.8
 
 1. DSH 完全退出后执行，完整输出存到 `D:\dsh-test\logs\plugin-add.txt`：
    ```powershell
-   & $dsh plugin --profile desktop add 'https://github.com/Kyf-eng/dsh-threads/releases/download/v0.1.0-rc.7/kyf-eng-dsh-threads-0.1.0-rc.7.tgz' *>&1 | Tee-Object D:\dsh-test\logs\plugin-add.txt
+   & $dsh plugin --profile desktop add 'https://github.com/Kyf-eng/dsh-threads/releases/download/v0.1.0-rc.8/kyf-eng-dsh-threads-0.1.0-rc.8.tgz' *>&1 | Tee-Object D:\dsh-test\logs\plugin-add.txt
    ```
-   失败的话再试 `& $dsh plugin --profile desktop add 'github:Kyf-eng/dsh-threads#v0.1.0-rc.7'`，两次的输出都记下来。
+   失败的话再试 `& $dsh plugin --profile desktop add 'github:Kyf-eng/dsh-threads#v0.1.0-rc.8'`，两次的输出都记下来。
 2. 找到 DSH 的数据目录（含 `profiles\desktop\package.json` 的那个 `.dsh`，一般是 `%USERPROFILE%\.dsh`），记为 `$dshHome`，确认 `profiles\desktop\package.json` 里有 `@kyf-eng/dsh-threads`。
 3. 请操作者打开 DSH，确认：左侧导航里有“项目”入口；导航下面有一个“项目”分组（带“+”）。截图存到 `D:\dsh-test\logs\01-sidebar.png`（操作者截图后告诉你文件名，或你用 PowerShell 截屏也行）。
 

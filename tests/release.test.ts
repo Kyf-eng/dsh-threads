@@ -18,7 +18,7 @@ Projects learn to wait.
 `
 const url = 'https://github.com/o/r/releases/download/v0.2.0/fky-dsh-threads-0.2.0.tgz'
 const readme = `dsh plugin --profile desktop add ${url}\n\`github:o/r#v0.2.0\` works too.`
-const input = { tag: 'v0.2.0', pkg: { name: '@fky/dsh-threads', version: '0.2.0' }, changelog, readmes: { 'README.md': readme, 'README.zh.md': readme }, repository: 'o/r' }
+const input = { tag: 'v0.2.0', pkg: { name: '@fky/dsh-threads', version: '0.2.0' }, changelog, readmes: { 'README.md': readme, 'README.en.md': readme }, repository: 'o/r' }
 
 describe('release', () => {
   it('reads one CHANGELOG section', () => {
@@ -38,6 +38,6 @@ describe('release', () => {
   it('refuses a tag the package, CHANGELOG or READMEs do not agree with', () => {
     expect(() => prepareRelease({ ...input, tag: 'v0.2.1' })).toThrow(/does not match package.json version 0.2.0[\s\S]*README.md does not install from/)
     expect(() => prepareRelease({ ...input, changelog: '# Changelog\n' })).toThrow('CHANGELOG.md has no "## 0.2.0')
-    expect(() => prepareRelease({ ...input, readmes: { 'README.zh.md': 'old' } })).toThrow('README.zh.md does not install from')
+    expect(() => prepareRelease({ ...input, readmes: { 'README.en.md': 'old' } })).toThrow('README.en.md does not install from')
   })
 })

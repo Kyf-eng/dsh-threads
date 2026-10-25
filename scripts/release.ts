@@ -1,7 +1,7 @@
 // Release checks and notes, run by .github/workflows/release.yml when a `v*` tag is pushed:
 //   node scripts/release.ts <tag> <notes-file>
 // It fails unless the tag, package.json's version, a CHANGELOG heading and the README install
-// addresses (English and Chinese) all name the same version, then writes the GitHub Release
+// addresses (Chinese and English) all name the same version, then writes the GitHub Release
 // notes: the CHANGELOG section's opening paragraph, the install command, and its list of changes.
 import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -60,7 +60,7 @@ export function prepareRelease(input: ReleaseInput): Release {
     `dsh plugin --profile desktop add ${download}`,
     '```',
     '',
-    `Use \`--profile web\` for the Web app. If an earlier version is installed, this command replaces it. Usage, configuration and known limitations: [README](https://github.com/${repository}#readme) · [中文](https://github.com/${repository}/blob/main/README.zh.md).`,
+    `Use \`--profile web\` for the Web app. If an earlier version is installed, this command replaces it. Usage, configuration and known limitations: [README（中文）](https://github.com/${repository}#readme) · [English](https://github.com/${repository}/blob/main/README.en.md).`,
     '',
     '## Changes',
     '',
@@ -78,7 +78,7 @@ function main(argv: string[]): void {
   const release = prepareRelease({
     tag, pkg, repository,
     changelog: read('CHANGELOG.md'),
-    readmes: { 'README.md': read('README.md'), 'README.zh.md': read('README.zh.md') },
+    readmes: { 'README.md': read('README.md'), 'README.en.md': read('README.en.md') },
   })
   writeFileSync(notesFile, release.notes)
   // For the workflow's next steps.

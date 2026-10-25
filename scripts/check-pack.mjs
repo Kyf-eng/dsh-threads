@@ -2,7 +2,7 @@
 import { execFileSync } from 'node:child_process'
 
 const REQUIRED = ['package.json', 'cordis.patch.yml', 'dist/index.js', 'dist/client.js', 'locale/en.json', 'locale/zh.json', 'icon.svg', 'LICENSE']
-const ALLOWED = [...REQUIRED, 'README.md', 'README.zh.md', 'CHANGELOG.md']
+const ALLOWED = [...REQUIRED, 'README.md', 'README.en.md', 'CHANGELOG.md']
 
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm'
 const [pack] = JSON.parse(execFileSync(npm, ['pack', '--dry-run', '--json'], { encoding: 'utf8', shell: process.platform === 'win32' }))

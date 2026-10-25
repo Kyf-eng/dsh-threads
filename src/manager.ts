@@ -110,6 +110,8 @@ export class ThreadManager {
   private readonly openings = new Map<string, Promise<unknown>>()
   /** Threads whose round ended but whose note is not queued yet; delivery counts them as running. */
   private readonly settling = new Set<string>()
+  /** Messages each non-thread session has received since the plugin loaded; the lead reminder follows it. */
+  private readonly inboxCounts = new Map<string, number>()
 
   constructor(private readonly deps: ManagerDeps) {}
 
@@ -130,6 +132,15 @@ export class ThreadManager {
   worktreeOf(sessionId: string): ThreadWorktree | null {
     const worktree = this.deps.store.thread(sessionId)?.worktree ?? null
     return worktree === null || worktree.removed ? null : worktree
+  }
+
+  /**
+   * How many messages (the user's, or our reports) a main conversation has received since the
+   * plugin loaded. Its lead reminder carries this number, so DSH, which adds a runtime-context
+   * snapshot only when the text changes, puts a fresh reminder after each new message.
+   */
+  inboxCount(sessionId: string): number {
+    return this.inboxCounts.get(sessionId) ?? 0
   }
 
   /** Only a project's main conversation dispatches threads (as in Claude). */
@@ -293,6 +304,7 @@ export class ThreadManager {
    * round; in any round, the user's words are kept for the report.
    */
   async onInbox(sessionId: string, sourceKind: string, seq: number, text = ''): Promise<void> {
+    if (!this.isThread(sessionId)) this.inboxCounts.set(sessionId, this.inboxCount(sessionId) + 1)
     if (sourceKind !== 'user') return
     const thread = this.deps.store.thread(sessionId)
     if (thread === undefined) {

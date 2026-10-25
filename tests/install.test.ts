@@ -11,11 +11,12 @@ interface FakeSession {
   id: string
   tools: string[]
   sections: { name: string; text: string | (() => string) }[]
+  contexts: { name: string; text: string | (() => string) }[]
   disposed: string[]
 }
 
 function fakeAgent(id: string, origin?: string) {
-  const session: FakeSession = { id, tools: [], sections: [], disposed: [] }
+  const session: FakeSession = { id, tools: [], sections: [], contexts: [], disposed: [] }
   const agent = {
     id,
     session: { header: { origin } },
@@ -25,6 +26,10 @@ function fakeAgent(id: string, origin?: string) {
         section: (section: { name: string; text: string | (() => string) }) => {
           session.sections.push(section)
           return () => session.disposed.push(section.name)
+        },
+        context: (context: { name: string; text: string | (() => string) }) => {
+          session.contexts.push(context)
+          return () => session.disposed.push(context.name)
         },
       },
     },
@@ -74,8 +79,14 @@ describe('installPerAgent', () => {
     expect(h.main.sections.map((s) => s.name)).toEqual(['dsh-threads-project', 'dsh-threads'])
     expect(text(h.main.sections[0]!)).toContain('# Project: P')
     expect(text(h.main.sections[1]!)).toContain('# Threads (dsh-threads)')
+    // The lead reminder next to each new message: its number follows the messages the main conversation received.
+    expect(h.main.contexts.map((c) => c.name)).toEqual(['dsh-threads-lead'])
+    expect(text(h.main.contexts[0]!)).toContain('reminder (message 0)')
+    void h.t.manager.onInbox('main', 'user', 1, 'hi')
+    expect(text(h.main.contexts[0]!)).toContain('reminder (message 1)')
     expect(h.plain.tools).toEqual([])
     expect(h.plain.sections).toEqual([])
+    expect(h.plain.contexts).toEqual([])
   })
 
   it('gives a thread thread_report and the thread prompt, and subagents nothing', async () => {
@@ -95,7 +106,7 @@ describe('installPerAgent', () => {
     await h.t.manager.onIdle('session-1')
 
     await h.projects.remove('project-1')
-    expect(h.main.disposed.sort()).toEqual(['dsh-threads', 'dsh-threads-project', 'thread_open', 'thread_propose', 'thread_reply', 'thread_status'])
+    expect(h.main.disposed.sort()).toEqual(['dsh-threads', 'dsh-threads-lead', 'dsh-threads-project', 'thread_open', 'thread_propose', 'thread_reply', 'thread_status'])
     expect(thread.disposed.sort()).toEqual(['dsh-threads', 'dsh-threads-project', 'thread_report'])
 
     // Making the old main conversation a project again: the main conversation and its thread get their tools back.
@@ -107,9 +118,9 @@ describe('installPerAgent', () => {
   it('cleans up when a session goes away and when the plugin unloads', () => {
     const h = harness()
     h.dispose('main')
-    expect(h.main.disposed).toHaveLength(6)
+    expect(h.main.disposed).toHaveLength(7)
     const other = harness()
     other.unload()
-    expect(other.main.disposed).toHaveLength(6)
+    expect(other.main.disposed).toHaveLength(7)
   })
 })

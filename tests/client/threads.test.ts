@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { glyphState } from '../../src/client/glyphs.tsx'
-import { groupThreads, type ThreadView } from '../../src/client/threads.ts'
+import { groupThreads, liveKey, parseLive, type ThreadView } from '../../src/client/threads.ts'
 
 const report = (status: 'done' | 'needs_decision', summary = '') => ({ status, summary, changedFiles: [], decisions: [], at: '' })
 const thread = (n: number, patch: Partial<ThreadView> = {}): ThreadView => ({
@@ -38,5 +38,28 @@ describe('groupThreads', () => {
     expect(ids(groupThreads(threads, state, '#2').waiting)).toEqual([2])
     expect(ids(groupThreads(threads, state, 'SKIN').waiting)).toEqual([2])
     expect(Object.values(groupThreads(threads, state, 'nothing')).flat()).toEqual([])
+  })
+})
+
+describe('live state', () => {
+  it('keeps who runs and who waits on the user, ignoring our own resolved marker', () => {
+    const statuses = new Map([
+      ['session-1', { running: true }],
+      ['session-2', { running: true, pendingInteraction: { kind: 'approval' } }],
+      ['session-3', { running: false, pendingInteraction: { kind: 'dsh-threads-resolved' } }],
+      ['session-4', { pendingInteraction: { kind: 'plan-review' } }],
+    ])
+    const live = parseLive(liveKey(statuses))
+    expect([...live.running].sort()).toEqual(['session-1', 'session-2'])
+    expect([...live.asking]).toEqual([['session-2', 'approval'], ['session-4', 'plan-review']])
+    // Same state, same key: selectors stay stable.
+    expect(liveKey(new Map([...statuses].reverse()))).toBe(liveKey(statuses))
+  })
+
+  it('shows a running thread that holds an approval as waiting', () => {
+    const running = thread(8, { status: 'running', lastReport: null })
+    expect(glyphState(running, true)).toBe('running')
+    expect(glyphState(running, true, true)).toBe('waiting')
+    expect(groupThreads([running], (t) => glyphState(t, true, true)).waiting.map((t) => t.n)).toEqual([8])
   })
 })

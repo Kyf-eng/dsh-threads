@@ -6,10 +6,9 @@ import { callHost } from './api.ts'
 import { ThreadGlyph } from './glyphs.tsx'
 import { ThreadsIcon } from './icons.tsx'
 import type { Translate } from './locale.ts'
-import { type ProposalView, threadsRevision, useHostValue, useThreadsRevision } from './threads.ts'
+import { type ProposalView, threadsRevision, useHostValue, type UseStatus, useThreadsRevision } from './threads.ts'
 import { BranchIcon, CardHead, CloseIcon, Pill, StartIcon } from './ui.tsx'
 
-type UseStatus = <T>(selector: (statuses: ReadonlyMap<string, { running?: boolean }>) => T) => T
 
 export function ProposalsDock({ sessionId, useSessionStatus, t }: {
   sessionId: string | undefined

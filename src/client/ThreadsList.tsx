@@ -1,16 +1,16 @@
 // The thread list (right-sidebar "Threads" tab) and the conversation-header entry that opens it.
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { type GlyphState, glyphState, ThreadGlyph } from './glyphs.tsx'
 import { SearchIcon, ThreadsIcon } from './icons.tsx'
-import { relativeTime, type Translate } from './locale.ts'
-import { groupThreads, type SessionRole, type ThreadView, useHostValue, useThreadsRevision } from './threads.ts'
+import { type MessageKey, relativeTime, type Translate } from './locale.ts'
+import { type AskKind, groupThreads, type Live, type SessionRole, type ThreadView, useHostValue, useLive, type UseStatus, useThreadsRevision } from './threads.ts'
 import { BranchChip, ChevronIcon, FileIcon, Pill } from './ui.tsx'
 
-type UseStatus = <T>(selector: (statuses: ReadonlyMap<string, { running?: boolean }>) => T) => T
+/** What the list says a thread waits for while it holds an approval, a question or a plan. */
+const ASK_KEYS = { approval: 'ask.approval', question: 'ask.question', 'plan-review': 'ask.planReview' } as const satisfies Record<AskKind, MessageKey>
 
-const runningIds = (statuses: ReadonlyMap<string, { running?: boolean }>) =>
-  [...statuses].filter(([, state]) => state.running === true).map(([id]) => id).sort().join(',')
+const stateIn = (live: Live) => (thread: ThreadView) => glyphState(thread, live.running.has(thread.id), live.asking.has(thread.id))
 
 /** The project main conversation a session belongs to (itself, or the main of its thread). */
 function useProjectMain(sessionId: string | undefined, revision: number) {
@@ -18,9 +18,8 @@ function useProjectMain(sessionId: string | undefined, revision: number) {
   return { role, mainSessionId: role?.project?.mainSessionId }
 }
 
-function useThreads(mainSessionId: string | undefined, useSessionStatus: UseStatus, revision: number) {
-  const running = useSessionStatus(runningIds)
-  return useHostValue<ThreadView[]>(mainSessionId === undefined ? null : 'threads.list', { mainSessionId }, [mainSessionId, running, revision])
+function useThreads(mainSessionId: string | undefined, liveKey: string, revision: number) {
+  return useHostValue<ThreadView[]>(mainSessionId === undefined ? null : 'threads.list', { mainSessionId }, [mainSessionId, liveKey, revision])
 }
 
 type SectionId = 'waiting' | 'running' | 'idle' | 'resolved' | 'archived'
@@ -39,16 +38,15 @@ export function ThreadsListTab({ sessionId, useSessionStatus, t, openThread, ope
 }) {
   const revision = useThreadsRevision()
   const { role, mainSessionId } = useProjectMain(sessionId, revision)
-  const threads = useThreads(mainSessionId, useSessionStatus, revision)
-  // Selectors must return stable values: select the joined ids, derive the set here.
-  const runningKey = useSessionStatus(runningIds)
-  const running = useMemo(() => new Set(runningKey.split(',')), [runningKey])
+  const live = useLive(useSessionStatus)
+  const threads = useThreads(mainSessionId, live.key, revision)
   // null: the search field is closed.
   const [query, setQuery] = useState<string | null>(null)
   const [folded, setFolded] = useState<Partial<Record<SectionId, boolean>>>({ archived: true })
   if (role === undefined) return null
   if (role.project === null) return <div className="dsht-tab">{t('list.notProject')}</div>
-  const groups = groupThreads(threads ?? [], (thread) => glyphState(thread, running.has(thread.id)), query ?? '')
+  const stateOf = stateIn(live)
+  const groups = groupThreads(threads ?? [], stateOf, query ?? '')
   const searching = (query ?? '').trim().length > 0
   const nothing = searching && Object.values(groups).every((list) => list.length === 0)
 
@@ -66,7 +64,7 @@ export function ThreadsListTab({ sessionId, useSessionStatus, t, openThread, ope
         {list.length === 0
           ? <div className="dsht-section-empty">{empty}</div>
           : open ? <div className="dsht-rows">{list.map((thread) => (
-              <ThreadRow key={thread.id} thread={thread} state={glyphState(thread, running.has(thread.id))} t={t} onOpen={() => openThread(thread.id)} />
+              <ThreadRow key={thread.id} thread={thread} state={stateOf(thread)} asking={live.asking.get(thread.id)} t={t} onOpen={() => openThread(thread.id)} />
             ))}</div> : null}
       </section>
     )
@@ -100,11 +98,11 @@ export function ThreadsListTab({ sessionId, useSessionStatus, t, openThread, ope
 }
 
 /** One thread in the list: state mark, number and title, time; what it waits on; its files and branch. */
-function ThreadRow({ thread, state, t, onOpen }: { thread: ThreadView; state: GlyphState; t: Translate; onOpen: () => void }) {
+function ThreadRow({ thread, state, asking, t, onOpen }: { thread: ThreadView; state: GlyphState; asking: AskKind | undefined; t: Translate; onOpen: () => void }) {
   const report = thread.lastReport
   const files = report?.changedFiles ?? []
   const branch = thread.worktree === null || thread.worktree.removed ? undefined : thread.worktree.branch
-  const decision = state === 'waiting' ? report?.decisions[0] ?? report?.summary : undefined
+  const decision = asking !== undefined ? t(ASK_KEYS[asking]) : state === 'waiting' ? report?.decisions[0] ?? report?.summary : undefined
   return (
     <div className={`dsht-row dsht-row-${state}`} role="button" tabIndex={0} onClick={onOpen}
       onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen() } }}>
@@ -141,7 +139,8 @@ export function ThreadsHeaderAction({ sessionId, useSessionStatus, t, openThread
   const revision = useThreadsRevision()
   const { role, mainSessionId } = useProjectMain(sessionId, revision)
   const isMain = mainSessionId !== undefined && mainSessionId === sessionId
-  const threads = useThreads(isMain ? mainSessionId : undefined, useSessionStatus, revision)
+  const live = useLive(useSessionStatus)
+  const threads = useThreads(isMain ? mainSessionId : undefined, live.key, revision)
   if (role === undefined || role.project === null) return null
   if (role.thread) {
     const main = role.project.mainSessionId
@@ -150,7 +149,7 @@ export function ThreadsHeaderAction({ sessionId, useSessionStatus, t, openThread
   if (!isMain) return null
   const count = threads?.filter((thread) => !thread.archived).length ?? 0
   const active = threads?.filter((thread) => thread.status === 'running' || thread.status === 'starting').length ?? 0
-  const waiting = threads?.filter((thread) => glyphState(thread) === 'waiting').length ?? 0
+  const waiting = threads?.filter((thread) => stateIn(live)(thread) === 'waiting').length ?? 0
   const mark = waiting > 0 ? <ThreadGlyph state="waiting" /> : active > 0 ? <ThreadGlyph state="running" /> : <ThreadsIcon size={14} />
   return (
     <Button size="sm" variant="ghost" icon={mark} onClick={openThreadsList}>

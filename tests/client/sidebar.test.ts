@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { projectOnlyWorkspaces, sidebarCss, sidebarProjects } from '../../src/client/kinds.ts'
 
-const main = { icon: 'folder', threads: 2, running: 1, waiting: 0 }
+const main = { icon: 'folder', threads: 2, running: 1, waiting: 0, threadIds: ['session-a'] }
 
 describe('sidebarCss', () => {
   it('hides thread and main conversation rows, and project-only workspaces with their "show more" row', () => {

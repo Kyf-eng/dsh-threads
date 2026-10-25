@@ -359,6 +359,42 @@ function useHostValue(method, payload, deps) {
 	}, [method, ...deps]);
 	return value;
 }
+const ASK_KINDS = /* @__PURE__ */ new Set([
+	"approval",
+	"question",
+	"plan-review"
+]);
+/** Every session's live state as one string: selectors must return stable values. */
+function liveKey(statuses) {
+	const tokens = [];
+	for (const [id, status] of statuses) {
+		if (status.running === true) tokens.push(`r:${id}`);
+		const kind = status.pendingInteraction?.kind;
+		if (kind !== void 0 && ASK_KINDS.has(kind)) tokens.push(`a:${id}:${kind}`);
+	}
+	return tokens.sort().join(",");
+}
+function parseLive(key) {
+	const running = /* @__PURE__ */ new Set();
+	const asking = /* @__PURE__ */ new Map();
+	for (const token of key.split(",")) if (token.startsWith("r:")) running.add(token.slice(2));
+	else if (token.startsWith("a:")) {
+		const at = token.lastIndexOf(":");
+		asking.set(token.slice(2, at), token.slice(at + 1));
+	}
+	return {
+		running,
+		asking
+	};
+}
+/** Live state of every session, re-rendering only when it changes; `key` also serves as a reload dependency. */
+function useLive(useSessionStatus) {
+	const key = useSessionStatus(liveKey);
+	return (0, react.useMemo)(() => ({
+		...parseLive(key),
+		key
+	}), [key]);
+}
 /**
 * Sort threads into the list's sections, newest activity first, keeping those whose number,
 * title or latest summary contains `query`. `stateOf` is glyphState with the live running set.
@@ -525,10 +561,15 @@ function wantsNotification(level, kind, waiting) {
 	switch (level) {
 		case "all": return true;
 		case "attention": return kind === "main" || waiting;
-		case "waiting": return kind === "thread" && waiting;
+		case "waiting": return waiting;
 		case "none": return false;
 	}
 }
+const ASK_KEYS$1 = {
+	approval: "ask.approval",
+	question: "ask.question",
+	"plan-review": "ask.planReview"
+};
 const STATUS_KEYS$1 = {
 	done: "status.done",
 	blocked: "status.blocked",
@@ -536,12 +577,16 @@ const STATUS_KEYS$1 = {
 	failed: "status.failed",
 	"no-report": "status.noReport"
 };
-function message(target, t) {
+function message(target, t, asking) {
+	const title = target.kind === "main" ? target.projectTitle : `${target.projectTitle} · #${target.n} ${target.title}`;
+	if (asking !== void 0) return {
+		title,
+		body: t(ASK_KEYS$1[asking])
+	};
 	if (target.kind === "main") return {
 		title: target.projectTitle,
 		body: t("notifyMsg.main", { text: target.text || "…" })
 	};
-	const title = `${target.projectTitle} · #${target.n} ${target.title}`;
 	if (target.waiting) return {
 		title,
 		body: t("notifyMsg.waiting", { text: target.text || "…" })
@@ -556,19 +601,24 @@ function startNotifications(deps) {
 	const { status } = deps;
 	if (status === void 0 || typeof Notification === "undefined") return () => {};
 	let running = /* @__PURE__ */ new Set();
+	let asking = /* @__PURE__ */ new Map();
 	let finished = /* @__PURE__ */ new Set();
+	/** Sessions that started waiting on the user since the last batch. */
+	let started = /* @__PURE__ */ new Map();
 	let pending;
 	let disposed = false;
 	const flush = async () => {
-		const ids = [...finished];
+		const asks = started;
+		const ids = [.../* @__PURE__ */ new Set([...finished, ...asks.keys()])];
 		finished = /* @__PURE__ */ new Set();
+		started = /* @__PURE__ */ new Map();
 		if (ids.length === 0 || !inBackground()) return;
-		const wanted = (await callHost("notifications.describe", { ids }).catch(() => [])).filter((target) => wantsNotification(target.level, target.kind, target.waiting));
+		const wanted = (await callHost("notifications.describe", { ids }).catch(() => [])).filter((target) => wantsNotification(target.level, target.kind, target.waiting || asks.has(target.sessionId)));
 		if (disposed || wanted.length === 0) return;
 		if (Notification.permission === "default") await Notification.requestPermission().catch(() => "denied");
 		if (Notification.permission !== "granted") return;
 		for (const target of wanted) {
-			const { title, body } = message(target, deps.t);
+			const { title, body } = message(target, deps.t, asks.get(target.sessionId));
 			const shown = new Notification(title, {
 				body,
 				tag: `dsh-threads:${target.sessionId}`
@@ -582,16 +632,20 @@ function startNotifications(deps) {
 		}
 	};
 	const off = status.subscribe(() => {
-		const next = new Set([...status.getSnapshot()].filter(([, state]) => state.running === true).map(([id]) => id));
-		for (const id of running) if (!next.has(id)) finished.add(id);
-		running = next;
-		if (finished.size === 0) return;
+		const next = parseLive(liveKey(status.getSnapshot()));
+		for (const id of running) if (!next.running.has(id)) finished.add(id);
+		for (const [id, kind] of next.asking) if (!asking.has(id)) started.set(id, kind);
+		running = next.running;
+		asking = next.asking;
+		if (finished.size === 0 && started.size === 0) return;
 		if (pending !== void 0) clearTimeout(pending);
 		pending = setTimeout(() => {
 			flush();
 		}, 600);
 	});
-	running = new Set([...status.getSnapshot()].filter(([, state]) => state.running === true).map(([id]) => id));
+	const first = parseLive(liveKey(status.getSnapshot()));
+	running = first.running;
+	asking = first.asking;
 	return () => {
 		disposed = true;
 		if (pending !== void 0) clearTimeout(pending);
@@ -600,7 +654,8 @@ function startNotifications(deps) {
 }
 // src/client/glyphs.tsx
 /** The one place thread data turns into a state mark. */
-function glyphState(thread, running = false) {
+function glyphState(thread, running = false, asking = false) {
+	if (asking) return "waiting";
 	if (running || thread.status === "running" || thread.status === "starting") return "running";
 	if (thread.status === "failed") return "failed";
 	if (thread.resolved) return "resolved";
@@ -1077,11 +1132,10 @@ function NoticeCard({ node, sessionId, useSessionStatus, t, openThread }) {
 */
 function ReportCard({ cards, sessionId, useSessionStatus, t, openThread }) {
 	const revision = useThreadsRevision();
-	const runningKey = useSessionStatus((statuses) => [...statuses].filter(([, state]) => state.running === true).map(([id]) => id).sort().join(","));
-	const running = (0, react.useMemo)(() => new Set(runningKey.split(",")), [runningKey]);
+	const live = useLive(useSessionStatus);
 	const threads = useHostValue("threads.list", { mainSessionId: sessionId }, [
 		sessionId,
-		runningKey,
+		live.key,
 		revision
 	]);
 	const byId = new Map((threads ?? []).map((thread) => [thread.id, thread]));
@@ -1094,7 +1148,7 @@ function ReportCard({ cards, sessionId, useSessionStatus, t, openThread }) {
 			className: "dsht-items",
 			children: waitingFirst(cards).map((card) => {
 				const thread = byId.get(card.threadId);
-				const state = thread === void 0 ? reportGlyph(card.status) : glyphState(thread, running.has(card.threadId));
+				const state = thread === void 0 ? reportGlyph(card.status) : glyphState(thread, live.running.has(card.threadId), live.asking.has(card.threadId));
 				const status = state === "running" ? t("status.running") : state === "resolved" ? t("list.resolved") : t(STATUS_KEYS[thread?.lastReport?.status ?? card.status ?? "no-report"] ?? "status.noReport");
 				return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ThreadItem, {
 					n: card.n,
@@ -1117,11 +1171,10 @@ function ReportCard({ cards, sessionId, useSessionStatus, t, openThread }) {
 function TurnThreadsCard({ turn, sessionId, useSessionStatus, t, openThread }) {
 	const opened = turn.data.get("dsh-threads-opened")?.opened ?? [];
 	const revision = useThreadsRevision();
-	const runningKey = useSessionStatus((statuses) => [...statuses].filter(([, state]) => state.running === true).map(([id]) => id).sort().join(","));
-	const running = (0, react.useMemo)(() => new Set(runningKey.split(",")), [runningKey]);
+	const live = useLive(useSessionStatus);
 	const threads = useHostValue(opened.length === 0 ? null : "threads.list", { mainSessionId: sessionId }, [
 		sessionId,
-		runningKey,
+		live.key,
 		revision
 	]);
 	if (opened.length === 0) return null;
@@ -1135,7 +1188,7 @@ function TurnThreadsCard({ turn, sessionId, useSessionStatus, t, openThread }) {
 			className: "dsht-items",
 			children: opened.map((card) => {
 				const thread = byId.get(card.threadId);
-				const state = thread === void 0 ? "running" : glyphState(thread, running.has(card.threadId));
+				const state = thread === void 0 ? "running" : glyphState(thread, live.running.has(card.threadId), live.asking.has(card.threadId));
 				const report = thread?.lastReport ?? null;
 				const status = state === "running" ? t("status.running") : state === "resolved" ? t("list.resolved") : report === null ? void 0 : t(STATUS_KEYS[report.status] ?? "status.noReport");
 				return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ThreadItem, {
@@ -1269,6 +1322,9 @@ const zh = {
 	"list.resolvedEmpty": "已完成的讨论串。",
 	"list.archivedSection": "已归档",
 	"list.files": "改动了 {count} 个文件",
+	"ask.approval": "等你批准一项操作",
+	"ask.question": "等你回答一个问题",
+	"ask.planReview": "等你确认计划",
 	"list.notProject": "当前对话不是项目，没有讨论串。可以在左侧会话的\"…\"菜单里选\"设为项目\"。",
 	"list.resolved": "已解决",
 	"header.threads": "讨论串 · {count}",
@@ -1420,6 +1476,9 @@ const en = {
 	"list.resolvedEmpty": "Finished threads.",
 	"list.archivedSection": "Archived",
 	"list.files": "{count} files changed",
+	"ask.approval": "Waiting for your approval",
+	"ask.question": "Waiting for your answer",
+	"ask.planReview": "Waiting for you to review a plan",
 	"list.notProject": "This conversation is not a project, so it has no threads. Choose \"Make project\" in its \"…\" menu.",
 	"list.resolved": "resolved",
 	"header.threads": "Threads · {count}",
@@ -2761,14 +2820,14 @@ function SidebarProjects({ t, useWorkspaces, useSessions, useSessionStatus, useP
 		pinSession
 	});
 	const workspaces = useWorkspaces((snapshot) => snapshot.items, sameList);
-	const runningKey = useSessionStatus((statuses) => [...statuses].filter(([, state]) => state.running).map(([id]) => id).sort().join(","));
+	const live = useLive(useSessionStatus);
 	const currentId = useCurrentSession({
 		useSessions,
 		usePanelInfo
 	});
 	(0, react.useEffect)(() => {
 		projectsStore.refresh();
-	}, [runningKey]);
+	}, [live.key]);
 	const toggle = () => {
 		const next = !collapsed;
 		setCollapsed(next);
@@ -2778,7 +2837,6 @@ function SidebarProjects({ t, useWorkspaces, useSessions, useSessionStatus, useP
 	};
 	const rows = sidebarProjects(projects);
 	const shown = expanded ? rows : rows.slice(0, 8);
-	const running = new Set(runningKey.split(","));
 	return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
 		/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 			className: "dsht-side-head",
@@ -2827,7 +2885,7 @@ function SidebarProjects({ t, useWorkspaces, useSessions, useSessionStatus, useP
 							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(RowMark, {
 								project,
 								main: mains.get(project.mainSessionId),
-								mainRunning: running.has(project.mainSessionId),
+								live,
 								t
 							})
 						}),
@@ -2873,9 +2931,13 @@ function SidebarProjects({ t, useWorkspaces, useSessions, useSessionStatus, useP
 		dialogs
 	] });
 }
-/** A raised hand when a thread waits on the user, a breathing dot while anything runs, else the project's icon. */
-function RowMark({ project, main, mainRunning, t }) {
-	const waiting = main?.waiting ?? 0;
+/**
+* A raised hand when the main conversation or a thread waits on the user (a decision, an approval,
+* a question), a breathing dot while anything runs, else the project's icon.
+*/
+function RowMark({ project, main, live, t }) {
+	const asking = [project.mainSessionId, ...main?.threadIds ?? []].filter((id) => live.asking.has(id)).length;
+	const waiting = (main?.waiting ?? 0) + asking;
 	const threadsRunning = main?.running ?? project.running;
 	if (waiting > 0) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ThreadGlyph, {
 		state: "waiting",
@@ -2885,7 +2947,7 @@ function RowMark({ project, main, mainRunning, t }) {
 		state: "running",
 		label: t("badge.running", { count: threadsRunning })
 	});
-	if (mainRunning) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ThreadGlyph, {
+	if (live.running.has(project.mainSessionId)) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ThreadGlyph, {
 		state: "running",
 		label: t("side.mainRunning")
 	});
@@ -3253,7 +3315,8 @@ function ThreadChatTab({ useTabInfo, useResource, SessionProvider, renderSlot, u
 	});
 }
 function ThreadPaneHeader({ threadId, useSessionStatus, t, openSession }) {
-	const running = useSessionStatus((statuses) => statuses.get(threadId)?.running === true);
+	const live = useLive(useSessionStatus);
+	const running = live.running.has(threadId);
 	const revision = useThreadsRevision();
 	const thread = useHostValue("threads.get", { id: threadId }, [
 		threadId,
@@ -3269,7 +3332,7 @@ function ThreadPaneHeader({ threadId, useSessionStatus, t, openSession }) {
 	return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 		className: "dsht-pane-head",
 		children: [
-			/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ThreadGlyph, { state: glyphState(thread, running) }),
+			/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ThreadGlyph, { state: glyphState(thread, running, live.asking.has(threadId)) }),
 			/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				className: "dsht-pane-text",
 				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -3359,7 +3422,13 @@ function ResolvedComposer({ sessionId, t }) {
 	});
 }
 // src/client/ThreadsList.tsx
-const runningIds = (statuses) => [...statuses].filter(([, state]) => state.running === true).map(([id]) => id).sort().join(",");
+/** What the list says a thread waits for while it holds an approval, a question or a plan. */
+const ASK_KEYS = {
+	approval: "ask.approval",
+	question: "ask.question",
+	"plan-review": "ask.planReview"
+};
+const stateIn = (live) => (thread) => glyphState(thread, live.running.has(thread.id), live.asking.has(thread.id));
 /** The project main conversation a session belongs to (itself, or the main of its thread). */
 function useProjectMain(sessionId, revision) {
 	const role = useHostValue(sessionId === void 0 ? null : "sessions.role", { id: sessionId }, [sessionId, revision]);
@@ -3368,11 +3437,10 @@ function useProjectMain(sessionId, revision) {
 		mainSessionId: role?.project?.mainSessionId
 	};
 }
-function useThreads(mainSessionId, useSessionStatus, revision) {
-	const running = useSessionStatus(runningIds);
+function useThreads(mainSessionId, liveKey, revision) {
 	return useHostValue(mainSessionId === void 0 ? null : "threads.list", { mainSessionId }, [
 		mainSessionId,
-		running,
+		liveKey,
 		revision
 	]);
 }
@@ -3384,9 +3452,8 @@ function useThreads(mainSessionId, useSessionStatus, revision) {
 function ThreadsListTab({ sessionId, useSessionStatus, t, openThread, openSession }) {
 	const revision = useThreadsRevision();
 	const { role, mainSessionId } = useProjectMain(sessionId, revision);
-	const threads = useThreads(mainSessionId, useSessionStatus, revision);
-	const runningKey = useSessionStatus(runningIds);
-	const running = (0, react.useMemo)(() => new Set(runningKey.split(",")), [runningKey]);
+	const live = useLive(useSessionStatus);
+	const threads = useThreads(mainSessionId, live.key, revision);
 	const [query, setQuery] = (0, react.useState)(null);
 	const [folded, setFolded] = (0, react.useState)({ archived: true });
 	if (role === void 0) return null;
@@ -3394,7 +3461,8 @@ function ThreadsListTab({ sessionId, useSessionStatus, t, openThread, openSessio
 		className: "dsht-tab",
 		children: t("list.notProject")
 	});
-	const groups = groupThreads(threads ?? [], (thread) => glyphState(thread, running.has(thread.id)), query ?? "");
+	const stateOf = stateIn(live);
+	const groups = groupThreads(threads ?? [], stateOf, query ?? "");
 	const searching = (query ?? "").trim().length > 0;
 	const nothing = searching && Object.values(groups).every((list) => list.length === 0);
 	const section = (id, label, list, empty) => {
@@ -3423,7 +3491,8 @@ function ThreadsListTab({ sessionId, useSessionStatus, t, openThread, openSessio
 				className: "dsht-rows",
 				children: list.map((thread) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ThreadRow, {
 					thread,
-					state: glyphState(thread, running.has(thread.id)),
+					state: stateOf(thread),
+					asking: live.asking.get(thread.id),
 					t,
 					onOpen: () => openThread(thread.id)
 				}, thread.id))
@@ -3477,11 +3546,11 @@ function ThreadsListTab({ sessionId, useSessionStatus, t, openThread, openSessio
 	});
 }
 /** One thread in the list: state mark, number and title, time; what it waits on; its files and branch. */
-function ThreadRow({ thread, state, t, onOpen }) {
+function ThreadRow({ thread, state, asking, t, onOpen }) {
 	const report = thread.lastReport;
 	const files = report?.changedFiles ?? [];
 	const branch = thread.worktree === null || thread.worktree.removed ? void 0 : thread.worktree.branch;
-	const decision = state === "waiting" ? report?.decisions[0] ?? report?.summary : void 0;
+	const decision = asking !== void 0 ? t(ASK_KEYS[asking]) : state === "waiting" ? report?.decisions[0] ?? report?.summary : void 0;
 	return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 		className: `dsht-row dsht-row-${state}`,
 		role: "button",
@@ -3531,7 +3600,8 @@ function ThreadsHeaderAction({ sessionId, useSessionStatus, t, openThreadsList, 
 	const revision = useThreadsRevision();
 	const { role, mainSessionId } = useProjectMain(sessionId, revision);
 	const isMain = mainSessionId !== void 0 && mainSessionId === sessionId;
-	const threads = useThreads(isMain ? mainSessionId : void 0, useSessionStatus, revision);
+	const live = useLive(useSessionStatus);
+	const threads = useThreads(isMain ? mainSessionId : void 0, live.key, revision);
 	if (role === void 0 || role.project === null) return null;
 	if (role.thread) {
 		const main = role.project.mainSessionId;
@@ -3545,7 +3615,7 @@ function ThreadsHeaderAction({ sessionId, useSessionStatus, t, openThreadsList, 
 	if (!isMain) return null;
 	const count = threads?.filter((thread) => !thread.archived).length ?? 0;
 	const active = threads?.filter((thread) => thread.status === "running" || thread.status === "starting").length ?? 0;
-	const waiting = threads?.filter((thread) => glyphState(thread) === "waiting").length ?? 0;
+	const waiting = threads?.filter((thread) => stateIn(live)(thread) === "waiting").length ?? 0;
 	return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(_deepseek_ai_dsh_client_ui_primitives.Button, {
 		size: "sm",
 		variant: "ghost",

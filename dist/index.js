@@ -725,7 +725,8 @@ function apiHandlers(deps) {
 					icon: p.icon,
 					threads: threads.filter((t) => !t.archived).length,
 					running: threads.filter((t) => t.status === "running" || t.status === "starting").length,
-					waiting: threads.filter(isWaiting).length
+					waiting: threads.filter(isWaiting).length,
+					threadIds: threads.filter((t) => !t.archived).map((t) => t.id)
 				};
 			})
 		}),

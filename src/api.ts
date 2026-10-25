@@ -176,6 +176,8 @@ export function apiHandlers(deps: {
           threads: threads.filter((t) => !t.archived).length,
           running: threads.filter((t) => t.status === 'running' || t.status === 'starting').length,
           waiting: threads.filter(isWaiting).length,
+          // The browser marks a project waiting while any of these holds an approval or a question.
+          threadIds: threads.filter((t) => !t.archived).map((t) => t.id),
         }
       }),
     }),

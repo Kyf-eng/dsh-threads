@@ -7,7 +7,9 @@ import type { ThreadView } from './threads.ts'
 export type GlyphState = 'running' | 'waiting' | 'done' | 'failed' | 'resolved' | 'queued'
 
 /** The one place thread data turns into a state mark. */
-export function glyphState(thread: Pick<ThreadView, 'status' | 'resolved' | 'lastReport'> & { archived?: boolean }, running = false): GlyphState {
+export function glyphState(thread: Pick<ThreadView, 'status' | 'resolved' | 'lastReport'> & { archived?: boolean }, running = false, asking = false): GlyphState {
+  // An approval, a question or a plan held for the user: the turn is still open but waits on them.
+  if (asking) return 'waiting'
   if (running || thread.status === 'running' || thread.status === 'starting') return 'running'
   if (thread.status === 'failed') return 'failed'
   if (thread.resolved) return 'resolved'

@@ -1,5 +1,5 @@
 // Thread data for the panes: host calls, a refresh signal, and the right-sidebar address.
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { callHost } from './api.ts'
 import type { GlyphState } from './glyphs.tsx'
 
@@ -101,6 +101,54 @@ export function useHostValue<T>(method: string | null, payload: unknown, deps: r
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [method, ...deps])
   return value
+}
+
+/** What DSH's client knows about a live session (uiSession.sessionStatus). */
+export interface LiveStatus {
+  running?: boolean
+  pendingInteraction?: { kind?: string }
+}
+
+export type UseStatus = <T>(selector: (statuses: ReadonlyMap<string, LiveStatus>) => T) => T
+
+/** Interactions that wait on the user; the ones DSH's own session list marks (dsh-client-ui-workspace). */
+export type AskKind = 'approval' | 'question' | 'plan-review'
+const ASK_KINDS: ReadonlySet<string> = new Set(['approval', 'question', 'plan-review'])
+
+/** Sessions that run, and sessions that wait on the user (an approval, a question, a plan to review). */
+export interface Live {
+  running: ReadonlySet<string>
+  asking: ReadonlyMap<string, AskKind>
+}
+
+/** Every session's live state as one string: selectors must return stable values. */
+export function liveKey(statuses: ReadonlyMap<string, LiveStatus>): string {
+  const tokens: string[] = []
+  for (const [id, status] of statuses) {
+    if (status.running === true) tokens.push(`r:${id}`)
+    const kind = status.pendingInteraction?.kind
+    if (kind !== undefined && ASK_KINDS.has(kind)) tokens.push(`a:${id}:${kind}`)
+  }
+  return tokens.sort().join(',')
+}
+
+export function parseLive(key: string): Live {
+  const running = new Set<string>()
+  const asking = new Map<string, AskKind>()
+  for (const token of key.split(',')) {
+    if (token.startsWith('r:')) running.add(token.slice(2))
+    else if (token.startsWith('a:')) {
+      const at = token.lastIndexOf(':')
+      asking.set(token.slice(2, at), token.slice(at + 1) as AskKind)
+    }
+  }
+  return { running, asking }
+}
+
+/** Live state of every session, re-rendering only when it changes; `key` also serves as a reload dependency. */
+export function useLive(useSessionStatus: UseStatus): Live & { key: string } {
+  const key = useSessionStatus(liveKey)
+  return useMemo(() => ({ ...parseLive(key), key }), [key])
 }
 
 /** Sections of the threads list, as in Claude's threads panel. */

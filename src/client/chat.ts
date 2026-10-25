@@ -5,10 +5,14 @@
 // - openedDefinition collects the threads `thread_open` opened in one turn and publishes them as
 //   turn data for the turn-tail card ("N 条回复"). Pattern: dsh-client-ui-schedule's
 //   scheduleTurnDefinition.
+// - threadCommandDefinition puts the thread a `/thread <task>` command opened under DSH's own
+//   command row. DSH counts a conversation of command rows alone as empty and keeps showing its
+//   welcome page, so without it a new project's first `/thread` seemed to do nothing.
 import type { ThreadCardInfo } from './threads.ts'
 
 export const NOTICE_NODE = 'dsh-threads-notice'
 export const OPENED_KEY = 'dsh-threads-opened'
+export const COMMAND_NODE = 'dsh-threads-command'
 
 interface ChatEvent {
   type: string
@@ -129,5 +133,65 @@ export const openedDefinition = {
     if (scope !== 'turn' || state === undefined || state.opened.length === 0) return null
     if (previous?.kind === 'turn' && previous.turn === state.turn && previous.key === OPENED_KEY && previous.value?.opened === state.opened) return previous
     return { kind: 'turn', turn: state.turn, key: OPENED_KEY, value: { opened: state.opened } }
+  },
+}
+
+/** `/thread stop <n>`, `/thread cleanup [confirm]` and a bare `/thread` open no thread. */
+export function opensThread(args: unknown): boolean {
+  const text = typeof args === 'string' ? args.trim() : ''
+  return text.length > 0 && !/^(stop|cleanup)(\s|$)/.test(text)
+}
+
+/** The thread number in `/thread`'s own success reply (src/messages.ts `commandOpened`). */
+export function openedNumber(text: unknown): number | null {
+  const match = typeof text === 'string' ? /#(\d+)/.exec(text) : null
+  return match === null ? null : Number(match[1])
+}
+
+interface CommandState {
+  opens: boolean
+  n: number | null
+  doneSeq: number | null
+}
+
+export interface CommandNodeData {
+  n: number
+}
+
+export const threadCommandDefinition = {
+  kind: COMMAND_NODE,
+  target: 'chat',
+  match: (event: ChatEvent) => {
+    if (event.type === 'command/run' && event.data.name === 'thread') return { id: String(event.data.commandId), role: 'start' }
+    // command/done carries no command name; a done without our start never gets a state.
+    if (event.type === 'command/done') return { id: String(event.data.commandId), role: 'update' }
+    return null
+  },
+  start: (_context: DefinitionContext<CommandState>, match: Match): CommandState => {
+    if (match.event.type !== 'command/run') throw new Error('dsh-threads-command start requires command/run')
+    return { opens: opensThread(match.event.data.args), n: null, doneSeq: null }
+  },
+  update: (context: DefinitionContext<CommandState>, match: Match): CommandState | undefined => {
+    const state = context.state
+    const { event } = match
+    if (state === undefined || !state.opens || event.type !== 'command/done' || event.data.kind !== 'success') return state
+    const n = openedNumber(event.data.text)
+    return n === null ? state : { ...state, n, doneSeq: event.seq }
+  },
+  buildViewNode: (context: DefinitionContext<CommandState>) => {
+    const state = context.state
+    if (state === undefined || state.n === null || state.doneSeq === null) return null
+    const data: CommandNodeData = { n: state.n }
+    return {
+      key: context.key,
+      kind: COMMAND_NODE,
+      id: context.id,
+      target: 'chat',
+      // Right after DSH's command row (anchored at command/run), placed like it (no groupTree).
+      anchorSeq: state.doneSeq,
+      location: context.start?.location ?? context.matches?.[0]?.location ?? { kind: 'unresolved' },
+      visibility: 'visible',
+      data,
+    }
   },
 }

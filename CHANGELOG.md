@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.0-rc.8 — 2026-10-25
+
+Fixes from the second test on Windows. Coming from 0.1.0-rc.6 or earlier, remove `@fky/dsh-threads` first (see 0.1.0-rc.7).
+
+- A `/thread <task>` row now shows the thread it opened right under it: live state, branch, changed files and an open button. Fix: in a new project, a first `/thread` left DeepSeek Harness on its welcome page, so it looked as if nothing had happened although the thread was running.
+- Fix: when a worktree could not be checked out (on Windows, paths over 260 characters), the branch git had already created stayed behind and the pane showed git's raw command line. A failed checkout now takes back what it created; "Filename too long" explains the limit and the options (long paths for that repository only, a shorter path, or no worktree); other failures quote git's own error.
+- The coordinator, like threads, skips a git hook or another check only when you ask for exactly that in your own words, and only for that one case. Before, it refused even then.
+
 ## 0.1.0-rc.7 — 2026-10-24
 
 Fixes from the first test on Windows, and a new package name: **`@kyf-eng/dsh-threads`** (it was `@fky/dsh-threads`). The new name does not replace the old one: quit DeepSeek Harness completely, run `dsh plugin --profile desktop remove @fky/dsh-threads`, then install this version. Projects and threads are kept.

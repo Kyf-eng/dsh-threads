@@ -13,7 +13,7 @@ import { defineTool } from "@deepseek-ai/dsh-tools";
 import { defineDomain, domainTable } from "@deepseek-ai/dsh-storage-domain";
 // package.json
 var name$1 = "@kyf-eng/dsh-threads";
-var version = "0.1.0-rc.7";
+var version = "0.1.0-rc.8";
 // src/messages.ts
 const zh = {
 	notAProject: "只有项目的主对话能开讨论串。先在左侧\"项目\"里新建项目，或在会话菜单里选\"设为项目\"。",

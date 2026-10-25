@@ -4,7 +4,7 @@
 
 A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) plugin, modelled on Claude's projects and threads. Your project's main conversation acts as a dispatcher: when a task is self-contained, it opens a **thread** (a real session you can click into and keep talking to), and when the thread finishes, a short report comes back to the main conversation.
 
-> Status: **0.1.0-rc.7**, a pre-release. Built against DeepSeek Harness 0.2.1-rc.2 and tested on 0.2.1-rc.2 and 0.2.1-rc.3. See [CHANGELOG.md](CHANGELOG.md) and the design notes in [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md).
+> Status: **0.1.0-rc.8**, a pre-release. Built against DeepSeek Harness 0.2.1-rc.2 and tested on 0.2.1-rc.2 and 0.2.1-rc.3. See [CHANGELOG.md](CHANGELOG.md) and the design notes in [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md).
 
 ## What it does
 
@@ -22,10 +22,10 @@ Requires DeepSeek Harness **0.2.x** (Desktop or Web; tested on 0.2.1-rc.2 and 0.
 2. Add the plugin to your profile:
 
    ```sh
-   dsh plugin --profile desktop add https://github.com/Kyf-eng/dsh-threads/releases/download/v0.1.0-rc.7/kyf-eng-dsh-threads-0.1.0-rc.7.tgz
+   dsh plugin --profile desktop add https://github.com/Kyf-eng/dsh-threads/releases/download/v0.1.0-rc.8/kyf-eng-dsh-threads-0.1.0-rc.8.tgz
    ```
 
-   Use `--profile web` for the Web app. `github:Kyf-eng/dsh-threads#v0.1.0-rc.7` works too.
+   Use `--profile web` for the Web app. `github:Kyf-eng/dsh-threads#v0.1.0-rc.8` works too.
 3. Start DeepSeek Harness. **Projects** appears in the sidebar.
 
 To remove it: `dsh plugin --profile desktop remove @kyf-eng/dsh-threads` (`@fky/dsh-threads` for 0.1.0-rc.6 and earlier).

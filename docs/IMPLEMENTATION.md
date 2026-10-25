@@ -878,6 +878,17 @@ v0.1.0 阶段 1 合并后，在 test1 跑完整流程时，主对话没让合并
 - **审批继承（清单 P0-1）验证通过**：fresh3 的主对话切到“仅可查看”，`/thread -w` 开一个要写文件的讨论串。讨论串的会话日志里先是 DSH 钉的用户默认 `danger-full-access`，接着被我们设成 `read-only`（审批策略 `ask`），都在发简报之前；它要写文件时 DSH 发出 `approval/asked`（“提权到 workspace-write”），挂了几分钟没有自动通过，直到在面板里点“拒绝”（`approval/decided: rejected`）。README 的这条已知限制去掉了。
 - 同一轮里看到的另一个行为：讨论串 #2 因为审批被取消而回报“受阻”后，主对话醒来想自己写那个文件（一行），在“仅可查看”下也弹了审批（用户点了允许）。按“只有一两个工具调用的小改动自己做”这不算违规，但它接手了讨论串受阻的活而没先问。第二次（#3 被拒绝后）它就先问“要我在主工作区建这个文件吗”。
 
+#### Windows 实测第一轮（2026-10-25，v0.1.0-rc.6）
+
+朋友的 Windows 10 Pro（DSH 0.2.1-rc.3 装在 D 盘），由 Codex 照 docs/WINDOWS-TEST.md 操作。做完了 1–4 项的全部或一部分，5–13 项没做。安装、新建项目、普通讨论串和回报都正常。区分出来的问题：
+
+- **插件的问题**：
+  - 机器上只有 Codex 自带的 git，不在系统 PATH 里，`/thread -w` 却报“项目文件夹不是 git 仓库”。原因是 `createWorktree` 把 `git rev-parse` 的所有失败都说成“不是仓库”。现在找不到 git（`ENOENT`）时直接说找不到 git；git 报了别的错（Windows 上常见的是 `detected dubious ownership`）时引用 git 的原话。README 加了对应的排错说明。（#37）
+  - worktree 讨论串被要求提交时，碰上会失败的 pre-commit hook，就用 `--no-verify` 绕过去，还删了 hook 写的文件。主对话看到 DSH 沙箱的权限错误后，自己去修文件夹权限，还临时放开了 PowerShell 的执行策略。现在两边的提示词都写明：不跳过 hook，不改 hook，不删 hook 写的东西；不为了让命令跑通去改权限、ACL、执行策略、沙箱或全局 git 设置。讨论串遇到这种情况回报 `blocked`；主对话把错误告诉用户，不自己修，也不开讨论串去修，除非用户要求。（#38）
+- **测试写错了**：第 3 项把“讨论串提交时 pre-commit hook 执行了”当成插件关不掉 hook。实际上插件只在自己调用 git（开、删 worktree）时用 `core.hooksPath=/dev/null` 关掉 hook，讨论串自己的提交本来就该走仓库的 hook。测试改成两部分：用 post-checkout hook 测插件开 worktree 时关没关掉 hook，用失败的 pre-commit hook 测讨论串是不是回报“受阻”。第 0 步也改成用系统 PATH 检查 git。
+- **DSH 或环境的问题**：`SetNamedSecurityInfoW failed (Win32 5): grantWrite(D:\dsh-test\playground)` 是 DSH 的 Windows 沙箱没能给项目文件夹加写权限，讨论串因此只能用只读工具，可能和 `D:\dsh-test` 是 Codex 建的有关，第二轮会只读记录 `icacls` 和文件夹所有者。下载进程异常退出、winget 源报错、Git 安装器不认 `/DIR` 都是环境问题。存储里 `worktree.repositoryRoot` 是 git 输出的 `D:/…`，`worktree.path` 是 `D:\…`；前者只用作 git 的工作目录，两种写法都能用，不是问题。
+- **操作失误**：同一条 `/thread` 命令每次都发了两到五遍（#1–#5，#6 和 #7），开出了重复的讨论串。用户确认是操作者发错了，不是插件的问题。
+
 ## 六、验证
 
 1. 本地自动检查：`npm run typecheck && npm test && npm run build`，全部通过；`dist/` 里的 `client.js` 以 `window.__ModuleLoader__.load(` 开头。

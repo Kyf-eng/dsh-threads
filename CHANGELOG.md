@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.1.0-rc.6 — 2026-10-24
+
+Release candidate after the release review: fixes found in it, stopping and archiving threads, both languages on the host side, a threads panel after Claude's, a coordinator that leads instead of doing the work itself, and testing on DeepSeek Harness 0.2.1-rc.3.
 
 - The threads panel follows Claude's: a "Threads" title with search, then sections with counts — waiting for you, running, idle, resolved, archived — each foldable, with dashed placeholders when empty, and compact rows (state, title, time, what it waits on, changed files, branch).
 - A thread (or the main conversation) holding an approval, a question or a plan to review now shows the raised hand everywhere — the panel ("waiting for your approval"), the cards, the header, and the project's sidebar row — and raises a notification while DeepSeek Harness is in the background. Before, threads hidden from DSH's session list showed only "running" while they waited.

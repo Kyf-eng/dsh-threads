@@ -72,6 +72,8 @@ Add a `config` to the plugin's entry in your profile's `cordis.patch.yml` (for D
       maxSourceFrameBytes: 1048576
   ```
 
+- **"git was not found" when a thread asks for a worktree**: DeepSeek Harness does not ship git; it runs the `git` on the system PATH. On Windows install [Git for Windows](https://git-scm.com/download/win) (a git bundled inside another program does not count), then quit DeepSeek Harness completely and reopen it so it sees the new PATH. When the message quotes git (for example `detected dubious ownership` on Windows), do what git says.
+
 - **No desktop notifications**: none are sent while DeepSeek Harness is in front (the sidebar marks are enough). If they also do not arrive while it is in the background, check the system's notification settings: System Settings → Notifications → DeepSeek Harness on macOS, Settings → System → Notifications on Windows, and your desktop environment's notification service on Linux. The Web app asks for the browser's permission the first time.
 
 ## Known limitations

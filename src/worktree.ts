@@ -32,6 +32,19 @@ const POOL = ['.agents', 'worktrees'] as const
 export class WorktreeError extends Error {}
 
 /**
+ * Why git could not find the repository: git is not on DSH's PATH (a Windows machine without Git
+ * for Windows), the folder is not a repository, or git refused for its own reason (on Windows often
+ * "dubious ownership"), which the user needs to read as git wrote it.
+ */
+function notARepository(error: unknown, folder: string): WorktreeError {
+  const { code, stderr } = error as { code?: unknown; stderr?: unknown }
+  if (code === 'ENOENT') return new WorktreeError(msg().gitMissing)
+  const detail = typeof stderr === 'string' ? stderr.trim().split(/\r?\n/)[0] ?? '' : ''
+  if (detail === '' || /not a git repository/i.test(detail)) return new WorktreeError(msg().notARepository(folder))
+  return new WorktreeError(msg().gitFailed(folder, detail.replace(/^fatal:\s*/, '')))
+}
+
+/**
  * New branch `dsh-threads/<name>` checked out at `<repo>/.agents/worktrees/dsh-threads-<name>`,
  * from the folder's current HEAD. Uncommitted files in the folder are not carried over. When the
  * folder is a subfolder of the repository (a monorepo package), `subdir` names it, and the thread
@@ -44,8 +57,8 @@ export async function createWorktree(git: Git, folder: string, name: string): Pr
     repositoryRoot = (await git(folder, ['rev-parse', '--show-toplevel'])).trim()
     // Relative to the top level as git sees it, so symlinked paths (/tmp on macOS) do not matter.
     subdir = (await git(folder, ['rev-parse', '--show-prefix'])).trim().replace(/\/+$/, '')
-  } catch {
-    throw new WorktreeError(msg().notARepository(folder))
+  } catch (error) {
+    throw notARepository(error, folder)
   }
   let baseCommit: string
   try {

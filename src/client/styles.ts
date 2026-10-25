@@ -2,7 +2,7 @@
 // in document.head). Surfaces and text come from DSH's theme tokens, so light and dark both
 // work; the few state colors (running, waiting, files, branches) are our own tokens below.
 
-const STYLE_ID = '@fky/dsh-threads/styles'
+const STYLE_ID = '@kyf-eng/dsh-threads/styles'
 
 const css = `
 /* Fixed colors can live on :root. Tokens built from DSH's theme variables must be computed where
@@ -327,7 +327,7 @@ export function injectStyles(): () => void {
   const existing = document.querySelector(`style[data-plugin-css="${STYLE_ID}"]`)
   if (existing !== null) return () => {}
   const tag = document.createElement('style')
-  tag.dataset.plugin = '@fky/dsh-threads'
+  tag.dataset.plugin = '@kyf-eng/dsh-threads'
   tag.dataset.pluginCss = STYLE_ID
   tag.textContent = css
   document.head.appendChild(tag)

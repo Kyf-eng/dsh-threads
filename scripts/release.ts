@@ -18,7 +18,7 @@ export interface ReleaseInput {
 export interface Release {
   version: string
   prerelease: boolean
-  /** File name `npm pack` gives the package (`@fky/dsh-threads` → `fky-dsh-threads-<version>.tgz`). */
+  /** File name `npm pack` gives the package (`@kyf-eng/dsh-threads` → `kyf-eng-dsh-threads-<version>.tgz`). */
   tarball: string
   notes: string
 }

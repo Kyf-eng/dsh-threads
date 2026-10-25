@@ -28,7 +28,9 @@ Requires DeepSeek Harness **0.2.x** (Desktop or Web; tested on 0.2.1-rc.2 and 0.
    Use `--profile web` for the Web app. `github:Kyf-eng/dsh-threads#v0.1.0-rc.6` works too.
 3. Start DeepSeek Harness. **Projects** appears in the sidebar.
 
-To remove it: `dsh plugin --profile desktop remove @fky/dsh-threads`.
+To remove it: `dsh plugin --profile desktop remove @kyf-eng/dsh-threads` (`@fky/dsh-threads` for 0.1.0-rc.6 and earlier).
+
+Upgrading from 0.1.0-rc.6 or earlier: the package was renamed from `@fky/dsh-threads` to `@kyf-eng/dsh-threads`, so the new version does not replace the old one. Quit DeepSeek Harness completely, run `dsh plugin --profile desktop remove @fky/dsh-threads`, then install with step 2 above. Projects and threads live in DeepSeek Harness's own storage and survive removing the old package.
 
 ## Use
 

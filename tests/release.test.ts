@@ -16,9 +16,9 @@ Projects learn to wait.
 
 - First.
 `
-const url = 'https://github.com/o/r/releases/download/v0.2.0/fky-dsh-threads-0.2.0.tgz'
+const url = 'https://github.com/o/r/releases/download/v0.2.0/kyf-eng-dsh-threads-0.2.0.tgz'
 const readme = `dsh plugin --profile desktop add ${url}\n\`github:o/r#v0.2.0\` works too.`
-const input = { tag: 'v0.2.0', pkg: { name: '@fky/dsh-threads', version: '0.2.0' }, changelog, readmes: { 'README.md': readme, 'README.en.md': readme }, repository: 'o/r' }
+const input = { tag: 'v0.2.0', pkg: { name: '@kyf-eng/dsh-threads', version: '0.2.0' }, changelog, readmes: { 'README.md': readme, 'README.en.md': readme }, repository: 'o/r' }
 
 describe('release', () => {
   it('reads one CHANGELOG section', () => {
@@ -28,7 +28,7 @@ describe('release', () => {
 
   it('writes the notes: intro, install command, changes', () => {
     const release = prepareRelease(input)
-    expect(release).toMatchObject({ version: '0.2.0', prerelease: false, tarball: 'fky-dsh-threads-0.2.0.tgz' })
+    expect(release).toMatchObject({ version: '0.2.0', prerelease: false, tarball: 'kyf-eng-dsh-threads-0.2.0.tgz' })
     expect(release.notes.startsWith('Projects learn to wait.\n\n## Install\n')).toBe(true)
     expect(release.notes).toContain(`dsh plugin --profile desktop add ${url}`)
     expect(release.notes.endsWith('## Changes\n\n- Waiting projects.\n- Fix: a thing.\n')).toBe(true)

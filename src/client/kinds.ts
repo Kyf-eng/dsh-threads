@@ -24,7 +24,7 @@ interface Kinds {
   hiddenWorkspaces: ReadonlySet<string>
 }
 
-const SIDEBAR_STYLE_ID = '@fky/dsh-threads/sidebar'
+const SIDEBAR_STYLE_ID = '@kyf-eng/dsh-threads/sidebar'
 
 let kinds: Kinds = { threads: new Set(), mains: new Map(), hiddenWorkspaces: new Set() }
 const listeners = new Set<() => void>()
@@ -83,7 +83,7 @@ function writeSidebarCss(next: Kinds): void {
   let tag = document.querySelector<HTMLStyleElement>(`style[data-plugin-css="${SIDEBAR_STYLE_ID}"]`)
   if (tag === null) {
     tag = document.createElement('style')
-    tag.dataset.plugin = '@fky/dsh-threads'
+    tag.dataset.plugin = '@kyf-eng/dsh-threads'
     tag.dataset.pluginCss = SIDEBAR_STYLE_ID
     document.head.appendChild(tag)
   }

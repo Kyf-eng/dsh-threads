@@ -115,3 +115,5 @@ B8、B9、B10 是 P2，时间够就做，不够就留到 0.1.x。
 - B8（worktree 清理的界面入口）、B9（存储清理）、B10（主对话被删）没做，留在 0.1.x；B11（花费上限）写进了已知限制。
 - 审批继承（清单 P0-1）已在桌面版 0.2.1-rc.3 原版宿主上验证通过（IMPLEMENTATION.md“DSH 0.2.1-rc.3 上的冒烟测试和审批验证”）。Linux 暂时没有机器；Windows 由朋友的 Codex 按 `docs/WINDOWS-TEST.md` 安装 DSH 0.2.1-rc.3（Windows x64 桌面版）和 v0.1.0-rc.6 后实测。v0.1.0-rc.6 已由打 tag 的 workflow 自动发布。
 - README 默认改成中文：`README.md` 是中文，英文移到 `README.en.md`。发布检查（`scripts/release.ts`）、打包清单和 Release 说明里的链接跟着改。
+- 安全报告：仓库已打开私下报告漏洞（Private vulnerability reporting），和 `SECURITY.md` 的说法一致。
+- npm 作用域（D5）：`fky` 在 npm 上是别人的组织，包名改成 `@kyf-eng/dsh-threads`（你的 npm 用户名，和 GitHub 一致）。从 rc.6 及更早版本升级要先卸载 `@fky/dsh-threads`，README 写了步骤；**下一个版本的 CHANGELOG 要写上改名和升级步骤**。`npm publish` 仍等正式版时再问你。

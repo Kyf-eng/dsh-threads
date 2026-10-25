@@ -77,7 +77,7 @@ export function fileKind(path: string): FileKind {
   return dot <= 0 ? 'other' : KINDS[name.slice(dot + 1).toLowerCase()] ?? 'other'
 }
 
-function FileIcon({ kind }: { kind: FileKind }) {
+export function FileIcon({ kind }: { kind: FileKind }) {
   if (kind === 'code') return <Svg><path d="m9 8-4 4 4 4M15 8l4 4-4 4" /></Svg>
   if (kind === 'data') return <Svg><path d="M9 4.5c-2 0-2.5 1-2.5 2.5v2.5c0 1.2-.8 2.5-2 2.5 1.2 0 2 1.3 2 2.5V17c0 1.5.5 2.5 2.5 2.5M15 4.5c2 0 2.5 1 2.5 2.5v2.5c0 1.2.8 2.5 2 2.5-1.2 0-2 1.3-2 2.5V17c0 1.5-.5 2.5-2.5 2.5" /></Svg>
   return (

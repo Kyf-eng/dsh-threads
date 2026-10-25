@@ -359,6 +359,31 @@ function useHostValue(method, payload, deps) {
 	}, [method, ...deps]);
 	return value;
 }
+/**
+* Sort threads into the list's sections, newest activity first, keeping those whose number,
+* title or latest summary contains `query`. `stateOf` is glyphState with the live running set.
+*/
+function groupThreads(threads, stateOf, query = "") {
+	const needle = query.trim().toLowerCase().replace(/^#/, "");
+	const matches = (thread) => needle.length === 0 || String(thread.n) === needle || thread.title.toLowerCase().includes(needle) || (thread.lastReport?.summary.toLowerCase().includes(needle) ?? false);
+	const groups = {
+		waiting: [],
+		running: [],
+		idle: [],
+		resolved: [],
+		archived: []
+	};
+	const newestFirst = [...threads].filter(matches).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.n - a.n);
+	for (const thread of newestFirst) {
+		if (thread.archived) {
+			groups.archived.push(thread);
+			continue;
+		}
+		const state = stateOf(thread);
+		(state === "waiting" ? groups.waiting : state === "running" || state === "queued" ? groups.running : state === "resolved" ? groups.resolved : groups.idle).push(thread);
+	}
+	return groups;
+}
 /** Right-sidebar resource address of a thread's conversation. */
 const THREAD_ADDRESS = "dsh-resource://dsh-threads/session/";
 function threadAddress(threadId) {
@@ -1233,11 +1258,19 @@ const zh = {
 	"pane.archive": "归档",
 	"pane.unarchive": "取消归档",
 	"pane.archived": "已归档",
-	"list.empty": "这个项目还没有讨论串。",
+	"list.title": "讨论串",
+	"list.search": "搜索讨论串",
+	"list.noMatch": "没有匹配的讨论串。",
+	"list.waiting": "等待您处理",
+	"list.waitingEmpty": "决策、审阅和权限请求。",
+	"list.running": "运行中",
+	"list.idle": "空闲",
+	"list.resolvedSection": "已解决",
+	"list.resolvedEmpty": "已完成的讨论串。",
+	"list.archivedSection": "已归档",
+	"list.files": "改动了 {count} 个文件",
 	"list.notProject": "当前对话不是项目，没有讨论串。可以在左侧会话的\"…\"菜单里选\"设为项目\"。",
-	"list.noReport": "还没有回报",
 	"list.resolved": "已解决",
-	"list.archived": "已归档 · {count}",
 	"header.threads": "讨论串 · {count}",
 	"header.running": "{count} 个运行中",
 	"header.waiting": "{count} 个等你回复",
@@ -1376,11 +1409,19 @@ const en = {
 	"pane.archive": "Archive",
 	"pane.unarchive": "Unarchive",
 	"pane.archived": "Archived",
-	"list.empty": "This project has no threads yet.",
+	"list.title": "Threads",
+	"list.search": "Search threads",
+	"list.noMatch": "No matching threads.",
+	"list.waiting": "Waiting for you",
+	"list.waitingEmpty": "Decisions, reviews and permission requests.",
+	"list.running": "Running",
+	"list.idle": "Idle",
+	"list.resolvedSection": "Resolved",
+	"list.resolvedEmpty": "Finished threads.",
+	"list.archivedSection": "Archived",
+	"list.files": "{count} files changed",
 	"list.notProject": "This conversation is not a project, so it has no threads. Choose \"Make project\" in its \"…\" menu.",
-	"list.noReport": "No report yet",
 	"list.resolved": "resolved",
-	"list.archived": "Archived · {count}",
 	"header.threads": "Threads · {count}",
 	"header.running": "{count} running",
 	"header.waiting": "{count} waiting for you",
@@ -2989,13 +3030,33 @@ body,[class*="dsht-"]{
 
 /* Thread list tab */
 .dsht-tab{padding:12px;font-size:13px;line-height:1.6;color:var(--dsw-alias-label-secondary)}
-.dsht-list{box-sizing:border-box;display:flex;flex-direction:column;gap:4px;height:100%;min-height:0;overflow-y:auto;padding:6px 8px}
-.dsht-list-fold{display:flex;align-items:center;gap:4px;width:100%;margin-top:6px;padding:6px 10px;border:0;border-radius:8px;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:12px;cursor:pointer}
-.dsht-list-fold:hover{background:var(--dsht-press);color:var(--dsw-alias-label-secondary)}
-.dsht-list-fold svg{transition:transform .15s var(--dsht-ease)}
-.dsht-list-fold.is-open svg{transform:rotate(90deg)}
-.dsht-items-archived{opacity:.72}
-.dsht-list-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 10px 6px;font-size:12px;color:var(--dsw-alias-label-tertiary)}
+.dsht-list{box-sizing:border-box;display:flex;flex-direction:column;gap:14px;height:100%;min-height:0;overflow-y:auto;padding:8px 10px 16px}
+.dsht-list-top{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:30px;padding:0 2px 0 8px}
+.dsht-list-title{font-size:15px;font-weight:600;color:var(--dsw-alias-label-primary)}
+.dsht-list-tools{display:flex;align-items:center;gap:2px}
+.dsht-list-search{box-sizing:border-box;height:32px;margin:-6px 4px 0;padding:0 11px;border:1px solid var(--dsht-line-strong);border-radius:9px;background:var(--dsht-field);color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;outline:none;transition:border-color .15s var(--dsht-ease),box-shadow .15s var(--dsht-ease)}
+.dsht-list-search:focus{border-color:var(--dsht-ring);box-shadow:0 0 0 3px var(--dsht-ring-soft)}
+.dsht-section{display:flex;flex-direction:column;gap:4px}
+.dsht-section-head{display:flex;align-items:center;gap:6px;align-self:flex-start;padding:2px 8px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:12.5px;line-height:20px;cursor:pointer}
+.dsht-section-head:not(:disabled):hover{color:var(--dsw-alias-label-secondary)}
+.dsht-section-head:disabled{cursor:default}
+.dsht-section-head svg{transform:rotate(-90deg);transition:transform .15s var(--dsht-ease)}
+.dsht-section-head.is-open svg{transform:rotate(90deg)}
+.dsht-section-empty{margin:2px 4px 0;padding:22px 14px;border:1px dashed var(--dsht-line-strong);border-radius:12px;text-align:center;font-size:13px;color:var(--dsw-alias-label-tertiary)}
+.dsht-rows{display:flex;flex-direction:column;gap:2px}
+.dsht-row{display:flex;align-items:flex-start;gap:10px;padding:9px 10px;border-radius:10px;cursor:pointer;outline:none;transition:background .15s var(--dsht-ease)}
+.dsht-row:hover{background:var(--dsht-hover)}
+.dsht-row:focus-visible{box-shadow:inset 0 0 0 2px var(--dsht-ring)}
+.dsht-row>.dsht-glyph{margin-top:2px}
+.dsht-row-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
+.dsht-row-top{display:flex;align-items:baseline;gap:10px;min-width:0}
+.dsht-row-title{flex:1;min-width:0;font-size:13.5px;font-weight:550;line-height:20px;color:var(--dsw-alias-label-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dsht-row-title .dsht-item-n{margin-right:6px}
+.dsht-row-time{flex:none;font-size:12px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums}
+.dsht-row-decision{padding:6px 9px;border-radius:8px;background:color-mix(in srgb,var(--dsht-waiting) 11%,transparent);font-size:12.5px;line-height:18px;color:var(--dsw-alias-label-primary);overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.dsht-row-chips{display:flex;flex-wrap:wrap;gap:6px}
+.dsht-count{border-radius:999px;padding:0 9px 0 7px;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-secondary)}
+.dsht-section-archived .dsht-row{opacity:.72}
 
 .dsht-error{font-size:13px;line-height:19px;color:var(--dsw-alias-state-error-primary)}
 .dsht-hint{font-size:12px;line-height:17px;color:var(--dsw-alias-label-tertiary)}
@@ -3315,76 +3376,155 @@ function useThreads(mainSessionId, useSessionStatus, revision) {
 		revision
 	]);
 }
+/**
+* The right-sidebar threads list, after Claude's threads panel: a title with search, then
+* sections (waiting for you, running, idle, resolved, archived) with counts, each foldable.
+* "Waiting" and "resolved" always show, with a dashed placeholder when empty.
+*/
 function ThreadsListTab({ sessionId, useSessionStatus, t, openThread, openSession }) {
 	const revision = useThreadsRevision();
 	const { role, mainSessionId } = useProjectMain(sessionId, revision);
 	const threads = useThreads(mainSessionId, useSessionStatus, revision);
 	const runningKey = useSessionStatus(runningIds);
 	const running = (0, react.useMemo)(() => new Set(runningKey.split(",")), [runningKey]);
-	const [showArchived, setShowArchived] = (0, react.useState)(false);
+	const [query, setQuery] = (0, react.useState)(null);
+	const [folded, setFolded] = (0, react.useState)({ archived: true });
 	if (role === void 0) return null;
 	if (role.project === null) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 		className: "dsht-tab",
 		children: t("list.notProject")
 	});
-	const active = threads?.filter((thread) => !thread.archived) ?? [];
-	const archived = threads?.filter((thread) => thread.archived) ?? [];
-	const item = (thread) => {
-		const state = glyphState(thread, running.has(thread.id));
-		const report = thread.lastReport;
-		const status = thread.archived ? t("pane.archived") : state === "running" ? t("status.running") : state === "resolved" ? t("list.resolved") : report === null ? t("list.noReport") : t(STATUS_KEYS[report.status] ?? "status.noReport");
-		return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ThreadItem, {
-			n: thread.n,
-			title: thread.title,
-			state,
-			status: `${status} · ${relativeTime(t, thread.updatedAt)}`,
-			summary: state === "running" ? void 0 : report?.summary ?? thread.error ?? void 0,
-			decision: state === "waiting" ? report?.decisions[0] : void 0,
-			decisionLabel: t("card.decision"),
-			branch: thread.worktree === null || thread.worktree.removed ? void 0 : thread.worktree.branch,
-			openLabel: t("card.open"),
-			onOpen: () => openThread(thread.id)
-		}, thread.id);
+	const groups = groupThreads(threads ?? [], (thread) => glyphState(thread, running.has(thread.id)), query ?? "");
+	const searching = (query ?? "").trim().length > 0;
+	const nothing = searching && Object.values(groups).every((list) => list.length === 0);
+	const section = (id, label, list, empty) => {
+		if (list.length === 0 && (empty === void 0 || searching)) return null;
+		const open = list.length > 0 && folded[id] !== true;
+		return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
+			className: `dsht-section dsht-section-${id}`,
+			children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+				type: "button",
+				className: `dsht-section-head${open ? " is-open" : ""}`,
+				"aria-expanded": open,
+				disabled: list.length === 0,
+				onClick: () => setFolded((current) => ({
+					...current,
+					[id]: open
+				})),
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", { children: [
+					label,
+					" · ",
+					list.length
+				] }), list.length === 0 ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ChevronIcon, {})]
+			}), list.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+				className: "dsht-section-empty",
+				children: empty
+			}) : open ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+				className: "dsht-rows",
+				children: list.map((thread) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ThreadRow, {
+					thread,
+					state: glyphState(thread, running.has(thread.id)),
+					t,
+					onOpen: () => openThread(thread.id)
+				}, thread.id))
+			}) : null]
+		}, id);
 	};
 	return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 		className: "dsht-list",
 		children: [
 			/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-				className: "dsht-list-head",
-				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: role.project.title }), role.thread ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
-					size: "sm",
-					variant: "ghost",
-					onClick: () => openSession(role.project.mainSessionId),
-					children: t("header.backToMain")
-				}) : null]
+				className: "dsht-list-top",
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+					className: "dsht-list-title",
+					children: t("list.title")
+				}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					className: "dsht-list-tools",
+					children: [role.thread ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
+						size: "sm",
+						variant: "ghost",
+						onClick: () => openSession(role.project.mainSessionId),
+						children: t("header.backToMain")
+					}) : null, /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Pill, {
+						icon: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SearchIcon, { size: 15 }),
+						label: t("list.search"),
+						onClick: () => setQuery((current) => current === null ? "" : null)
+					})]
+				})]
 			}),
-			threads === void 0 ? null : active.length === 0 && archived.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+			query === null ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+				className: "dsht-list-search",
+				autoFocus: true,
+				value: query,
+				placeholder: t("list.search"),
+				"aria-label": t("list.search"),
+				onChange: (event) => setQuery(event.target.value),
+				onKeyDown: (event) => {
+					if (event.key === "Escape") setQuery(null);
+				}
+			}),
+			threads === void 0 ? null : nothing ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 				className: "dsht-tab",
-				children: t("list.empty")
-			}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-				className: "dsht-items",
-				children: sortForList(active, running).map(item)
-			}),
-			archived.length === 0 ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
-				type: "button",
-				className: `dsht-list-fold${showArchived ? " is-open" : ""}`,
-				"aria-expanded": showArchived,
-				onClick: () => setShowArchived((open) => !open),
-				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ChevronIcon, {}), t("list.archived", { count: archived.length })]
-			}), showArchived ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-				className: "dsht-items dsht-items-archived",
-				children: [...archived].sort((a, b) => b.n - a.n).map(item)
-			}) : null] })
+				children: t("list.noMatch")
+			}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
+				section("waiting", t("list.waiting"), groups.waiting, t("list.waitingEmpty")),
+				section("running", t("list.running"), groups.running),
+				section("idle", t("list.idle"), groups.idle),
+				section("resolved", t("list.resolvedSection"), groups.resolved, t("list.resolvedEmpty")),
+				section("archived", t("list.archivedSection"), groups.archived)
+			] })
 		]
 	});
 }
-/** Waiting on the user first, then running, then the rest; resolved threads last; newest first within each. */
-function sortForList(threads, running) {
-	const rank = (thread) => {
-		const state = glyphState(thread, running.has(thread.id));
-		return state === "waiting" ? 0 : state === "running" ? 1 : state === "resolved" ? 3 : 2;
-	};
-	return [...threads].sort((a, b) => rank(a) - rank(b) || b.n - a.n);
+/** One thread in the list: state mark, number and title, time; what it waits on; its files and branch. */
+function ThreadRow({ thread, state, t, onOpen }) {
+	const report = thread.lastReport;
+	const files = report?.changedFiles ?? [];
+	const branch = thread.worktree === null || thread.worktree.removed ? void 0 : thread.worktree.branch;
+	const decision = state === "waiting" ? report?.decisions[0] ?? report?.summary : void 0;
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+		className: `dsht-row dsht-row-${state}`,
+		role: "button",
+		tabIndex: 0,
+		onClick: onOpen,
+		onKeyDown: (event) => {
+			if (event.key === "Enter" || event.key === " ") {
+				event.preventDefault();
+				onOpen();
+			}
+		},
+		children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ThreadGlyph, { state }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+			className: "dsht-row-body",
+			children: [
+				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					className: "dsht-row-top",
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+						className: "dsht-row-title",
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+							className: "dsht-item-n",
+							children: ["#", thread.n]
+						}), thread.title]
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: "dsht-row-time",
+						children: relativeTime(t, thread.updatedAt)
+					})]
+				}),
+				decision === void 0 || decision.length === 0 ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+					className: "dsht-row-decision",
+					children: decision
+				}),
+				files.length === 0 && branch === void 0 ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					className: "dsht-row-chips",
+					children: [files.length === 0 ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+						className: "dsht-chip dsht-count",
+						title: files.join("\n"),
+						"aria-label": t("list.files", { count: files.length }),
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(FileIcon, { kind: "doc" }), files.length]
+					}), branch === void 0 ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(BranchChip, { branch })]
+				})
+			]
+		})]
+	});
 }
 /** Conversation header: "讨论串 · N" in a project main conversation, "主对话" in a thread. */
 function ThreadsHeaderAction({ sessionId, useSessionStatus, t, openThreadsList, openSession }) {

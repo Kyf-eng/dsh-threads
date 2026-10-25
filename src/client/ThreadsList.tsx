@@ -1,12 +1,11 @@
 // The thread list (right-sidebar "Threads" tab) and the conversation-header entry that opens it.
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import { useMemo, useState } from 'react'
-import { glyphState, ThreadGlyph } from './glyphs.tsx'
-import { ThreadsIcon } from './icons.tsx'
+import { type GlyphState, glyphState, ThreadGlyph } from './glyphs.tsx'
+import { SearchIcon, ThreadsIcon } from './icons.tsx'
 import { relativeTime, type Translate } from './locale.ts'
-import { STATUS_KEYS } from './ThreadCards.tsx'
-import { type SessionRole, type ThreadView, useHostValue, useThreadsRevision } from './threads.ts'
-import { ChevronIcon, ThreadItem } from './ui.tsx'
+import { groupThreads, type SessionRole, type ThreadView, useHostValue, useThreadsRevision } from './threads.ts'
+import { BranchChip, ChevronIcon, FileIcon, Pill } from './ui.tsx'
 
 type UseStatus = <T>(selector: (statuses: ReadonlyMap<string, { running?: boolean }>) => T) => T
 
@@ -24,6 +23,13 @@ function useThreads(mainSessionId: string | undefined, useSessionStatus: UseStat
   return useHostValue<ThreadView[]>(mainSessionId === undefined ? null : 'threads.list', { mainSessionId }, [mainSessionId, running, revision])
 }
 
+type SectionId = 'waiting' | 'running' | 'idle' | 'resolved' | 'archived'
+
+/**
+ * The right-sidebar threads list, after Claude's threads panel: a title with search, then
+ * sections (waiting for you, running, idle, resolved, archived) with counts, each foldable.
+ * "Waiting" and "resolved" always show, with a dashed placeholder when empty.
+ */
 export function ThreadsListTab({ sessionId, useSessionStatus, t, openThread, openSession }: {
   sessionId: string
   useSessionStatus: UseStatus
@@ -37,55 +43,91 @@ export function ThreadsListTab({ sessionId, useSessionStatus, t, openThread, ope
   // Selectors must return stable values: select the joined ids, derive the set here.
   const runningKey = useSessionStatus(runningIds)
   const running = useMemo(() => new Set(runningKey.split(',')), [runningKey])
-  const [showArchived, setShowArchived] = useState(false)
+  // null: the search field is closed.
+  const [query, setQuery] = useState<string | null>(null)
+  const [folded, setFolded] = useState<Partial<Record<SectionId, boolean>>>({ archived: true })
   if (role === undefined) return null
   if (role.project === null) return <div className="dsht-tab">{t('list.notProject')}</div>
-  const active = threads?.filter((thread) => !thread.archived) ?? []
-  const archived = threads?.filter((thread) => thread.archived) ?? []
-  const item = (thread: ThreadView) => {
-    const state = glyphState(thread, running.has(thread.id))
-    const report = thread.lastReport
-    const status = thread.archived ? t('pane.archived') : state === 'running' ? t('status.running') : state === 'resolved' ? t('list.resolved')
-      : report === null ? t('list.noReport') : t(STATUS_KEYS[report.status] ?? 'status.noReport')
+  const groups = groupThreads(threads ?? [], (thread) => glyphState(thread, running.has(thread.id)), query ?? '')
+  const searching = (query ?? '').trim().length > 0
+  const nothing = searching && Object.values(groups).every((list) => list.length === 0)
+
+  const section = (id: SectionId, label: string, list: readonly ThreadView[], empty?: string) => {
+    // Searching shows only the sections with matches.
+    if (list.length === 0 && (empty === undefined || searching)) return null
+    const open = list.length > 0 && folded[id] !== true
     return (
-      <ThreadItem key={thread.id} n={thread.n} title={thread.title} state={state}
-        status={`${status} · ${relativeTime(t, thread.updatedAt)}`}
-        summary={state === 'running' ? undefined : report?.summary ?? thread.error ?? undefined}
-        decision={state === 'waiting' ? report?.decisions[0] : undefined} decisionLabel={t('card.decision')}
-        branch={thread.worktree === null || thread.worktree.removed ? undefined : thread.worktree.branch}
-        openLabel={t('card.open')} onOpen={() => openThread(thread.id)} />
+      <section key={id} className={`dsht-section dsht-section-${id}`}>
+        <button type="button" className={`dsht-section-head${open ? ' is-open' : ''}`} aria-expanded={open} disabled={list.length === 0}
+          onClick={() => setFolded((current) => ({ ...current, [id]: open }))}>
+          <span>{label} · {list.length}</span>
+          {list.length === 0 ? null : <ChevronIcon />}
+        </button>
+        {list.length === 0
+          ? <div className="dsht-section-empty">{empty}</div>
+          : open ? <div className="dsht-rows">{list.map((thread) => (
+              <ThreadRow key={thread.id} thread={thread} state={glyphState(thread, running.has(thread.id))} t={t} onOpen={() => openThread(thread.id)} />
+            ))}</div> : null}
+      </section>
     )
   }
 
   return (
     <div className="dsht-list">
-      <div className="dsht-list-head">
-        <span>{role.project.title}</span>
-        {role.thread ? <Button size="sm" variant="ghost" onClick={() => openSession(role.project!.mainSessionId)}>{t('header.backToMain')}</Button> : null}
+      <div className="dsht-list-top">
+        <span className="dsht-list-title">{t('list.title')}</span>
+        <div className="dsht-list-tools">
+          {role.thread ? <Button size="sm" variant="ghost" onClick={() => openSession(role.project!.mainSessionId)}>{t('header.backToMain')}</Button> : null}
+          <Pill icon={<SearchIcon size={15} />} label={t('list.search')} onClick={() => setQuery((current) => (current === null ? '' : null))} />
+        </div>
       </div>
-      {threads === undefined ? null : active.length === 0 && archived.length === 0
-        ? <div className="dsht-tab">{t('list.empty')}</div>
-        : <div className="dsht-items">{sortForList(active, running).map(item)}</div>}
-      {archived.length === 0 ? null : (
+      {query === null ? null : (
+        <input className="dsht-list-search" autoFocus value={query} placeholder={t('list.search')} aria-label={t('list.search')}
+          onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={(event) => { if (event.key === 'Escape') setQuery(null) }} />
+      )}
+      {threads === undefined ? null : nothing ? <div className="dsht-tab">{t('list.noMatch')}</div> : (
         <>
-          <button type="button" className={`dsht-list-fold${showArchived ? ' is-open' : ''}`} aria-expanded={showArchived}
-            onClick={() => setShowArchived((open) => !open)}>
-            <ChevronIcon />{t('list.archived', { count: archived.length })}
-          </button>
-          {showArchived ? <div className="dsht-items dsht-items-archived">{[...archived].sort((a, b) => b.n - a.n).map(item)}</div> : null}
+          {section('waiting', t('list.waiting'), groups.waiting, t('list.waitingEmpty'))}
+          {section('running', t('list.running'), groups.running)}
+          {section('idle', t('list.idle'), groups.idle)}
+          {section('resolved', t('list.resolvedSection'), groups.resolved, t('list.resolvedEmpty'))}
+          {section('archived', t('list.archivedSection'), groups.archived)}
         </>
       )}
     </div>
   )
 }
 
-/** Waiting on the user first, then running, then the rest; resolved threads last; newest first within each. */
-function sortForList(threads: readonly ThreadView[], running: ReadonlySet<string>): ThreadView[] {
-  const rank = (thread: ThreadView) => {
-    const state = glyphState(thread, running.has(thread.id))
-    return state === 'waiting' ? 0 : state === 'running' ? 1 : state === 'resolved' ? 3 : 2
-  }
-  return [...threads].sort((a, b) => rank(a) - rank(b) || b.n - a.n)
+/** One thread in the list: state mark, number and title, time; what it waits on; its files and branch. */
+function ThreadRow({ thread, state, t, onOpen }: { thread: ThreadView; state: GlyphState; t: Translate; onOpen: () => void }) {
+  const report = thread.lastReport
+  const files = report?.changedFiles ?? []
+  const branch = thread.worktree === null || thread.worktree.removed ? undefined : thread.worktree.branch
+  const decision = state === 'waiting' ? report?.decisions[0] ?? report?.summary : undefined
+  return (
+    <div className={`dsht-row dsht-row-${state}`} role="button" tabIndex={0} onClick={onOpen}
+      onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen() } }}>
+      <ThreadGlyph state={state} />
+      <div className="dsht-row-body">
+        <div className="dsht-row-top">
+          <span className="dsht-row-title"><span className="dsht-item-n">#{thread.n}</span>{thread.title}</span>
+          <span className="dsht-row-time">{relativeTime(t, thread.updatedAt)}</span>
+        </div>
+        {decision === undefined || decision.length === 0 ? null : <div className="dsht-row-decision">{decision}</div>}
+        {files.length === 0 && branch === undefined ? null : (
+          <div className="dsht-row-chips">
+            {files.length === 0 ? null : (
+              <span className="dsht-chip dsht-count" title={files.join('\n')} aria-label={t('list.files', { count: files.length })}>
+                <FileIcon kind="doc" />{files.length}
+              </span>
+            )}
+            {branch === undefined ? null : <BranchChip branch={branch} />}
+          </div>
+        )}
+      </div>
+    </div>
+  )
 }
 
 /** Conversation header: "讨论串 · N" in a project main conversation, "主对话" in a thread. */

@@ -1,6 +1,7 @@
 // Thread data for the panes: host calls, a refresh signal, and the right-sidebar address.
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { callHost } from './api.ts'
+import type { GlyphState } from './glyphs.tsx'
 
 /** Mirrors ThreadSummary in src/api.ts. */
 export interface ThreadView {
@@ -100,6 +101,46 @@ export function useHostValue<T>(method: string | null, payload: unknown, deps: r
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [method, ...deps])
   return value
+}
+
+/** Sections of the threads list, as in Claude's threads panel. */
+export interface ThreadGroups<T> {
+  /** Raised hand: the thread stopped to ask the user something. */
+  waiting: T[]
+  running: T[]
+  /** Not running and not waiting: done, stopped, failed, or never reported. */
+  idle: T[]
+  resolved: T[]
+  archived: T[]
+}
+
+/**
+ * Sort threads into the list's sections, newest activity first, keeping those whose number,
+ * title or latest summary contains `query`. `stateOf` is glyphState with the live running set.
+ */
+export function groupThreads<T extends Pick<ThreadView, 'n' | 'title' | 'archived' | 'lastReport' | 'updatedAt'>>(
+  threads: readonly T[],
+  stateOf: (thread: T) => GlyphState,
+  query = '',
+): ThreadGroups<T> {
+  const needle = query.trim().toLowerCase().replace(/^#/, '')
+  const matches = (thread: T) => needle.length === 0 || String(thread.n) === needle
+    || thread.title.toLowerCase().includes(needle) || (thread.lastReport?.summary.toLowerCase().includes(needle) ?? false)
+  const groups: ThreadGroups<T> = { waiting: [], running: [], idle: [], resolved: [], archived: [] }
+  const newestFirst = [...threads].filter(matches).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.n - a.n)
+  for (const thread of newestFirst) {
+    if (thread.archived) {
+      groups.archived.push(thread)
+      continue
+    }
+    const state = stateOf(thread)
+    const group = state === 'waiting' ? groups.waiting
+      : state === 'running' || state === 'queued' ? groups.running
+      : state === 'resolved' ? groups.resolved
+      : groups.idle
+    group.push(thread)
+  }
+  return groups
 }
 
 /** Right-sidebar resource address of a thread's conversation. */

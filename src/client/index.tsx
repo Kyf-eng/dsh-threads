@@ -26,9 +26,9 @@ import { parseThreadAddress, THREAD_ADDRESS_PATTERN, threadAddress } from './thr
 /** Sidebar entry id and `main` panel key. */
 const PANEL_ID = 'dsh-threads-projects'
 /** Right-sidebar tab types: the thread list (kind `dsh-threads`) and one thread's conversation. */
-const LIST_TAB_ID = '@fky/dsh-threads'
+const LIST_TAB_ID = '@kyf-eng/dsh-threads'
 const LIST_TAB_KIND = 'dsh-threads'
-const CHAT_TAB_ID = '@fky/dsh-threads/chat'
+const CHAT_TAB_ID = '@kyf-eng/dsh-threads/chat'
 const CHAT_TAB_KIND = 'dsh-threads.chat'
 
 export const inject = ['slots', 'locale', 'layout', 'uiWorkspace', 'workspaces', 'sessions', 'resources', 'sidebarRight', 'sidebarRightTabs', 'uiSession', 'uiConversation']

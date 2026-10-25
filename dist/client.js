@@ -1,5 +1,5 @@
 window.__ModuleLoader__.load({
-	id: "@fky/dsh-threads",
+	id: "@kyf-eng/dsh-threads",
 	factory: (require) => {
 		var module = { exports: {} };
 		var exports = module.exports;
@@ -443,7 +443,7 @@ function parseThreadAddress(value) {
 }
 const THREAD_ADDRESS_PATTERN = `${THREAD_ADDRESS}**`;
 // src/client/kinds.ts
-const SIDEBAR_STYLE_ID = "@fky/dsh-threads/sidebar";
+const SIDEBAR_STYLE_ID = "@kyf-eng/dsh-threads/sidebar";
 let kinds = {
 	threads: /* @__PURE__ */ new Set(),
 	mains: /* @__PURE__ */ new Map(),
@@ -477,7 +477,7 @@ function writeSidebarCss(next) {
 	let tag = document.querySelector(`style[data-plugin-css="${SIDEBAR_STYLE_ID}"]`);
 	if (tag === null) {
 		tag = document.createElement("style");
-		tag.dataset.plugin = "@fky/dsh-threads";
+		tag.dataset.plugin = "@kyf-eng/dsh-threads";
 		tag.dataset.pluginCss = SIDEBAR_STYLE_ID;
 		document.head.appendChild(tag);
 	}
@@ -2960,7 +2960,7 @@ function RowMark({ project, main, live, t }) {
 	});
 }
 // src/client/styles.ts
-const STYLE_ID = "@fky/dsh-threads/styles";
+const STYLE_ID = "@kyf-eng/dsh-threads/styles";
 const css = `
 /* Fixed colors can live on :root. Tokens built from DSH's theme variables must be computed where
    those are defined (DSH sets them on body, not :root), so they are declared on body and again on
@@ -3282,7 +3282,7 @@ function injectStyles() {
 	if (typeof document === "undefined") return () => {};
 	if (document.querySelector(`style[data-plugin-css="${STYLE_ID}"]`) !== null) return () => {};
 	const tag = document.createElement("style");
-	tag.dataset.plugin = "@fky/dsh-threads";
+	tag.dataset.plugin = "@kyf-eng/dsh-threads";
 	tag.dataset.pluginCss = STYLE_ID;
 	tag.textContent = css;
 	document.head.appendChild(tag);
@@ -3628,9 +3628,9 @@ function ThreadsHeaderAction({ sessionId, useSessionStatus, t, openThreadsList, 
 /** Sidebar entry id and `main` panel key. */
 const PANEL_ID = "dsh-threads-projects";
 /** Right-sidebar tab types: the thread list (kind `dsh-threads`) and one thread's conversation. */
-const LIST_TAB_ID = "@fky/dsh-threads";
+const LIST_TAB_ID = "@kyf-eng/dsh-threads";
 const LIST_TAB_KIND = "dsh-threads";
-const CHAT_TAB_ID = "@fky/dsh-threads/chat";
+const CHAT_TAB_ID = "@kyf-eng/dsh-threads/chat";
 const CHAT_TAB_KIND = "dsh-threads.chat";
 const inject = [
 	"slots",

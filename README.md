@@ -28,7 +28,9 @@
    Web 版用 `--profile web`。也可以用 `github:Kyf-eng/dsh-threads#v0.1.0-rc.6`。
 3. 启动 DeepSeek Harness，左侧出现"项目"。
 
-卸载：`dsh plugin --profile desktop remove @fky/dsh-threads`。
+卸载：`dsh plugin --profile desktop remove @kyf-eng/dsh-threads`（0.1.0-rc.6 及更早的版本叫 `@fky/dsh-threads`）。
+
+从 0.1.0-rc.6 及更早的版本升级：包名从 `@fky/dsh-threads` 改成了 `@kyf-eng/dsh-threads`，新版本不会替换旧的。先完全退出 DeepSeek Harness，运行 `dsh plugin --profile desktop remove @fky/dsh-threads`，再按上面的第 2 步安装。项目和讨论串存在 DeepSeek Harness 自己的存储里，卸载旧包不会丢。
 
 ## 使用
 

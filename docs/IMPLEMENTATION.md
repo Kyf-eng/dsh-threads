@@ -10,7 +10,7 @@ docs/Plan.md 定了方向：在 DeepSeek Harness（DSH）里做一个插件—�
 3. 把 M0–M2 拆到文件级。
 
 已定的三件事：
-- **包名**：仓库名叫 `dsh-threads`，npm 用作用域包。`dsh-threads` 在 npm 上已被别人占名。包名暂用 `@fky/dsh-threads`，M0 时确认你的 npm 用户名，改名只动 `package.json` 和 `cordis.patch.yml` 两处。
+- **包名**：仓库名叫 `dsh-threads`，npm 用作用域包。`dsh-threads` 在 npm 上已被别人占名。包名暂用 `@fky/dsh-threads`，M0 时确认你的 npm 用户名。2026-10-25 定为 `@kyf-eng/dsh-threads`：`fky` 在 npm 上是别人的组织，作用域改用你的 npm 用户名（和 GitHub 一致）。改名动了 `package.json`、lockfile、`cordis.patch.yml`、浏览器端的面板和样式 ID、README 的卸载命令；存储表 `dsh_threads` 不随包名变，数据不丢。
 - **开串权限**：照 Claude 的做法——你点名的任务直接开；模型自己想到的只出提议。
 - **批准后的执行范围**：把本计划存为 `docs/IMPLEMENTATION.md`，然后完成 M0。
 
@@ -268,8 +268,8 @@ docs/Plan.md 定了方向：在 DeepSeek Harness（DSH）里做一个插件—�
 
 ```
 dsh-thread/                    # 本地目录名不变；GitHub 仓库叫 dsh-threads
-  package.json                 # @fky/dsh-threads, type: module, dsh.bundle / dsh.client, engines.dsh, files
-  cordis.patch.yml             # insert 一行：id: dsh-threads, name: '@fky/dsh-threads', config: {...}
+  package.json                 # @kyf-eng/dsh-threads, type: module, dsh.bundle / dsh.client, engines.dsh, files
+  cordis.patch.yml             # insert 一行：id: dsh-threads, name: '@kyf-eng/dsh-threads', config: {...}
   tsconfig.json  tsconfig.client.json  tsdown.config.ts   # 宿主端 ESM；浏览器端 CJS + __ModuleLoader__ 包装
   src/
     index.ts                   # name / inject / Config / apply：组装下面各模块

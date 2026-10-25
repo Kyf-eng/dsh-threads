@@ -12,7 +12,7 @@ import { finalAssistantOutput } from "@deepseek-ai/dsh-subagent";
 import { defineTool } from "@deepseek-ai/dsh-tools";
 import { defineDomain, domainTable } from "@deepseek-ai/dsh-storage-domain";
 // package.json
-var name$1 = "@fky/dsh-threads";
+var name$1 = "@kyf-eng/dsh-threads";
 var version = "0.1.0-rc.6";
 // src/messages.ts
 const zh = {

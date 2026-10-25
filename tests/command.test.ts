@@ -11,7 +11,7 @@ function command(manager: ReturnType<typeof setup>['manager']) {
   let handler: Handler | undefined
   let name = ''
   const ctx = { commands: { register: (definition: { name: string; handler: Handler }) => { name = definition.name; handler = definition.handler } } }
-  registerThreadCommand(ctx as unknown as Context, manager, '@fky/dsh-threads')
+  registerThreadCommand(ctx as unknown as Context, manager, '@kyf-eng/dsh-threads')
   expect(name).toBe('thread')
   return (rawInput: string, agentId = 'main') => handler!({ agent: { id: agentId }, rawInput })
 }

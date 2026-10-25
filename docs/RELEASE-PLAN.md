@@ -113,4 +113,4 @@ B8、B9、B10 是 P2，时间够就做，不够就留到 0.1.x。
 - **SECURITY.md 指向 GitHub 的私下报告漏洞**，这个仓库还没开（Settings → Code security → Private vulnerability reporting）。这是仓库设置，要你决定是否打开。
 - Windows 和 macOS 的 CI 任务暂时不是必需检查；要设成必需，需要改 `main` 的分支保护（仓库设置）。
 - B8（worktree 清理的界面入口）、B9（存储清理）、B10（主对话被删）没做，留在 0.1.x；B11（花费上限）写进了已知限制。
-- 审批继承（清单 P0-1）已在桌面版 0.2.1-rc.3 原版宿主上验证通过（IMPLEMENTATION.md“DSH 0.2.1-rc.3 上的冒烟测试和审批验证”）。Windows / Linux 真机（清单跨平台 P0-1）仍然要你来做。
+- 审批继承（清单 P0-1）已在桌面版 0.2.1-rc.3 原版宿主上验证通过（IMPLEMENTATION.md“DSH 0.2.1-rc.3 上的冒烟测试和审批验证”）。Linux 暂时没有机器；Windows 由朋友的 Codex 按 `docs/WINDOWS-TEST.md` 安装 DSH 0.2.1-rc.3（Windows x64 桌面版）和 v0.1.0-rc.6 后实测。v0.1.0-rc.6 已由打 tag 的 workflow 自动发布。

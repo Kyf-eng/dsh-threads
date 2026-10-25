@@ -4,7 +4,7 @@
 // fresh branch per thread, and removal only on the user's word (`/thread cleanup confirm`).
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { msg } from './messages.ts'
@@ -31,17 +31,33 @@ const POOL = ['.agents', 'worktrees'] as const
 /** A refusal the model should read (not a bug). */
 export class WorktreeError extends Error {}
 
+/** git's own words: the first `error:` or `fatal:` line it wrote, else its first line. */
+function gitSaid(error: unknown): string {
+  const { stderr } = error as { stderr?: unknown }
+  const lines = typeof stderr === 'string' ? stderr.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0) : []
+  return lines.find((line) => /^(error|fatal):/.test(line)) ?? lines[0] ?? ''
+}
+
+const withoutPrefix = (line: string) => line.replace(/^(error|fatal):\s*/, '')
+
 /**
  * Why git could not find the repository: git is not on DSH's PATH (a Windows machine without Git
  * for Windows), the folder is not a repository, or git refused for its own reason (on Windows often
  * "dubious ownership"), which the user needs to read as git wrote it.
  */
 function notARepository(error: unknown, folder: string): WorktreeError {
-  const { code, stderr } = error as { code?: unknown; stderr?: unknown }
-  if (code === 'ENOENT') return new WorktreeError(msg().gitMissing)
-  const detail = typeof stderr === 'string' ? stderr.trim().split(/\r?\n/)[0] ?? '' : ''
+  if ((error as { code?: unknown }).code === 'ENOENT') return new WorktreeError(msg().gitMissing)
+  const detail = gitSaid(error)
   if (detail === '' || /not a git repository/i.test(detail)) return new WorktreeError(msg().notARepository(folder))
-  return new WorktreeError(msg().gitFailed(folder, detail.replace(/^fatal:\s*/, '')))
+  return new WorktreeError(msg().gitFailed(folder, withoutPrefix(detail)))
+}
+
+/** Why `git worktree add` failed; on Windows most often paths over 260 characters. */
+function checkoutFailed(error: unknown, repositoryRoot: string): WorktreeError {
+  const { stderr } = error as { stderr?: unknown }
+  if (typeof stderr === 'string' && /filename too long/i.test(stderr)) return new WorktreeError(msg().pathTooLong(repositoryRoot))
+  const detail = gitSaid(error)
+  return new WorktreeError(msg().checkoutFailed(detail === '' ? String(error) : withoutPrefix(detail)))
 }
 
 /**
@@ -76,8 +92,48 @@ export async function createWorktree(git: Git, folder: string, name: string): Pr
   await preparePool(join(repositoryRoot, ...POOL))
   const branch = `${BRANCH_PREFIX}${name}`
   const path = join(repositoryRoot, ...POOL, `dsh-threads-${name}`)
-  await git(repositoryRoot, ['worktree', 'add', '-b', branch, '--', path, baseCommit])
+  const before = { folder: existsSync(path), branch: await hasBranch(git, repositoryRoot, branch) }
+  try {
+    await git(repositoryRoot, ['worktree', 'add', '-b', branch, '--', path, baseCommit])
+  } catch (error) {
+    await discardFailedCheckout(git, { repositoryRoot, path, branch, baseCommit }, before)
+    throw checkoutFailed(error, repositoryRoot)
+  }
   return { path, subdir, branch, baseCommit, repositoryRoot, removed: false }
+}
+
+async function hasBranch(git: Git, repositoryRoot: string, branch: string): Promise<boolean> {
+  try {
+    await git(repositoryRoot, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`])
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Take back what a failed `worktree add -b` left behind (git keeps the new branch, and may keep the
+ * half-filled folder): only what this attempt created, and the branch only while it is still at
+ * the commit it was made from.
+ */
+async function discardFailedCheckout(
+  git: Git,
+  worktree: Pick<ThreadWorktree, 'repositoryRoot' | 'path' | 'branch' | 'baseCommit'>,
+  before: { folder: boolean; branch: boolean },
+): Promise<void> {
+  const { repositoryRoot, path, branch, baseCommit } = worktree
+  if (!before.folder) {
+    await git(repositoryRoot, ['worktree', 'remove', '--force', '--', path]).catch(() => undefined)
+    await rm(path, { recursive: true, force: true }).catch(() => undefined)
+    await git(repositoryRoot, ['worktree', 'prune']).catch(() => undefined)
+  }
+  if (before.branch) return
+  try {
+    const tip = (await git(repositoryRoot, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`])).trim()
+    if (tip === baseCommit) await git(repositoryRoot, ['branch', '-D', branch])
+  } catch {
+    // No branch to take back.
+  }
 }
 
 /** Where a worktree thread works: the project folder's counterpart inside its checkout. */

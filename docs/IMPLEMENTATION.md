@@ -887,6 +887,8 @@ v0.1.0 阶段 1 合并后，在 test1 跑完整流程时，主对话没让合并
   - worktree 讨论串被要求提交时，碰上会失败的 pre-commit hook，就用 `--no-verify` 绕过去，还删了 hook 写的文件。主对话看到 DSH 沙箱的权限错误后，自己去修文件夹权限，还临时放开了 PowerShell 的执行策略。现在两边的提示词都写明：不跳过 hook，不改 hook，不删 hook 写的东西；不为了让命令跑通去改权限、ACL、执行策略、沙箱或全局 git 设置。讨论串遇到这种情况回报 `blocked`；主对话把错误告诉用户，不自己修，也不开讨论串去修，除非用户要求。（#38）
 - **测试写错了**：第 3 项把“讨论串提交时 pre-commit hook 执行了”当成插件关不掉 hook。实际上插件只在自己调用 git（开、删 worktree）时用 `core.hooksPath=/dev/null` 关掉 hook，讨论串自己的提交本来就该走仓库的 hook。测试改成两部分：用 post-checkout hook 测插件开 worktree 时关没关掉 hook，用失败的 pre-commit hook 测讨论串是不是回报“受阻”。第 0 步也改成用系统 PATH 检查 git。
 - **DSH 或环境的问题**：`SetNamedSecurityInfoW failed (Win32 5): grantWrite(D:\dsh-test\playground)` 是 DSH 的 Windows 沙箱没能给项目文件夹加写权限，讨论串因此只能用只读工具，可能和 `D:\dsh-test` 是 Codex 建的有关，第二轮会只读记录 `icacls` 和文件夹所有者。下载进程异常退出、winget 源报错、Git 安装器不认 `/DIR` 都是环境问题。存储里 `worktree.repositoryRoot` 是 git 输出的 `D:/…`，`worktree.path` 是 `D:\…`；前者只用作 git 的工作目录，两种写法都能用，不是问题。
+- **#38 在 macOS 上实测**（2026-10-24，fresh2 项目，仓库装了一个必定失败的 pre-commit hook）：`/thread -w … 然后提交到你的分支` 开出的讨论串提交被挡后回报 `blocked`，引用了 hook 的输出，没用 `--no-verify`，没删 hook 写的文件，分支上没有新提交；会话日志里只跑过一次 `git commit`。主对话收到回报后说不会改 hook、不会跳过，并给用户三个选项。再让主对话自己提交（“提交不了你看着办”）：它的思考里想到“用户可能想让我关掉 hook，但规则不允许”，只把文件暂存，引用报错，给出用户移除 hook 后可以直接运行的提交命令。
+- 同一次实测里看到的界面现象：`/thread` 命令在对话里只显示成一行 `thread · <结果>`，不显示成消息气泡（DSH 的设计，输入框不回显命令）；它上面的空白是上一轮回复被隐藏的操作按钮（复制、在新对话中分支），DSH 只在最新一轮常显这一排，不是丢了消息。
 - **操作失误**：同一条 `/thread` 命令每次都发了两到五遍（#1–#5，#6 和 #7），开出了重复的讨论串。用户确认是操作者发错了，不是插件的问题。
 
 ## 六、验证

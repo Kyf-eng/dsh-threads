@@ -118,3 +118,4 @@ B8、B9、B10 是 P2，时间够就做，不够就留到 0.1.x。
 - 安全报告：仓库已打开私下报告漏洞（Private vulnerability reporting），和 `SECURITY.md` 的说法一致。
 - npm 作用域（D5）：`fky` 在 npm 上是别人的组织，包名改成 `@kyf-eng/dsh-threads`（你的 npm 用户名，和 GitHub 一致）。从 rc.6 及更早版本升级要先卸载 `@fky/dsh-threads`，README 写了步骤；**下一个版本的 CHANGELOG 要写上改名和升级步骤**。`npm publish` 仍等正式版时再问你。
 - Windows 实测第一轮（rc.6）：做完了 1–4 项的全部或一部分。找到两个插件问题：找不到 git 时误报“不是 git 仓库”（#37）；讨论串用 `--no-verify` 绕过 hook、主对话自己改系统权限（#38）。另外测试文档写错了 hook 那一项。详见 IMPLEMENTATION.md“Windows 实测第一轮”。docs/WINDOWS-TEST.md 加了第二轮的提示词：先升级到 rc.7，再补测剩下的项目。
+- v0.1.0-rc.7：#35–#39（中文 README、包名 `@kyf-eng/dsh-threads`、找不到 git 的提示、不绕过检查）。#38 在 macOS 上实测通过。Windows 第二轮按 docs/WINDOWS-TEST.md 的第二轮提示词，从升级到 rc.7 开始测。

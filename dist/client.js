@@ -90,6 +90,7 @@ function useProjects() {
 // src/client/chat.ts
 const NOTICE_NODE = "dsh-threads-notice";
 const OPENED_KEY = "dsh-threads-opened";
+const COMMAND_NODE = "dsh-threads-command";
 const isAppend = (event) => event.surfaceOp === "append";
 const ROLES = /* @__PURE__ */ new Set([
 	"brief",
@@ -197,6 +198,65 @@ const openedDefinition = {
 			turn: state.turn,
 			key: OPENED_KEY,
 			value: { opened: state.opened }
+		};
+	}
+};
+/** `/thread stop <n>`, `/thread cleanup [confirm]` and a bare `/thread` open no thread. */
+function opensThread(args) {
+	const text = typeof args === "string" ? args.trim() : "";
+	return text.length > 0 && !/^(stop|cleanup)(\s|$)/.test(text);
+}
+/** The thread number in `/thread`'s own success reply (src/messages.ts `commandOpened`). */
+function openedNumber(text) {
+	const match = typeof text === "string" ? /#(\d+)/.exec(text) : null;
+	return match === null ? null : Number(match[1]);
+}
+const threadCommandDefinition = {
+	kind: COMMAND_NODE,
+	target: "chat",
+	match: (event) => {
+		if (event.type === "command/run" && event.data.name === "thread") return {
+			id: String(event.data.commandId),
+			role: "start"
+		};
+		if (event.type === "command/done") return {
+			id: String(event.data.commandId),
+			role: "update"
+		};
+		return null;
+	},
+	start: (_context, match) => {
+		if (match.event.type !== "command/run") throw new Error("dsh-threads-command start requires command/run");
+		return {
+			opens: opensThread(match.event.data.args),
+			n: null,
+			doneSeq: null
+		};
+	},
+	update: (context, match) => {
+		const state = context.state;
+		const { event } = match;
+		if (state === void 0 || !state.opens || event.type !== "command/done" || event.data.kind !== "success") return state;
+		const n = openedNumber(event.data.text);
+		return n === null ? state : {
+			...state,
+			n,
+			doneSeq: event.seq
+		};
+	},
+	buildViewNode: (context) => {
+		const state = context.state;
+		if (state === void 0 || state.n === null || state.doneSeq === null) return null;
+		const data = { n: state.n };
+		return {
+			key: context.key,
+			kind: COMMAND_NODE,
+			id: context.id,
+			target: "chat",
+			anchorSeq: state.doneSeq,
+			location: context.start?.location ?? context.matches?.[0]?.location ?? { kind: "unresolved" },
+			visibility: "visible",
+			data
 		};
 	}
 };
@@ -1167,6 +1227,23 @@ function ReportCard({ cards, sessionId, useSessionStatus, t, openThread }) {
 		})]
 	});
 }
+/** One thread a turn or a command opened, with its live state; the report card carries the details. */
+function OpenedItem({ card, thread, live, t, openThread }) {
+	const state = thread === void 0 ? "running" : glyphState(thread, live.running.has(card.threadId), live.asking.has(card.threadId));
+	const report = thread?.lastReport ?? null;
+	const status = state === "running" ? t("status.running") : state === "resolved" ? t("list.resolved") : report === null ? void 0 : t(STATUS_KEYS[report.status] ?? "status.noReport");
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ThreadItem, {
+		compact: true,
+		n: card.n,
+		title: card.title,
+		state,
+		status,
+		files: state === "running" ? void 0 : report?.changedFiles.slice(0, 2),
+		branch: thread?.worktree?.branch ?? card.branch,
+		openLabel: t("card.open"),
+		onOpen: () => openThread(card.threadId)
+	});
+}
 /** conversation.chat.turnTail entry: the threads this turn opened ("↳ N 条回复"), with live state. */
 function TurnThreadsCard({ turn, sessionId, useSessionStatus, t, openThread }) {
 	const opened = turn.data.get("dsh-threads-opened")?.opened ?? [];
@@ -1186,24 +1263,43 @@ function TurnThreadsCard({ turn, sessionId, useSessionStatus, t, openThread }) {
 			children: t("card.replies", { count: opened.length })
 		}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 			className: "dsht-items",
-			children: opened.map((card) => {
-				const thread = byId.get(card.threadId);
-				const state = thread === void 0 ? "running" : glyphState(thread, live.running.has(card.threadId), live.asking.has(card.threadId));
-				const report = thread?.lastReport ?? null;
-				const status = state === "running" ? t("status.running") : state === "resolved" ? t("list.resolved") : report === null ? void 0 : t(STATUS_KEYS[report.status] ?? "status.noReport");
-				return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ThreadItem, {
-					compact: true,
-					n: card.n,
-					title: card.title,
-					state,
-					status,
-					files: state === "running" ? void 0 : report?.changedFiles.slice(0, 2),
-					branch: thread?.worktree?.branch ?? card.branch,
-					openLabel: t("card.open"),
-					onOpen: () => openThread(card.threadId)
-				}, card.threadId);
-			})
+			children: opened.map((card) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(OpenedItem, {
+				card,
+				thread: byId.get(card.threadId),
+				live,
+				t,
+				openThread
+			}, card.threadId))
 		})]
+	});
+}
+/** conversation.chat.node renderer for COMMAND_NODE: the thread a `/thread <task>` command opened. */
+function CommandThreadCard({ node, sessionId, useSessionStatus, t, openThread }) {
+	const revision = useThreadsRevision();
+	const live = useLive(useSessionStatus);
+	const thread = useHostValue("threads.list", { mainSessionId: sessionId }, [
+		sessionId,
+		live.key,
+		revision
+	])?.find((candidate) => candidate.n === node.data.n);
+	if (thread === void 0) return null;
+	const card = {
+		threadId: thread.id,
+		n: thread.n,
+		title: thread.title
+	};
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+		className: "dsht-card dsht-replies",
+		children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+			className: "dsht-items",
+			children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(OpenedItem, {
+				card,
+				thread,
+				live,
+				t,
+				openThread
+			})
+		})
 	});
 }
 // src/client/locale.ts
@@ -3797,12 +3893,19 @@ function apply(root) {
 	}, ThreadsHeaderAction));
 	ctx.uiConversation.events.register(noticeDefinition);
 	ctx.uiConversation.events.register(openedDefinition);
+	ctx.uiConversation.events.register(threadCommandDefinition);
 	ctx.slots.inject("conversation.chat.node", () => ctx.slots.register({
 		name: "conversation.chat.node",
 		key: NOTICE_NODE,
 		locale: NS,
 		inject: () => ({ openThread })
 	}, NoticeCard));
+	ctx.slots.inject("conversation.chat.node", () => ctx.slots.register({
+		name: "conversation.chat.node",
+		key: COMMAND_NODE,
+		locale: NS,
+		inject: () => ({ openThread })
+	}, CommandThreadCard));
 	ctx.slots.inject("conversation.chat.turnTail", () => ctx.slots.register({
 		name: "conversation.chat.turnTail",
 		id: OPENED_KEY,

@@ -1,7 +1,8 @@
 // Thread cards in the transcript, modelled on Claude's: the notice that replaces "收到执行请求",
-// and the turn-tail "↳ N 条回复" card listing the threads a turn opened.
+// the turn-tail "↳ N 条回复" card listing the threads a turn opened, and the card under a
+// `/thread <task>` command row.
 import { useState } from 'react'
-import type { NoticeData } from './chat.ts'
+import type { CommandNodeData, NoticeData } from './chat.ts'
 import { OPENED_KEY } from './chat.ts'
 import { glyphState, reportGlyph } from './glyphs.tsx'
 import { ThreadsIcon } from './icons.tsx'
@@ -93,6 +94,26 @@ function ReportCard({ cards, sessionId, useSessionStatus, t, openThread }: {
   )
 }
 
+/** One thread a turn or a command opened, with its live state; the report card carries the details. */
+function OpenedItem({ card, thread, live, t, openThread }: {
+  card: ThreadCardInfo
+  thread: ThreadView | undefined
+  live: ReturnType<typeof useLive>
+  t: Translate
+  openThread: (threadId: string) => void
+}) {
+  const state = thread === undefined ? 'running' : glyphState(thread, live.running.has(card.threadId), live.asking.has(card.threadId))
+  const report = thread?.lastReport ?? null
+  const status = state === 'running' ? t('status.running') : state === 'resolved' ? t('list.resolved')
+    : report === null ? undefined : t(STATUS_KEYS[report.status] ?? 'status.noReport')
+  return (
+    // Compact, like Claude's inline thread cards.
+    <ThreadItem compact n={card.n} title={card.title} state={state} status={status}
+      files={state === 'running' ? undefined : report?.changedFiles.slice(0, 2)}
+      branch={thread?.worktree?.branch ?? card.branch} openLabel={t('card.open')} onOpen={() => openThread(card.threadId)} />
+  )
+}
+
 /** conversation.chat.turnTail entry: the threads this turn opened ("↳ N 条回复"), with live state. */
 export function TurnThreadsCard({ turn, sessionId, useSessionStatus, t, openThread }: {
   turn: { data: { get(key: string): unknown } }
@@ -111,19 +132,32 @@ export function TurnThreadsCard({ turn, sessionId, useSessionStatus, t, openThre
     <div className="dsht-card dsht-replies">
       <CardHead icon={<RepliesIcon />}>{t('card.replies', { count: opened.length })}</CardHead>
       <div className="dsht-items">
-        {opened.map((card) => {
-          const thread = byId.get(card.threadId)
-          const state = thread === undefined ? 'running' : glyphState(thread, live.running.has(card.threadId), live.asking.has(card.threadId))
-          const report = thread?.lastReport ?? null
-          const status = state === 'running' ? t('status.running') : state === 'resolved' ? t('list.resolved')
-            : report === null ? undefined : t(STATUS_KEYS[report.status] ?? 'status.noReport')
-          return (
-            // Compact, like Claude's inline thread cards: the report card carries the details.
-            <ThreadItem key={card.threadId} compact n={card.n} title={card.title} state={state} status={status}
-              files={state === 'running' ? undefined : report?.changedFiles.slice(0, 2)}
-              branch={thread?.worktree?.branch ?? card.branch} openLabel={t('card.open')} onOpen={() => openThread(card.threadId)} />
-          )
-        })}
+        {opened.map((card) => (
+          <OpenedItem key={card.threadId} card={card} thread={byId.get(card.threadId)} live={live} t={t} openThread={openThread} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/** conversation.chat.node renderer for COMMAND_NODE: the thread a `/thread <task>` command opened. */
+export function CommandThreadCard({ node, sessionId, useSessionStatus, t, openThread }: {
+  node: { data: CommandNodeData }
+  sessionId: string
+  useSessionStatus: UseStatus
+  t: Translate
+  openThread: (threadId: string) => void
+}) {
+  const revision = useThreadsRevision()
+  const live = useLive(useSessionStatus)
+  const threads = useHostValue<ThreadView[]>('threads.list', { mainSessionId: sessionId }, [sessionId, live.key, revision])
+  const thread = threads?.find((candidate) => candidate.n === node.data.n)
+  if (thread === undefined) return null
+  const card: ThreadCardInfo = { threadId: thread.id, n: thread.n, title: thread.title }
+  return (
+    <div className="dsht-card dsht-replies">
+      <div className="dsht-items">
+        <OpenedItem card={card} thread={thread} live={live} t={t} openThread={openThread} />
       </div>
     </div>
   )

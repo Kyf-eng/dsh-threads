@@ -7,12 +7,12 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { ComponentType } from 'react'
 import { callHost, sendLocaleToHost } from './api.ts'
-import { NOTICE_NODE, noticeDefinition, OPENED_KEY, openedDefinition } from './chat.ts'
+import { COMMAND_NODE, NOTICE_NODE, noticeDefinition, OPENED_KEY, openedDefinition, threadCommandDefinition } from './chat.ts'
 import { ProjectsIcon } from './icons.tsx'
 import { syncKinds } from './kinds.ts'
 import { startNotifications } from './notify.ts'
 import { ProposalsDock } from './ProposalsDock.tsx'
-import { NoticeCard, TurnThreadsCard } from './ThreadCards.tsx'
+import { CommandThreadCard, NoticeCard, TurnThreadsCard } from './ThreadCards.tsx'
 import { en, NS, type Translate, zh } from './locale.ts'
 import { MakeProjectMenuItem } from './MakeProjectMenuItem.tsx'
 import { ProjectsPage } from './ProjectsPage.tsx'
@@ -207,13 +207,19 @@ export function apply(root: Context): void {
   ))
 
   // Transcript cards (M2c): our notices become thread cards; a turn that opened threads ends
-  // with an "N 条回复" card; proposals wait above the composer. Sidebar: thread rows are hidden
-  // and their main conversation's row shows ↳N and the threads' state (kinds.ts).
+  // with an "N 条回复" card, and a `/thread <task>` row with the thread it opened; proposals wait
+  // above the composer. Sidebar: thread rows are hidden and their main conversation's row shows
+  // ↳N and the threads' state (kinds.ts).
   ctx.uiConversation.events.register(noticeDefinition)
   ctx.uiConversation.events.register(openedDefinition)
+  ctx.uiConversation.events.register(threadCommandDefinition)
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
     { name: 'conversation.chat.node', key: NOTICE_NODE, locale: NS, inject: () => ({ openThread }) },
     NoticeCard as ComponentType<never>,
+  ))
+  ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
+    { name: 'conversation.chat.node', key: COMMAND_NODE, locale: NS, inject: () => ({ openThread }) },
+    CommandThreadCard as ComponentType<never>,
   ))
   ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register(
     { name: 'conversation.chat.turnTail', id: OPENED_KEY, order: 25, locale: NS, inject: (sessionId: string) => ({ sessionId, openThread }) },

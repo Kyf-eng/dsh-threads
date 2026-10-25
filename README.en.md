@@ -4,7 +4,7 @@
 
 A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) plugin, modelled on Claude's projects and threads. Your project's main conversation acts as a dispatcher: when a task is self-contained, it opens a **thread** (a real session you can click into and keep talking to), and when the thread finishes, a short report comes back to the main conversation.
 
-> Status: **0.1.0-rc.8**, a pre-release. Built against DeepSeek Harness 0.2.1-rc.2 and tested on 0.2.1-rc.2 and 0.2.1-rc.3. See [CHANGELOG.md](CHANGELOG.md) and the design notes in [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md).
+> Status: a pre-release; the latest version is on [Releases](https://github.com/Kyf-eng/dsh-threads/releases). Built against DeepSeek Harness 0.2.1-rc.2 and tested on 0.2.1-rc.2 and 0.2.1-rc.3. See [CHANGELOG.md](CHANGELOG.md) and the design notes in [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md).
 
 ## What it does
 
@@ -16,16 +16,16 @@ A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) plugin, mo
 
 ## Install
 
-Requires DeepSeek Harness **0.2.x** (Desktop or Web; tested on 0.2.1-rc.2 and 0.2.1-rc.3) and its `dsh` command line. On Desktop it is set up from the app menu (**Manage dsh command…**). Without it, the command line from npm at your DeepSeek Harness version works too, for example `npx -y @deepseek-ai/dsh@0.2.1-rc.2 plugin --profile web add <address below>`.
+Requires DeepSeek Harness **0.2.x** (Desktop or Web; tested on 0.2.1-rc.2 and 0.2.1-rc.3) and its `dsh` command line. On Desktop it is set up from the app menu (**Manage dsh command…**). Without it, the command line from npm at your DeepSeek Harness version works too, for example `npx -y @deepseek-ai/dsh@0.2.1-rc.2 plugin --profile web add @kyf-eng/dsh-threads`.
 
 1. Quit DeepSeek Harness completely (⌘Q on macOS; also quit from its menu-bar or tray icon if it has one).
 2. Add the plugin to your profile:
 
    ```sh
-   dsh plugin --profile desktop add https://github.com/Kyf-eng/dsh-threads/releases/download/v0.1.0-rc.8/kyf-eng-dsh-threads-0.1.0-rc.8.tgz
+   dsh plugin --profile desktop add @kyf-eng/dsh-threads
    ```
 
-   Use `--profile web` for the Web app. `github:Kyf-eng/dsh-threads#v0.1.0-rc.8` works too.
+   The same command upgrades it later. Use `--profile web` for the Web app. For a particular version, add `@<version>` to the name (for example `@kyf-eng/dsh-threads@0.1.0-rc.8`); without npm, use the address of the `.tgz` on [Releases](https://github.com/Kyf-eng/dsh-threads/releases).
 3. Start DeepSeek Harness. **Projects** appears in the sidebar.
 
 To remove it: `dsh plugin --profile desktop remove @kyf-eng/dsh-threads` (`@fky/dsh-threads` for 0.1.0-rc.6 and earlier).

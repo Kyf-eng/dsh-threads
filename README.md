@@ -4,7 +4,7 @@
 
 一个 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 插件，照着 Claude 的"项目 + 讨论串"做。项目的主对话当调度员：遇到能独立完成的任务，就开一个**讨论串**——一个你能点进去接着聊的真实会话；讨论串做完后，把简短的回报发回主对话。
 
-> 状态：**0.1.0-rc.8**，预发布版。基于 DeepSeek Harness 0.2.1-rc.2 开发，在 0.2.1-rc.2 和 0.2.1-rc.3 上测试过。更新记录见 [CHANGELOG.md](CHANGELOG.md)，设计说明见 [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)。
+> 状态：预发布版，最新版本见 [Releases](https://github.com/Kyf-eng/dsh-threads/releases)。基于 DeepSeek Harness 0.2.1-rc.2 开发，在 0.2.1-rc.2 和 0.2.1-rc.3 上测试过。更新记录见 [CHANGELOG.md](CHANGELOG.md)，设计说明见 [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)。
 
 ## 功能
 
@@ -16,16 +16,16 @@
 
 ## 安装
 
-需要 DeepSeek Harness **0.2.x**（桌面版或 Web 版；在 0.2.1-rc.2 和 0.2.1-rc.3 上测试过）和它的 `dsh` 命令行。桌面版在应用菜单的"管理 dsh 命令…"里设置；没有这个命令时，可以用 npm 上和你的 DeepSeek Harness 同版本的命令行，例如 `npx -y @deepseek-ai/dsh@0.2.1-rc.2 plugin --profile web add <下面的地址>`。
+需要 DeepSeek Harness **0.2.x**（桌面版或 Web 版；在 0.2.1-rc.2 和 0.2.1-rc.3 上测试过）和它的 `dsh` 命令行。桌面版在应用菜单的"管理 dsh 命令…"里设置；没有这个命令时，可以用 npm 上和你的 DeepSeek Harness 同版本的命令行，例如 `npx -y @deepseek-ai/dsh@0.2.1-rc.2 plugin --profile web add @kyf-eng/dsh-threads`。
 
 1. 完全退出 DeepSeek Harness（macOS 上按 ⌘Q；有菜单栏或托盘图标的，也要从那里退出）。
 2. 把插件加到你的 profile：
 
    ```sh
-   dsh plugin --profile desktop add https://github.com/Kyf-eng/dsh-threads/releases/download/v0.1.0-rc.8/kyf-eng-dsh-threads-0.1.0-rc.8.tgz
+   dsh plugin --profile desktop add @kyf-eng/dsh-threads
    ```
 
-   Web 版用 `--profile web`。也可以用 `github:Kyf-eng/dsh-threads#v0.1.0-rc.8`。
+   以后升级也是这一条命令。Web 版用 `--profile web`。要装某个版本，在包名后面加 `@版本号`（例如 `@kyf-eng/dsh-threads@0.1.0-rc.8`）；不想走 npm，也可以填 [Releases](https://github.com/Kyf-eng/dsh-threads/releases) 里那个 `.tgz` 的地址。
 3. 启动 DeepSeek Harness，左侧出现"项目"。
 
 卸载：`dsh plugin --profile desktop remove @kyf-eng/dsh-threads`（0.1.0-rc.6 及更早的版本叫 `@fky/dsh-threads`）。

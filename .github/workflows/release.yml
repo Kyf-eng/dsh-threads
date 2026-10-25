@@ -1,14 +1,17 @@
 name: Release
 
 # Push a tag `v<version>` on main after the release commit: this checks that the tag,
-# package.json, CHANGELOG.md and both READMEs agree, builds and packs the plugin, and publishes
-# the GitHub Release with the .tgz (a pre-release when the version has a `-` suffix).
+# package.json and CHANGELOG.md agree, builds and packs the plugin, publishes the GitHub Release
+# with the .tgz (a pre-release when the version has a `-` suffix), then publishes the same .tgz to
+# npm. npm trusts this workflow (trusted publishing, set on the package's npm settings page), so
+# there is no token; a pre-release goes to `next` once a release exists (scripts/release.ts npmTag).
 on:
   push:
     tags: ['v*']
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   release:
@@ -19,13 +22,14 @@ jobs:
         with:
           node-version: '24'
           cache: npm
+          registry-url: 'https://registry.npmjs.org'
       - run: npm ci
       - run: npm run check
       - name: dist/ is up to date
         run: git diff --exit-code -- dist
       - name: package contents
         run: node scripts/check-pack.mjs
-      - name: version, CHANGELOG and READMEs agree; release notes
+      - name: version and CHANGELOG agree; release notes
         id: release
         run: echo "info=$(node scripts/release.ts "$GITHUB_REF_NAME" notes.md)" >> "$GITHUB_OUTPUT"
       - run: npm pack
@@ -39,3 +43,14 @@ jobs:
           flags=()
           if [ "$PRERELEASE" = true ]; then flags+=(--prerelease); fi
           gh release create "$TAG" "$TARBALL" --verify-tag --title "$TAG" --notes-file notes.md "${flags[@]}"
+      - name: npm
+        env:
+          TARBALL: ${{ fromJSON(steps.release.outputs.info).tarball }}
+          VERSION: ${{ fromJSON(steps.release.outputs.info).version }}
+        run: |
+          # Trusted publishing needs npm 11.5.1 or later.
+          npm install -g npm@^11.5.1
+          name=$(node -p "require('./package.json').name")
+          published=$(npm view "$name" versions --json 2>/dev/null || true)
+          tag=$(node scripts/release.ts --npm-tag "$VERSION" "$published")
+          npm publish "$TARBALL" --access public --tag "$tag" --provenance

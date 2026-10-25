@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { changelogSection, prepareRelease } from '../scripts/release.ts'
+import { changelogSection, npmTag, parsePublished, prepareRelease } from '../scripts/release.ts'
 
 // The checks .github/workflows/release.yml runs before it publishes a tag.
 
@@ -17,8 +17,7 @@ Projects learn to wait.
 - First.
 `
 const url = 'https://github.com/o/r/releases/download/v0.2.0/kyf-eng-dsh-threads-0.2.0.tgz'
-const readme = `dsh plugin --profile desktop add ${url}\n\`github:o/r#v0.2.0\` works too.`
-const input = { tag: 'v0.2.0', pkg: { name: '@kyf-eng/dsh-threads', version: '0.2.0' }, changelog, readmes: { 'README.md': readme, 'README.en.md': readme }, repository: 'o/r' }
+const input = { tag: 'v0.2.0', pkg: { name: '@kyf-eng/dsh-threads', version: '0.2.0' }, changelog, repository: 'o/r' }
 
 describe('release', () => {
   it('reads one CHANGELOG section', () => {
@@ -30,15 +29,30 @@ describe('release', () => {
     const release = prepareRelease(input)
     expect(release).toMatchObject({ version: '0.2.0', prerelease: false, tarball: 'kyf-eng-dsh-threads-0.2.0.tgz' })
     expect(release.notes.startsWith('Projects learn to wait.\n\n## Install\n')).toBe(true)
-    expect(release.notes).toContain(`dsh plugin --profile desktop add ${url}`)
+    expect(release.notes).toContain('dsh plugin --profile desktop add @kyf-eng/dsh-threads@0.2.0\n')
+    expect(release.notes).toContain(`or from this release: \`dsh plugin --profile desktop add ${url}\``)
     expect(release.notes).toContain('If an earlier version of `@kyf-eng/dsh-threads` is installed, this command replaces it.')
     expect(release.notes.endsWith('## Changes\n\n- Waiting projects.\n- Fix: a thing.\n')).toBe(true)
-    expect(prepareRelease({ ...input, tag: 'v0.2.0-rc.1', pkg: { ...input.pkg, version: '0.2.0-rc.1' }, changelog: changelog.replace('0.2.0 —', '0.2.0-rc.1 —'), readmes: {} }).prerelease).toBe(true)
+    expect(prepareRelease({ ...input, tag: 'v0.2.0-rc.1', pkg: { ...input.pkg, version: '0.2.0-rc.1' }, changelog: changelog.replace('0.2.0 —', '0.2.0-rc.1 —') }).prerelease).toBe(true)
   })
 
-  it('refuses a tag the package, CHANGELOG or READMEs do not agree with', () => {
-    expect(() => prepareRelease({ ...input, tag: 'v0.2.1' })).toThrow(/does not match package.json version 0.2.0[\s\S]*README.md does not install from/)
+  it('refuses a tag the package or CHANGELOG do not agree with', () => {
+    expect(() => prepareRelease({ ...input, tag: 'v0.2.1' })).toThrow('does not match package.json version 0.2.0')
     expect(() => prepareRelease({ ...input, changelog: '# Changelog\n' })).toThrow('CHANGELOG.md has no "## 0.2.0')
-    expect(() => prepareRelease({ ...input, readmes: { 'README.en.md': 'old' } })).toThrow('README.en.md does not install from')
+  })
+})
+
+describe('npmTag', () => {
+  it('keeps latest on the release once there is one', () => {
+    expect(npmTag('0.1.0-rc.9', [])).toBe('latest')
+    expect(npmTag('0.1.0-rc.9', ['0.1.0-rc.8'])).toBe('latest')
+    expect(npmTag('0.1.0', ['0.1.0-rc.8'])).toBe('latest')
+    expect(npmTag('0.2.0-rc.1', ['0.1.0-rc.8', '0.1.0'])).toBe('next')
+  })
+
+  it('reads what npm view prints', () => {
+    expect(parsePublished('')).toEqual([])
+    expect(parsePublished('"0.1.0-rc.8"')).toEqual(['0.1.0-rc.8'])
+    expect(parsePublished('["0.1.0-rc.8","0.1.0"]')).toEqual(['0.1.0-rc.8', '0.1.0'])
   })
 })

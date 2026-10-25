@@ -121,3 +121,4 @@ B8、B9、B10 是 P2，时间够就做，不够就留到 0.1.x。
 - v0.1.0-rc.7：#35–#39（中文 README、包名 `@kyf-eng/dsh-threads`、找不到 git 的提示、不绕过检查）。#38 在 macOS 上实测通过。Windows 第二轮按 docs/WINDOWS-TEST.md 的第二轮提示词，从升级到 rc.7 开始测。
 - Windows 实测第二轮（rc.7）：13 项里通过 8 项，部分通过 3 项，失败 1 项（长路径），未执行 1 项（界面语言）。修了三处：检出失败时收回分支、说明长路径（#41）；主对话也接受用户本人的明确同意（#42）；`/thread` 那一行下面加讨论串卡片，新项目第一条 `/thread` 不再停在欢迎页（#43）。#42、#43 在 macOS 上实测通过。
 - v0.1.0-rc.8：#41–#44（检出失败时收回分支并说明长路径、主对话接受用户本人的明确同意、`/thread` 那一行下面的讨论串卡片、第二轮测试记录）。
+- 安装改成从 npm 按包名装（`dsh plugin --profile desktop add @kyf-eng/dsh-threads`，升级也是这一条），README 不再写版本号和下载地址，发版不用改 README。打 tag 后发布流程在 GitHub Release 之后把同一个 `.tgz` 发到 npm（trusted publishing，不存 token；有正式版之后预发布版走 `next`）。npm 上的 trusted publisher 要你在 npmjs.com 上设一次。

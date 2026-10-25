@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import { msg } from '../src/messages.ts'
 import { createWorktree, type Git, removeWorktree, systemGit, WorktreeError, worktreeFolder } from '../src/worktree.ts'
 
 // Real git in throwaway repositories: these are git's rules we rely on, not ours.
@@ -71,6 +72,14 @@ describe('createWorktree', () => {
     dirs.push(plain)
     await expect(createWorktree(git, plain, '1-x')).rejects.toBeInstanceOf(WorktreeError)
     await expect(createWorktree(git, await repo(false), '1-x')).rejects.toBeInstanceOf(WorktreeError)
+    await expect(createWorktree(git, plain, '1-x')).rejects.toThrow(msg().notARepository(plain))
+  })
+
+  it('says when git itself is missing or refuses, instead of calling the folder no repository', async () => {
+    const failing = (error: object): Git => () => Promise.reject(Object.assign(new Error('git failed'), error))
+    await expect(createWorktree(failing({ code: 'ENOENT' }), 'D:\\repo', '1-x')).rejects.toThrow(msg().gitMissing)
+    const dubious = failing({ code: 128, stderr: "fatal: detected dubious ownership in repository at 'D:/repo'\r\nTo add an exception…\r\n" })
+    await expect(createWorktree(dubious, 'D:\\repo', '1-x')).rejects.toThrow(msg().gitFailed('D:\\repo', "detected dubious ownership in repository at 'D:/repo'"))
   })
 })
 

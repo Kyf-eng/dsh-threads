@@ -74,6 +74,8 @@ const zh = {
 
   // Worktrees and DSH services (src/worktree.ts, src/host.ts)
   notARepository: (folder: string) => `项目文件夹 ${folder} 不是 git 仓库，没法开 worktree。不用 worktree 再开，或者请用户先初始化仓库。`,
+  gitMissing: '找不到 git：DeepSeek Harness 运行环境的 PATH 里没有 git 命令，没法开 worktree。请用户安装 Git（Windows 上是 Git for Windows），完全退出并重开 DeepSeek Harness；或者不用 worktree 再开。',
+  gitFailed: (folder: string, detail: string) => `在项目文件夹 ${folder} 里运行 git 失败，没法开 worktree。git 的原话：${detail}。不用 worktree 再开，或者请用户先处理这个 git 错误。`,
   noCommits: '仓库还没有任何提交，没法从 HEAD 开 worktree。',
   subfolderNotCommitted: (subdir: string) => `项目文件夹 ${subdir} 还没有提交进仓库，worktree 里不会有它。不用 worktree 再开，或者请用户先提交。`,
   mainUnreachable: (id: string) => `主对话 ${id} 连不上`,
@@ -200,6 +202,8 @@ const en: Messages = {
   reportsSummary: (count) => `${count} thread reports`,
 
   notARepository: (folder) => `The project folder ${folder} is not a git repository, so it cannot have a worktree. Open the thread without a worktree, or ask the user to initialize the repository first.`,
+  gitMissing: 'git was not found: there is no git command on DeepSeek Harness\'s PATH, so the thread cannot have a worktree. Ask the user to install Git (Git for Windows on Windows), then quit DeepSeek Harness completely and reopen it; or open the thread without a worktree.',
+  gitFailed: (folder, detail) => `git failed in the project folder ${folder}, so the thread cannot have a worktree. git said: ${detail}. Open the thread without a worktree, or ask the user to sort out this git error first.`,
   noCommits: 'The repository has no commits yet, so there is no HEAD to start a worktree from.',
   subfolderNotCommitted: (subdir) => `The project folder ${subdir} is not committed to the repository yet, so a worktree would not contain it. Open the thread without a worktree, or ask the user to commit it first.`,
   mainUnreachable: (id) => `the main conversation ${id} cannot be reached`,

@@ -6,6 +6,8 @@
 
 > 状态：预发布版，最新版本见 [Releases](https://github.com/Kyf-eng/dsh-threads/releases)。基于 DeepSeek Harness 0.2.1-rc.2 开发，在 0.2.1-rc.2 和 0.2.1-rc.3 上测试过。更新记录见 [CHANGELOG.md](CHANGELOG.md)，设计说明见 [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)。
 
+![一条消息，主对话开出三条讨论串同时干活](https://raw.githubusercontent.com/Kyf-eng/dsh-threads/main/docs/media/demo.gif)
+
 ## 功能
 
 - **项目**：一个文件夹 + 一个常驻主对话，有图标、给协调者的目标，以及所有讨论串也会收到的项目说明。在左侧"项目"里新建（用系统的文件夹选择器选文件夹），或者在会话的"…"菜单里选"设为项目"。卡片的"⋮"菜单可以置顶、归档、删除、设置这个项目的桌面通知，以及打开项目设置（协调器和讨论串的模型、使用情况）。
@@ -13,6 +15,14 @@
 - **回报**：讨论串回报做完了什么、改了哪些文件、要你决定什么。主对话只在它的讨论串都结束后被唤醒一次，并防止反复唤醒；忘了回报的讨论串会被提醒一次。
 - **并行和隔离**：最多 3 个讨论串同时运行。会改文件的讨论串在自己的 git worktree 和分支（`dsh-threads/<n>-<id>`）里工作，不碰项目文件夹；你要求时主对话才合并，`/thread cleanup` 清理做完的 worktree。
 - **Claude 式界面**：对话里的讨论串卡片、"↳ N 条回复"、等你回复时的举手、运行中的呼吸点、文件和分支小标签。左侧有单独的"项目"分组：每个项目一行（显示状态和 ↳N），点进去就是主对话。项目的主对话和讨论串都不出现在"工作区"列表里。
+
+## 平台
+
+- **macOS 桌面版**：主要的开发和测试平台，全部功能都实测过。
+- **Windows 桌面版（x64）**：实测过两轮。项目、讨论串、worktree、清理、审批沿用、停止、归档和完整流程都正常。需要先装 [Git for Windows](https://git-scm.com/download/win)；仓库路径很深时，见下面“排错”里的长路径。DeepSeek Harness 自己的 Windows 沙箱有时给不了项目文件夹写权限（`SetNamedSecurityInfoW failed (Win32 5)`），这时讨论串的终端命令要你一次性批准提权。桌面通知和英文界面还没在 Windows 上验证。
+- **Linux**：DeepSeek Harness 没有 Linux 桌面版；Web 版在 Linux 上没测过。
+- **Web 版**（`--profile web`）：在 macOS 上用过，没做完整测试。
+- 单元测试在 Linux、macOS 和 Windows 的 CI 上都跑。
 
 ## 安装
 

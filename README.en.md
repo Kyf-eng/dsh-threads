@@ -6,6 +6,8 @@ A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) plugin, mo
 
 > Status: a pre-release; the latest version is on [Releases](https://github.com/Kyf-eng/dsh-threads/releases). Built against DeepSeek Harness 0.2.1-rc.2 and tested on 0.2.1-rc.2 and 0.2.1-rc.3. See [CHANGELOG.md](CHANGELOG.md) and the design notes in [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md).
 
+![One message: the main conversation opens three threads that work at the same time](https://raw.githubusercontent.com/Kyf-eng/dsh-threads/main/docs/media/demo.gif)
+
 ## What it does
 
 - **Projects**: one folder plus one standing main conversation, with an icon, a goal for the coordinator, and instructions every thread also gets. Create one from **Projects** in the sidebar (the system folder chooser picks the folder), or turn a conversation into a project from its "…" menu. A card's "⋮" menu pins, archives, deletes, sets the project's desktop notifications, and opens its settings (models for the coordinator and threads, usage).
@@ -13,6 +15,14 @@ A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) plugin, mo
 - **Reports**: threads report what is done, what changed and what you need to decide. The main conversation is woken once, when none of its threads is still running, with a guard against wake-up loops. A thread that forgets to report is reminded once.
 - **Parallel and isolated**: up to 3 threads run at once. Threads that change files work in their own git worktree and branch (`dsh-threads/<n>-<id>`), so the project folder is never touched; the main conversation merges only when you ask, and `/thread cleanup` removes finished worktrees.
 - **Claude-style UI**: thread cards in the conversation, "↳ N replies", a raised hand for threads waiting on you, a breathing dot for running ones, file and branch chips. The sidebar has its own **Projects** section: one row per project (its state and ↳N), which opens the main conversation. Project conversations and threads stay out of the workspace list.
+
+## Platforms
+
+- **macOS Desktop**: the main development and test platform; every feature has been tried on it.
+- **Windows Desktop (x64)**: tested in two rounds. Projects, threads, worktrees, cleanup, keeping the approval mode, stopping, archiving and the full workflow work. Install [Git for Windows](https://git-scm.com/download/win) first; for deeply nested repositories, see long paths under Troubleshooting. DeepSeek Harness's own Windows sandbox sometimes cannot give the project folder write access (`SetNamedSecurityInfoW failed (Win32 5)`); thread terminal commands then need your one-time approval to run with more access. Desktop notifications and the English UI are not verified on Windows yet.
+- **Linux**: DeepSeek Harness has no Linux Desktop app; the Web app is untested on Linux.
+- **Web app** (`--profile web`): used on macOS, not fully tested.
+- Unit tests run in CI on Linux, macOS and Windows.
 
 ## Install
 

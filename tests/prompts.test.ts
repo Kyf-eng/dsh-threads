@@ -53,6 +53,8 @@ describe('dispatcherPrompt', () => {
     const prompt = dispatcherPrompt(3)
     expect(prompt).toContain('no --no-verify or other ways to skip git hooks')
     expect(prompt).toContain('Do not try to repair the system here, and do not open a thread to do it, unless the user asks.')
+    // Round two on Windows: the user said 「同意」 in the thread, and the lead still called --no-verify forbidden "even if you agree".
+    expect(prompt).toContain('The exception is the user asking for exactly that in their own words, here or in a thread')
   })
 })
 

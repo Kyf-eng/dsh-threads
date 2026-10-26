@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.0-rc.9 — 2026-10-26
+
+A fix for dsh-threads going down after DeepSeek Harness reloaded it without restarting. Coming from 0.1.0-rc.6 or earlier, remove `@fky/dsh-threads` first (see 0.1.0-rc.7).
+
+- Fix: when DeepSeek Harness reloaded the plugin while running — after a plugin manager operation found dsh-threads' files changed on disk (such as an in-app update), after a change to dsh-threads' settings, or when a service it uses restarted — dsh-threads failed to start again ("domain 'dsh_threads' is already open"). Until DeepSeek Harness restarted, the projects page and the new project dialog showed "HTTP 404", and main conversations had no thread tools or `/thread`. The plugin now releases its storage when it unloads, and takes over storage an earlier version left open, so a reload from 0.1.0-rc.8 into this version recovers without a restart.
+
 ## 0.1.0-rc.8 — 2026-10-25
 
 Fixes from the second test on Windows. Coming from 0.1.0-rc.6 or earlier, remove `@fky/dsh-threads` first (see 0.1.0-rc.7).

@@ -35,7 +35,7 @@
    dsh plugin --profile desktop add @kyf-eng/dsh-threads
    ```
 
-   以后升级也是这一条命令。Web 版用 `--profile web`。要装某个版本，在包名后面加 `@版本号`（例如 `@kyf-eng/dsh-threads@0.1.0-rc.8`）；不想走 npm，也可以填 [Releases](https://github.com/Kyf-eng/dsh-threads/releases) 里那个 `.tgz` 的地址。
+   以后升级也是这一条命令。Web 版用 `--profile web`。要装某个版本，在包名后面加 `@版本号`（例如 `@kyf-eng/dsh-threads@0.1.0-rc.9`）；不想走 npm，也可以填 [Releases](https://github.com/Kyf-eng/dsh-threads/releases) 里那个 `.tgz` 的地址。
 3. 启动 DeepSeek Harness，左侧出现"项目"。
 
 卸载：`dsh plugin --profile desktop remove @kyf-eng/dsh-threads`（0.1.0-rc.6 及更早的版本叫 `@fky/dsh-threads`）。

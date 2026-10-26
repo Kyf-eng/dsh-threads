@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { domain } from '../src/storage.ts'
+import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
+import { domain, openStore } from '../src/storage.ts'
 
 // Records as earlier versions wrote them must still read after an upgrade: every field added
 // since then needs a default (CLAUDE.md). These are the oldest shapes of each table, taken from
@@ -47,5 +48,27 @@ describe('stored records from earlier versions', () => {
   it('reads an M2c proposal with today\'s defaults', () => {
     const m2c = { id: 'proposal-1', mainSessionId: 'm', title: 't', task: 'x', state: 'queued', threadId: null, createdAt: '', expiresAt: '' }
     expect(table('proposals').parse(m2c)).toEqual({ ...m2c, worktree: false })
+  })
+})
+
+describe('reloading the plugin in place', () => {
+  // DSH's own facility over a backend that keeps nothing: it allows one open handle per domain.
+  const facility = () => new DomainFacility({
+    storage: { backend: { get: () => ({ kv: { open: async () => ({ loadAll: async () => ({ tables: {}, global: null }), close: async () => {} }) } }) } },
+  } as never, { backend: 'memory', routes: {} })
+
+  it('opens the store again after the previous load closed it', async () => {
+    const storageDomain = facility()
+    const first = await openStore(storageDomain)
+    await first.close()
+    await expect(openStore(storageDomain)).resolves.toBeDefined()
+  })
+
+  it('takes over a handle an earlier version left open', async () => {
+    const storageDomain = facility()
+    const stale = await storageDomain.open(domain)
+    await expect(storageDomain.open(domain)).rejects.toThrow('already open')
+    await expect(openStore(storageDomain)).resolves.toBeDefined()
+    await expect(stale.table('threads').put('session-1', {} as never)).rejects.toThrow()
   })
 })

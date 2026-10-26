@@ -23,6 +23,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const warn = (message: string) => ctx.logger.warn(message)
   const now = () => new Date().toISOString()
   const store = await openStore(ctx.storageDomain)
+  // Free the domain on unload, so a reload in place can open it again (src/storage.ts).
+  ctx.effect(() => () => store.close(), 'dsh-threads: storage domain')
   const host = createHost(ctx)
   const manager = new ThreadManager({
     store,

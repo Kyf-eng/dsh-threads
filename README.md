@@ -4,7 +4,7 @@
 
 一个 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 插件，照着 Claude 的"项目 + 讨论串"做。项目的主对话当调度员：遇到能独立完成的任务，就开一个**讨论串**——一个你能点进去接着聊的真实会话；讨论串做完后，把简短的回报发回主对话。
 
-> 状态：预发布版，最新版本见 [Releases](https://github.com/Kyf-eng/dsh-threads/releases)。基于 DeepSeek Harness 0.2.1-rc.2 开发，在 0.2.1-rc.2 和 0.2.1-rc.3 上测试过。更新记录见 [CHANGELOG.md](CHANGELOG.md)，设计说明见 [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)。
+> 状态：从 0.1.0 起是正式版，各个版本见 [Releases](https://github.com/Kyf-eng/dsh-threads/releases)。基于 DeepSeek Harness 0.2.1-rc.2 开发，在 0.2.1-rc.2 和 0.2.1-rc.3 上测试过。更新记录见 [CHANGELOG.md](CHANGELOG.md)，设计说明见 [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)。
 
 ![一条消息，主对话开出三条讨论串同时干活](https://raw.githubusercontent.com/Kyf-eng/dsh-threads/main/docs/media/demo.gif)
 
@@ -35,7 +35,7 @@
    dsh plugin --profile desktop add @kyf-eng/dsh-threads
    ```
 
-   以后升级也是这一条命令。Web 版用 `--profile web`。要装某个版本，在包名后面加 `@版本号`（例如 `@kyf-eng/dsh-threads@0.1.0-rc.9`）；不想走 npm，也可以填 [Releases](https://github.com/Kyf-eng/dsh-threads/releases) 里那个 `.tgz` 的地址。
+   以后升级也是这一条命令（从 0.1.0-rc.7 及以后的预发布版升级到正式版也一样，项目和讨论串都保留）。Web 版用 `--profile web`。要装某个版本，在包名后面加 `@版本号`（例如 `@kyf-eng/dsh-threads@0.1.0`）；不想走 npm，也可以填 [Releases](https://github.com/Kyf-eng/dsh-threads/releases) 里那个 `.tgz` 的地址。
 3. 启动 DeepSeek Harness，左侧出现"项目"。
 
 卸载：`dsh plugin --profile desktop remove @kyf-eng/dsh-threads`（0.1.0-rc.6 及更早的版本叫 `@fky/dsh-threads`）。

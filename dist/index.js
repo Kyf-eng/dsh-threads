@@ -2583,7 +2583,14 @@ const domain = defineDomain({
 		proposals: domainTable(proposalSchema)
 	}
 });
+/**
+* DSH allows one open handle per domain name in a process. A reload in place (HMR after a
+* rebuild, a plugin manager change, a config edit) runs `apply` again, and versions up to
+* 0.1.0-rc.8 never closed their handle, so the next `open` failed with `already-open` and the
+* whole plugin stayed down. Take over a handle an earlier load of this plugin left open.
+*/
 async function openStore(storageDomain) {
+	await storageDomain.get(domain.name)?.close();
 	const opened = await storageDomain.open(domain);
 	const threads = opened.table("threads");
 	const mains = opened.table("mains");
@@ -2607,7 +2614,8 @@ async function openStore(storageDomain) {
 		putProject: (record) => projects.put(record.id, record),
 		removeProject: async (id) => {
 			await projects.delete(id);
-		}
+		},
+		close: () => opened.close()
 	};
 }
 // src/index.ts
@@ -2624,6 +2632,7 @@ async function apply(ctx, config) {
 	const warn = (message) => ctx.logger.warn(message);
 	const now = () => (/* @__PURE__ */ new Date()).toISOString();
 	const store = await openStore(ctx.storageDomain);
+	ctx.effect(() => () => store.close(), "dsh-threads: storage domain");
 	const host = createHost(ctx);
 	const manager = new ThreadManager({
 		store,

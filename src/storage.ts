@@ -105,7 +105,19 @@ export const domain = defineDomain({
   },
 })
 
-export async function openStore(storageDomain: DomainFacility): Promise<ThreadStore> {
+/** The store and its domain handle's close; the plugin closes it when it unloads. */
+export interface OpenedStore extends ThreadStore {
+  close(): Promise<void>
+}
+
+/**
+ * DSH allows one open handle per domain name in a process. A reload in place (HMR after a
+ * rebuild, a plugin manager change, a config edit) runs `apply` again, and versions up to
+ * 0.1.0-rc.8 never closed their handle, so the next `open` failed with `already-open` and the
+ * whole plugin stayed down. Take over a handle an earlier load of this plugin left open.
+ */
+export async function openStore(storageDomain: DomainFacility): Promise<OpenedStore> {
+  await storageDomain.get(domain.name)?.close()
   const opened = await storageDomain.open(domain)
   const threads = opened.table('threads')
   const mains = opened.table('mains')
@@ -128,5 +140,6 @@ export async function openStore(storageDomain: DomainFacility): Promise<ThreadSt
     projectOfMain: (mainSessionId) => values(projects).find((p) => p.mainSessionId === mainSessionId),
     putProject: (record) => projects.put(record.id, record),
     removeProject: async (id) => { await projects.delete(id) },
+    close: () => opened.close(),
   }
 }

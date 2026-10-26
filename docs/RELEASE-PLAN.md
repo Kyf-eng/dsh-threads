@@ -123,3 +123,4 @@ B8、B9、B10 是 P2，时间够就做，不够就留到 0.1.x。
 - v0.1.0-rc.8：#41–#44（检出失败时收回分支并说明长路径、主对话接受用户本人的明确同意、`/thread` 那一行下面的讨论串卡片、第二轮测试记录）。
 - 安装改成从 npm 按包名装（`dsh plugin --profile desktop add @kyf-eng/dsh-threads`，升级也是这一条），README 不再写版本号和下载地址，发版不用改 README。打 tag 后发布流程在 GitHub Release 之后把同一个 `.tgz` 发到 npm（trusted publishing，不存 token；有正式版之后预发布版走 `next`）。npm 上的 trusted publisher 要你在 npmjs.com 上设一次。
 - v0.1.0-rc.9：#48。插件在运行中的 DSH 里被就地重载（插件管理器操作时发现它的文件变了、改了它的设置、它依赖的服务重启）后起不来，项目页和新建项目报 HTTP 404，要重启 DSH 才恢复。原因是从没关闭存储 domain；现在卸载时关闭，并接管旧版本没关的。在原版 DSH 0.2.1-rc.2 web 上实测：rc.8 就地重载复现 404，重载到修复版后恢复，再重载仍正常。
+- v0.1.0：第一个正式版，代码和 rc.9 相同。CHANGELOG 的 `0.1.0` 一节汇总了 rc.1–rc.9；README 去掉"预发布版"，写明从 rc.7 及以后升级用同一条命令。接着向 awesome-dsh-plugin 提交收录（`session` 分类），并在 DSH 讨论区 Show Your Plugins! 发帖。

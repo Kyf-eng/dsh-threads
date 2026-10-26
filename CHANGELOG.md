@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.1.0 — 2026-10-26
+
+First stable release, for DeepSeek Harness 0.2.x (tested on 0.2.1-rc.2 and 0.2.1-rc.3). The code is the same as 0.1.0-rc.9. From 0.1.0-rc.7 or later, the same `dsh plugin add` command upgrades it; from 0.1.0-rc.6 or earlier, remove `@fky/dsh-threads` first (see 0.1.0-rc.7). Projects and threads are kept.
+
+What 0.1.0 does, gathered from the release candidates below:
+
+- Projects: a folder plus a standing main conversation, created from the sidebar's "Projects" section (with the system folder chooser) or with "Make project" on a conversation. A project has an icon, a goal for the coordinator, and instructions every thread also receives; its menu pins, archives, deletes, sets desktop notifications and opens settings (coordinator and thread models, token usage).
+- Threads: the main conversation opens threads for self-contained work, sends them follow-ups, and suggests ones you did not ask for (in a card above the composer; they start only when you click). Each thread is a real session that opens in the right pane, where you can talk to it, stop it, mark it resolved or archive it. `/thread <task>` opens one directly.
+- Reports: a thread reports what it did, which files changed and what it needs you to decide. The main conversation wakes once, after all its running threads have finished, with a guard against wake-up loops; a thread that forgets to report is reminded once.
+- Parallel and isolated: up to 3 threads per main conversation run at once (`maxRunning`). A thread that changes files can work in its own git worktree and branch (`dsh-threads/<n>-<id>`); the main conversation merges only when you ask, and `/thread cleanup` removes finished worktrees.
+- A coordinator that leads: it hands documents, multi-file changes and investigations to threads, does not commit, merge or switch branches unless asked, and does not get around git hooks or permission checks.
+- Claude-style interface: thread cards and "↳ N replies" in the conversation, a raised hand when a thread waits for you, a breathing dot while threads run, file and branch chips, and a "Projects" section in the sidebar. Project conversations and threads stay out of DSH's workspace list.
+- Threads keep the main conversation's permission mode; a thread is not opened when that mode cannot be read.
+- Host-side text in Chinese and English, following DeepSeek Harness's language.
+- Platforms: developed and fully tested on macOS Desktop, tested twice on Windows Desktop (x64), used on Web.
+
 ## 0.1.0-rc.9 — 2026-10-26
 
 A fix for dsh-threads going down after DeepSeek Harness reloaded it without restarting. Coming from 0.1.0-rc.6 or earlier, remove `@fky/dsh-threads` first (see 0.1.0-rc.7).

@@ -35,7 +35,7 @@ Requires DeepSeek Harness **0.2.x** (Desktop or Web; tested on 0.2.1-rc.2 and 0.
    dsh plugin --profile desktop add @kyf-eng/dsh-threads
    ```
 
-   The same command upgrades it later. Use `--profile web` for the Web app. For a particular version, add `@<version>` to the name (for example `@kyf-eng/dsh-threads@0.1.0-rc.8`); without npm, use the address of the `.tgz` on [Releases](https://github.com/Kyf-eng/dsh-threads/releases).
+   The same command upgrades it later. Use `--profile web` for the Web app. For a particular version, add `@<version>` to the name (for example `@kyf-eng/dsh-threads@0.1.0-rc.9`); without npm, use the address of the `.tgz` on [Releases](https://github.com/Kyf-eng/dsh-threads/releases).
 3. Start DeepSeek Harness. **Projects** appears in the sidebar.
 
 To remove it: `dsh plugin --profile desktop remove @kyf-eng/dsh-threads` (`@fky/dsh-threads` for 0.1.0-rc.6 and earlier).

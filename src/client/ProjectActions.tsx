@@ -16,7 +16,7 @@ import {
   Modal,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { type ReactNode, useEffect, useState } from 'react'
-import { callHost, type NotifyLevel, projectsStore, type ProjectView } from './api.ts'
+import { callHost, type NotifyLevel, refreshProjects, type ProjectView } from './api.ts'
 import { BellIcon } from './icons.tsx'
 import type { Translate } from './locale.ts'
 import { ProjectSettings } from './ProjectSettings.tsx'
@@ -52,7 +52,7 @@ export function useProjectActions({ projects, t, pinSession, afterArchive }: {
       setError(failure instanceof Error ? failure.message : String(failure))
     } finally {
       threadsRevision.bump()
-      await projectsStore.refresh()
+      await refreshProjects()
     }
   }
 
@@ -127,6 +127,10 @@ export function ProjectMenu({ project, actions, t, onOpenChange }: {
     if (!open) return
     const onKey = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey) return
+      // A single letter belongs to whatever field has focus, not to the open menu.
+      const target = event.target
+      if (target instanceof HTMLElement && (target.isContentEditable
+        || target.closest('input,textarea,select,[contenteditable="true"]') !== null)) return
       const id = SHORTCUTS[event.key.toLowerCase()]
       if (id === undefined || (id === 'pin' && project.archived)) return
       event.preventDefault()

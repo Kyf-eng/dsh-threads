@@ -51,7 +51,8 @@ function message(target: NotifyTarget, t: Translate, asking?: AskKind): { title:
   if (asking !== undefined) return { title, body: t(ASK_KEYS[asking]) }
   if (target.kind === 'main') return { title: target.projectTitle, body: t('notifyMsg.main', { text: target.text || '…' }) }
   if (target.waiting) return { title, body: t('notifyMsg.waiting', { text: target.text || '…' }) }
-  return { title, body: `${t(STATUS_KEYS[target.status ?? 'no-report'] ?? 'status.noReport')}${target.text.length > 0 ? `：${target.text}` : ''}` }
+  const status = t(STATUS_KEYS[target.status ?? 'no-report'] ?? 'status.noReport')
+  return { title, body: target.text.length > 0 ? t('notifyMsg.finished', { status, text: target.text }) : status }
 }
 
 const inBackground = () => typeof document === 'undefined' || document.visibilityState !== 'visible' || !document.hasFocus()

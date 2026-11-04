@@ -126,7 +126,7 @@ function ModelPair({ choice, catalog, modelTitle, modelHint, effortTitle, effort
 export function ModelSettings({ project, open, save, t }: {
   project: ProjectView
   open: boolean
-  save: (patch: { mainModel?: ModelChoice | null; threadModel?: ModelChoice | null }) => Promise<void>
+  save: (patch: { mainModel?: ModelChoice | null; threadModel?: ModelChoice | null }) => Promise<unknown>
   t: Translate
 }) {
   const catalog = useHostValue<ModelCatalog>(open ? 'models.catalog' : null, {}, [open])

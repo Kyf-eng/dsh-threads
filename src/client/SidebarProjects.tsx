@@ -73,6 +73,8 @@ export interface SidebarProjectsProps {
   openSession: (sessionId: string) => void
   pinSession: (sessionId: string, pinned: boolean) => Promise<void>
   pickFolder: PickFolder
+  /** Bring the Projects panel back, as the page does after archiving its current project. */
+  showProjects: () => void
 }
 
 /** The session DSH highlights: the one its main view holds, unless a panel is open. */
@@ -126,14 +128,22 @@ function readCollapsed(): boolean {
   }
 }
 
-function SidebarProjects({ t, useWorkspaces, useSessions, useSessionStatus, usePanelInfo, openSession, pinSession, pickFolder }: SidebarProjectsProps) {
+function SidebarProjects({ t, useWorkspaces, useSessions, useSessionStatus, usePanelInfo, openSession, pinSession, pickFolder, showProjects }: SidebarProjectsProps) {
   const { projects } = useProjects()
   const { mains } = useKinds()
   const [collapsed, setCollapsed] = useState(readCollapsed)
   const [expanded, setExpanded] = useState(false)
   const [creating, setCreating] = useState(false)
   const [menuFor, setMenuFor] = useState<string | null>(null)
-  const { actions, dialogs } = useProjectActions({ projects, t, pinSession })
+  // Archiving the project whose main session DSH is showing would drop the user out of an open
+  // panel; bring that panel back, but never yank someone out of a conversation.
+  const panelActive = usePanelInfo((info) => info.activePanelId !== null)
+  const { actions, dialogs, error } = useProjectActions({
+    projects,
+    t,
+    pinSession,
+    afterArchive: panelActive ? showProjects : undefined,
+  })
   const workspaces = useWorkspaces((snapshot) => snapshot.items, sameList)
   const live = useLive(useSessionStatus)
   const currentId = useCurrentSession({ useSessions, usePanelInfo })
@@ -197,6 +207,7 @@ function SidebarProjects({ t, useWorkspaces, useSessions, useSessionStatus, useP
               {expanded ? t('side.less') : t('side.more', { count: rows.length - SIDEBAR_VISIBLE })}
             </button>
           ) : null}
+          {error === null ? null : <div className="dsht-error dsht-side-error" role="alert">{error}</div>}
         </div>
       )}
 

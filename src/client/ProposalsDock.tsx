@@ -21,14 +21,18 @@ export function ProposalsDock({ sessionId, useSessionStatus, t }: {
     [...statuses].filter(([, state]) => state.running === true).map(([id]) => id).sort().join(','))
   const proposals = useHostValue<ProposalView[]>(sessionId === undefined ? null : 'proposals.list', { mainSessionId: sessionId }, [sessionId, runningKey, revision])
   const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   if (sessionId === undefined || proposals === undefined || proposals.length === 0) return null
 
   const pending = proposals.filter((p) => p.state === 'pending')
   const act = async (method: 'proposals.start' | 'proposals.dismiss', ids: string[]) => {
     setBusy(true)
+    setError(null)
     try {
       await callHost(method, { mainSessionId: sessionId, ids })
       threadsRevision.bump()
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : String(failure))
     } finally {
       setBusy(false)
     }
@@ -37,6 +41,7 @@ export function ProposalsDock({ sessionId, useSessionStatus, t }: {
   return (
     <div className="dsht-card dsht-proposals">
       <CardHead icon={<ThreadsIcon size={14} />}>{t('proposals.title')}</CardHead>
+      {error === null ? null : <div className="dsht-error dsht-proposal-error" role="alert">{error}</div>}
       <div className="dsht-proposal-list">
         {proposals.map((proposal) => (
           <div key={proposal.id} className={`dsht-proposal${proposal.state === 'queued' ? ' dsht-proposal-queued' : ''}`}>

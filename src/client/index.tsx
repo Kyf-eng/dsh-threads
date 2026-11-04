@@ -141,7 +141,7 @@ export function apply(root: Context): void {
   ))
   // The sidebar's own "Projects" section (SidebarProjects.tsx), portalled from an overlay entry.
   ctx.slots.inject('shell.overlay', () => ctx.slots.register(
-    { name: 'shell.overlay', id: 'dsh-threads-sidebar-projects', locale: NS, inject: () => ({ openSession, pinSession, pickFolder }) },
+    { name: 'shell.overlay', id: 'dsh-threads-sidebar-projects', locale: NS, inject: () => ({ openSession, pinSession, pickFolder, showProjects }) },
     SidebarProjectsHost as ComponentType<never>,
   ))
   ctx.slots.inject('sidebar.workspaces.session.menu.item', () => ctx.slots.register(

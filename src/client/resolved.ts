@@ -1,6 +1,6 @@
 // Resolved threads get a low-precedence "pending interaction" so the composer chain can swap
 // in ResolvedComposer for them. The sidebar ignores unknown interaction kinds, so no badge appears.
-import { callHost } from './api.ts'
+import { callHost, refreshProjects } from './api.ts'
 import { threadsRevision } from './threads.ts'
 
 export const RESOLVED_KIND = 'dsh-threads-resolved'
@@ -74,6 +74,8 @@ export async function setThreadResolved(threadId: string, resolved: boolean): Pr
 export async function setThreadArchived(threadId: string, archived: boolean): Promise<void> {
   await callHost(archived ? 'threads.archive' : 'threads.unarchive', { id: threadId })
   threadsRevision.bump()
+  // Archived threads leave the project's live counts; the cards and the sidebar read them.
+  void refreshProjects()
 }
 
 export async function stopThread(threadId: string): Promise<void> {

@@ -116,13 +116,17 @@ function FixedChatConversationView(props: { renderSlot: RenderSlot }) {
 /** Replaces the composer of a resolved thread (conversation.composer chain). */
 export function ResolvedComposer({ sessionId, t }: { sessionId: string; t: Translate }) {
   const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   return (
     <div className="dsht-resolved">
       <ThreadGlyph state="resolved" />
-      <span className="dsht-resolved-text"><b>{t('resolved.notice')}</b>{t('resolved.hint')}</span>
+      <span className="dsht-resolved-text"><b>{t('resolved.notice')}</b>{error ?? t('resolved.hint')}</span>
       <Pill disabled={busy} onClick={() => {
         setBusy(true)
-        void setThreadResolved(sessionId, false).finally(() => setBusy(false))
+        setError(null)
+        setThreadResolved(sessionId, false)
+          .catch((failure: unknown) => setError(failure instanceof Error ? failure.message : String(failure)))
+          .finally(() => setBusy(false))
       }}>
         {t('resolved.reopen')}
       </Pill>

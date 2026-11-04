@@ -1,6 +1,6 @@
 import { MenuItemButton } from '@deepseek-ai/dsh-client-ui-primitives'
 import { useEffect, useState } from 'react'
-import { callHost, projectsStore } from './api.ts'
+import { callHost, refreshProjects } from './api.ts'
 import { ProjectsIcon } from './icons.tsx'
 import { threadsRevision } from './threads.ts'
 import type { Translate } from './locale.ts'
@@ -15,6 +15,7 @@ export function MakeProjectMenuItem({ sessionId, displayTitle, useMenuOpenState,
 }) {
   const [, setMenuOpen] = useMenuOpenState()
   const [eligible, setEligible] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     let live = true
@@ -26,17 +27,25 @@ export function MakeProjectMenuItem({ sessionId, displayTitle, useMenuOpenState,
   }, [sessionId])
 
   if (!eligible) return null
+  const run = () => {
+    setError(null)
+    setMenuOpen(false)
+    callHost('projects.create', { title: displayTitle, fromSessionId: sessionId })
+      .then(() => { threadsRevision.bump(); return refreshProjects() })
+      .then(showProjects)
+      .catch((failure: unknown) => {
+        // The host refuses real cases (the session is not in a workspace, a blank title); with
+        // the menu closed that refusal would vanish, so reopen it with the message above the item.
+        setError(failure instanceof Error ? failure.message : String(failure))
+        setMenuOpen(true)
+      })
+  }
   return (
-    <MenuItemButton
-      icon={<ProjectsIcon size={16} />}
-      onSelect={() => {
-        setMenuOpen(false)
-        void callHost('projects.create', { title: displayTitle, fromSessionId: sessionId })
-          .then(() => { threadsRevision.bump(); return projectsStore.refresh() })
-          .then(showProjects)
-      }}
-    >
-      {t('menu.makeProject')}
-    </MenuItemButton>
+    <>
+      {error === null ? null : <div className="dsht-error dsht-menu-message" role="alert">{error}</div>}
+      <MenuItemButton icon={<ProjectsIcon size={16} />} onSelect={run}>
+        {t('menu.makeProject')}
+      </MenuItemButton>
+    </>
   )
 }

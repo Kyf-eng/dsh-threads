@@ -2529,6 +2529,38 @@ function ProjectMenu({ project, actions, t, onOpenChange }) {
 		document.addEventListener("keydown", onKey, true);
 		return () => document.removeEventListener("keydown", onKey, true);
 	}, [open, project]);
+	const narrow = typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(max-width: 767px)").matches;
+	const notifyLabel = (level) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+		className: "dsht-menu-two",
+		children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t(`notify.${level}`) }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+			className: "dsht-menu-sub",
+			children: t(`notify.${level}.hint`)
+		})]
+	});
+	const notifyItems = narrow ? [{
+		type: "label",
+		id: "notify-heading",
+		text: t("menu.notify")
+	}, ...NOTIFY_LEVELS.map((level) => ({
+		id: `notify:${level}`,
+		icon: project.notify === level ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconCheckOutlineRegular, { size: 16 }) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: "dsht-menu-icon-space" }),
+		label: notifyLabel(level)
+	}))] : [{
+		id: "notify",
+		label: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+			className: "dsht-menu-aside-row",
+			children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("menu.notify") }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+				className: "dsht-menu-aside",
+				children: t(`notify.${project.notify}.short`)
+			})]
+		}),
+		icon: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(BellIcon, { size: 16 }),
+		submenu: NOTIFY_LEVELS.map((level) => ({
+			id: `notify:${level}`,
+			icon: project.notify === level ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconCheckOutlineRegular, { size: 16 }) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: "dsht-menu-icon-space" }),
+			label: notifyLabel(level)
+		}))
+	}];
 	const items = [
 		...project.archived ? [] : [{
 			id: "pin",
@@ -2536,28 +2568,7 @@ function ProjectMenu({ project, actions, t, onOpenChange }) {
 			icon: project.pinned ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconPinFillRegular, { size: 16 }) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconPinOutlineRegular, { size: 16 }),
 			shortcut: { keys: ["P"] }
 		}],
-		{
-			id: "notify",
-			label: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-				className: "dsht-menu-aside-row",
-				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("menu.notify") }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-					className: "dsht-menu-aside",
-					children: t(`notify.${project.notify}.short`)
-				})]
-			}),
-			icon: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(BellIcon, { size: 16 }),
-			submenu: NOTIFY_LEVELS.map((level) => ({
-				id: `notify:${level}`,
-				icon: project.notify === level ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconCheckOutlineRegular, { size: 16 }) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: "dsht-menu-icon-space" }),
-				label: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-					className: "dsht-menu-two",
-					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t(`notify.${level}`) }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-						className: "dsht-menu-sub",
-						children: t(`notify.${level}.hint`)
-					})]
-				})
-			}))
-		},
+		...notifyItems,
 		{
 			id: "settings",
 			label: t("menu.settings"),
@@ -3013,7 +3024,7 @@ function readCollapsed() {
 		return false;
 	}
 }
-function SidebarProjects({ t, useWorkspaces, useSessions, useSessionStatus, usePanelInfo, openSession, pinSession, pickFolder, showProjects }) {
+function SidebarProjects({ t, useWorkspaces, useSessions, useSessionStatus, usePanelInfo, openSession, pinSession, pickFolder, showProjects, closePhoneDrawer }) {
 	const { projects } = useProjects();
 	const { mains } = useKinds();
 	const [collapsed, setCollapsed] = (0, react.useState)(readCollapsed);
@@ -3083,9 +3094,15 @@ function SidebarProjects({ t, useWorkspaces, useSessions, useSessionStatus, useP
 						"aria-selected": selected,
 						tabIndex: 0,
 						className: `dsht-side-row${selected ? " is-selected" : ""}${menuFor === project.id ? " is-menu-open" : ""}`,
-						onClick: () => openSession(project.mainSessionId),
+						onClick: () => {
+							openSession(project.mainSessionId);
+							closePhoneDrawer();
+						},
 						onKeyDown: (event) => {
-							if (event.key === "Enter" && event.target === event.currentTarget) openSession(project.mainSessionId);
+							if (event.key === "Enter" && event.target === event.currentTarget) {
+								openSession(project.mainSessionId);
+								closePhoneDrawer();
+							}
 						},
 						children: [
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
@@ -3563,22 +3580,45 @@ body,[class*="dsht-"]{
   .dsht-usage-total{gap:22px;flex-wrap:wrap}
   .dsht-usage-table{font-size:12px}
   .dsht-icon-grid{grid-template-columns:repeat(auto-fill,minmax(44px,1fr))}
+
+  /* Thread list and thread pane: the pane header's title, chips and three action buttons do not
+     fit one 390px row, so the actions move under the title instead of squeezing it to "#1 重构…". */
+  .dsht-list{padding-bottom:calc(16px + env(safe-area-inset-bottom,0px))}
+  .dsht-pane-head{flex-wrap:wrap;row-gap:6px;padding:8px 10px;min-height:0}
+  .dsht-pane-text{flex:1 1 calc(100% - 32px)}
+  .dsht-pane-title{font-size:14px;line-height:20px}
+  .dsht-pane-meta{font-size:11.5px;line-height:16px}
+  .dsht-pane-actions{flex:1 1 100%;justify-content:flex-end;gap:6px}
+  .dsht-pane-actions .dsht-pill{height:34px}
 }
 
 /* Touch devices have no hover: a control that only faded in on hover could never be reached. */
 @media (hover:none){
   .dsht-project-tools{opacity:1}
   .dsht-side-actions{display:inline-flex}
+  .dsht-side-label svg{opacity:1}
   .dsht-proposal-actions .dsht-pill-icon:first-child{opacity:1}
   .dsht-item-chevron{opacity:1;transform:none}
 }
+/* Thumb-sized targets on touch screens (the desktop sizes are pointer-sized by design). */
 @media (pointer:coarse){
   .dsht-icon-button{width:32px;height:32px}
-  .dsht-pill{height:30px}
-  .dsht-side-row{height:38px}
-  .dsht-side-actions .dsht-icon-button{width:30px;height:30px}
+  .dsht-pill{height:34px}
+  .dsht-side-row{height:40px}
+  .dsht-side-icon{width:32px;height:32px}
+  .dsht-side-actions .dsht-icon-button{width:32px;height:32px}
+  .dsht-np-link{min-height:32px;padding:4px 8px}
   .dsht-settings-nav-item{height:40px}
   .dsht-section-head{min-height:32px}
+  .dsht-row{min-height:44px}
+  .dsht-item{min-height:44px}
+}
+/* Short landscape (e.g. 667x375): the drawer does not scroll, and the host's own flex box already
+   squeezes the workspace area to zero there. Keep this section small but usable — the header plus
+   about one row, with the list scrolling internally — instead of letting it eat the drawer. */
+@media (pointer:coarse) and (max-height:520px){
+  .dsht-side{flex:0 1 auto;min-height:76px;max-height:120px;overflow:hidden}
+  .dsht-side-list{flex:1 1 auto}
 }
 `;
 /** Add the stylesheet; returns a disposer that removes it. */
@@ -3978,6 +4018,11 @@ function apply(root) {
 	const openSession = (sessionId) => ctx.uiWorkspace.openSession(sessionId);
 	const pinSession = (sessionId, pinned) => pinned ? ctx.workspaces.pinSession(sessionId) : ctx.workspaces.unpinSession(sessionId);
 	const showProjects = () => ctx.layout.selectPanel(PANEL_ID);
+	const closePhoneDrawer = () => {
+		const frame = document.querySelector("[data-mobile-nav=\"frame\"]");
+		if (frame === null || frame.hasAttribute("data-sidebar-collapsed")) return;
+		ctx.layout.toggleSidebar();
+	};
 	const pickFolder = async () => {
 		const desktop = globalThis.__DSH_DIRECTORY_PICKER__;
 		if (desktop !== void 0) return desktop.pick();
@@ -4016,7 +4061,8 @@ function apply(root) {
 			openSession,
 			pinSession,
 			pickFolder,
-			showProjects
+			showProjects,
+			closePhoneDrawer
 		})
 	}, SidebarProjectsHost));
 	ctx.slots.inject("sidebar.workspaces.session.menu.item", () => ctx.slots.register({

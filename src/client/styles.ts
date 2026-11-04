@@ -391,22 +391,45 @@ body,[class*="dsht-"]{
   .dsht-usage-total{gap:22px;flex-wrap:wrap}
   .dsht-usage-table{font-size:12px}
   .dsht-icon-grid{grid-template-columns:repeat(auto-fill,minmax(44px,1fr))}
+
+  /* Thread list and thread pane: the pane header's title, chips and three action buttons do not
+     fit one 390px row, so the actions move under the title instead of squeezing it to "#1 重构…". */
+  .dsht-list{padding-bottom:calc(16px + env(safe-area-inset-bottom,0px))}
+  .dsht-pane-head{flex-wrap:wrap;row-gap:6px;padding:8px 10px;min-height:0}
+  .dsht-pane-text{flex:1 1 calc(100% - 32px)}
+  .dsht-pane-title{font-size:14px;line-height:20px}
+  .dsht-pane-meta{font-size:11.5px;line-height:16px}
+  .dsht-pane-actions{flex:1 1 100%;justify-content:flex-end;gap:6px}
+  .dsht-pane-actions .dsht-pill{height:34px}
 }
 
 /* Touch devices have no hover: a control that only faded in on hover could never be reached. */
 @media (hover:none){
   .dsht-project-tools{opacity:1}
   .dsht-side-actions{display:inline-flex}
+  .dsht-side-label svg{opacity:1}
   .dsht-proposal-actions .dsht-pill-icon:first-child{opacity:1}
   .dsht-item-chevron{opacity:1;transform:none}
 }
+/* Thumb-sized targets on touch screens (the desktop sizes are pointer-sized by design). */
 @media (pointer:coarse){
   .dsht-icon-button{width:32px;height:32px}
-  .dsht-pill{height:30px}
-  .dsht-side-row{height:38px}
-  .dsht-side-actions .dsht-icon-button{width:30px;height:30px}
+  .dsht-pill{height:34px}
+  .dsht-side-row{height:40px}
+  .dsht-side-icon{width:32px;height:32px}
+  .dsht-side-actions .dsht-icon-button{width:32px;height:32px}
+  .dsht-np-link{min-height:32px;padding:4px 8px}
   .dsht-settings-nav-item{height:40px}
   .dsht-section-head{min-height:32px}
+  .dsht-row{min-height:44px}
+  .dsht-item{min-height:44px}
+}
+/* Short landscape (e.g. 667x375): the drawer does not scroll, and the host's own flex box already
+   squeezes the workspace area to zero there. Keep this section small but usable — the header plus
+   about one row, with the list scrolling internally — instead of letting it eat the drawer. */
+@media (pointer:coarse) and (max-height:520px){
+  .dsht-side{flex:0 1 auto;min-height:76px;max-height:120px;overflow:hidden}
+  .dsht-side-list{flex:1 1 auto}
 }
 `
 

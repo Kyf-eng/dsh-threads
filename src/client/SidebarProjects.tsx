@@ -75,6 +75,8 @@ export interface SidebarProjectsProps {
   pickFolder: PickFolder
   /** Bring the Projects panel back, as the page does after archiving its current project. */
   showProjects: () => void
+  /** Close the phone drawer, which is where this section lives on a phone. */
+  closePhoneDrawer: () => void
 }
 
 /** The session DSH highlights: the one its main view holds, unless a panel is open. */
@@ -128,7 +130,7 @@ function readCollapsed(): boolean {
   }
 }
 
-function SidebarProjects({ t, useWorkspaces, useSessions, useSessionStatus, usePanelInfo, openSession, pinSession, pickFolder, showProjects }: SidebarProjectsProps) {
+function SidebarProjects({ t, useWorkspaces, useSessions, useSessionStatus, usePanelInfo, openSession, pinSession, pickFolder, showProjects, closePhoneDrawer }: SidebarProjectsProps) {
   const { projects } = useProjects()
   const { mains } = useKinds()
   const [collapsed, setCollapsed] = useState(readCollapsed)
@@ -186,8 +188,8 @@ function SidebarProjects({ t, useWorkspaces, useSessions, useSessionStatus, useP
             return (
               <div key={project.id} role="treeitem" aria-selected={selected} tabIndex={0}
                 className={`dsht-side-row${selected ? ' is-selected' : ''}${menuFor === project.id ? ' is-menu-open' : ''}`}
-                onClick={() => openSession(project.mainSessionId)}
-                onKeyDown={(event) => { if (event.key === 'Enter' && event.target === event.currentTarget) openSession(project.mainSessionId) }}>
+                onClick={() => { openSession(project.mainSessionId); closePhoneDrawer() }}
+                onKeyDown={(event) => { if (event.key === 'Enter' && event.target === event.currentTarget) { openSession(project.mainSessionId); closePhoneDrawer() } }}>
                 <span className="dsht-side-slot">
                   <RowMark project={project} main={mains.get(project.mainSessionId)} live={live} t={t} />
                 </span>

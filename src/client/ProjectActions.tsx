@@ -142,6 +142,34 @@ export function ProjectMenu({ project, actions, t, onOpenChange }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, project])
 
+  // The host's submenu opens to the right of its row with no viewport clamping; on a phone the row
+  // sits at the drawer's edge, so a submenu lands mostly off-screen. Flatten the four notification
+  // levels into the top level there and keep the submenu on wider screens (Claude's own layout).
+  const narrow = typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+    && window.matchMedia('(max-width: 767px)').matches
+  const notifyLabel = (level: NotifyLevel) => (
+    <span className="dsht-menu-two"><span>{t(`notify.${level}`)}</span><span className="dsht-menu-sub">{t(`notify.${level}.hint`)}</span></span>
+  )
+  const notifyItems: MenuEntry[] = narrow
+    ? [
+        { type: 'label', id: 'notify-heading', text: t('menu.notify') },
+        ...NOTIFY_LEVELS.map((level) => ({
+          id: `notify:${level}`,
+          icon: project.notify === level ? <IconCheckOutlineRegular size={16} /> : <span className="dsht-menu-icon-space" />,
+          label: notifyLabel(level),
+        })),
+      ]
+    : [{
+        id: 'notify',
+        label: <span className="dsht-menu-aside-row"><span>{t('menu.notify')}</span><span className="dsht-menu-aside">{t(`notify.${project.notify}.short`)}</span></span>,
+        icon: <BellIcon size={16} />,
+        submenu: NOTIFY_LEVELS.map((level) => ({
+          id: `notify:${level}`,
+          icon: project.notify === level ? <IconCheckOutlineRegular size={16} /> : <span className="dsht-menu-icon-space" />,
+          label: notifyLabel(level),
+        })),
+      }]
+
   const items: MenuEntry[] = [
     ...(project.archived ? [] : [{
       id: 'pin',
@@ -149,16 +177,7 @@ export function ProjectMenu({ project, actions, t, onOpenChange }: {
       icon: project.pinned ? <IconPinFillRegular size={16} /> : <IconPinOutlineRegular size={16} />,
       shortcut: { keys: ['P'] },
     }]),
-    {
-      id: 'notify',
-      label: <span className="dsht-menu-aside-row"><span>{t('menu.notify')}</span><span className="dsht-menu-aside">{t(`notify.${project.notify}.short`)}</span></span>,
-      icon: <BellIcon size={16} />,
-      submenu: NOTIFY_LEVELS.map((level) => ({
-        id: `notify:${level}`,
-        icon: project.notify === level ? <IconCheckOutlineRegular size={16} /> : <span className="dsht-menu-icon-space" />,
-        label: <span className="dsht-menu-two"><span>{t(`notify.${level}`)}</span><span className="dsht-menu-sub">{t(`notify.${level}.hint`)}</span></span>,
-      })),
-    },
+    ...notifyItems,
     { id: 'settings', label: t('menu.settings'), icon: <IconSettingsOutlineRegular size={16} />, shortcut: { keys: ['S'] } },
     { type: 'separator', id: 'separator' },
     {

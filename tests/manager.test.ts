@@ -277,7 +277,7 @@ describe('a stopped thread that DSH wakes for a finished background job', () => 
     expect(t.main.followups[0]).toContain('做完了')
   })
 
-  it('leaves a thread that was not stopped alone', async () => {
+  it('does not hold back a thread that was not stopped', async () => {
     await t.manager.open('main', { title: 'a', task: 'x', initiation: 'user_asked' })
     await t.manager.recordReport('session-1', { status: 'done', summary: '第一轮', changedFiles: [], decisions: [] })
     await t.manager.onIdle('session-1')
@@ -285,6 +285,199 @@ describe('a stopped thread that DSH wakes for a finished background job', () => 
     await t.manager.onInbox('session-1', 'tool-jobs', 30, 'background job finished')
     await t.manager.recordReport('session-1', { status: 'done', summary: '后台任务也好了', changedFiles: [], decisions: [] })
     expect(t.store.thread('session-1')?.lastReport?.summary).toBe('后台任务也好了')
+  })
+})
+
+// The neighbouring case: the round ended normally, the thread left a background job running, and
+// DSH wakes it when the job finishes. A report from that turn must reach the main conversation.
+describe('a thread that reports again after its round ended', () => {
+  let t: ReturnType<typeof setup>
+  beforeEach(() => { t = setup({ reportReminder: true }) })
+
+  const report = (summary: string, status: 'done' | 'failed' = 'done') => ({ status, summary, changedFiles: [], decisions: [] })
+
+  /** Open #1, let it report that the job was started, and settle the round (the main conversation is woken once). */
+  async function reportedOnce() {
+    await t.manager.open('main', { title: '构建', task: '后台跑构建，结束后回报', initiation: 'user_asked' })
+    const thread = t.agents.get('session-1')!
+    thread.status = 'running'
+    await t.manager.recordReport('session-1', report('构建已在后台启动，结果待回报'))
+    thread.status = 'idle'
+    await t.manager.onIdle('session-1')
+    return thread
+  }
+
+  /** DSH's notice that the job finished starts a turn by itself. */
+  async function jobWakes(thread: FakeAgent, seq = 30) {
+    thread.status = 'running'
+    thread.seq = seq
+    await t.manager.onInbox('session-1', 'tool-jobs', seq, 'background job bash-1 (bash: npm run build) finished [status: failed, exit code: 1]')
+  }
+
+  it('delivers the late report by the wake-up rules, marked as replacing the earlier one', async () => {
+    const thread = await reportedOnce()
+    expect(t.main.followups).toHaveLength(1)
+    expect(t.store.thread('session-1')).toMatchObject({ status: 'idle', round: null, lastRound: 'dispatch', late: false })
+
+    await jobWakes(thread)
+    // The notice alone opens no round.
+    expect(t.store.thread('session-1')).toMatchObject({ status: 'idle', round: null })
+    await t.manager.recordReport('session-1', report('构建失败：3 个测试没过', 'failed'))
+    // The report does: the thread counts as running until this turn ends.
+    expect(t.store.thread('session-1')).toMatchObject({ status: 'running', round: 'dispatch', late: true, roundStartSeq: 30 })
+    expect(t.manager.runningCount('main')).toBe(1)
+    thread.status = 'idle'
+    await t.manager.onIdle('session-1')
+
+    expect(t.store.thread('session-1')).toMatchObject({ status: 'idle', round: null, late: false, lastRound: 'dispatch', stopped: false })
+    expect(t.main.followups).toHaveLength(2)
+    expect(t.main.followups[1]).toContain('· failed ·')
+    expect(t.main.followups[1]).toContain('构建失败：3 个测试没过')
+    expect(t.main.followups[1]).toContain('上一轮结束之后补交的回报')
+    expect(t.main.followups[1]).not.toContain('构建已在后台启动')
+    expect(t.main.metas.at(-1)).toMatchObject({ role: 'report', wake: true, threads: [{ n: 1, status: 'failed' }] })
+    expect(t.store.main('main').autoWakeStreak).toBe(2)
+    // The late round never asks for a report: it exists because of one. Only the brief went to the thread.
+    expect(thread.followups).toHaveLength(1)
+  })
+
+  it('tells nobody when the thread does not report in the turn DSH started', async () => {
+    const thread = await reportedOnce()
+    await jobWakes(thread)
+    t.outputs.set('session-1', '后台任务结束了，没什么要补充的。')
+    thread.status = 'idle'
+    await t.manager.onIdle('session-1')
+    expect(t.store.thread('session-1')).toMatchObject({ status: 'idle', round: null, lastReport: { summary: '构建已在后台启动，结果待回报' } })
+    expect(t.main.followups).toHaveLength(1)
+    expect(t.main.injects).toHaveLength(0)
+    expect(thread.followups).toHaveLength(1)
+  })
+
+  it('holds the late report while another thread is running, then delivers both together', async () => {
+    const thread = await reportedOnce()
+    await t.manager.open('main', { title: 'b', task: 'y', initiation: 'user_asked' })
+    await jobWakes(thread)
+    await t.manager.recordReport('session-1', report('构建通过'))
+    thread.status = 'idle'
+    await t.manager.onIdle('session-1')
+    expect(t.main.followups).toHaveLength(1)
+    expect(t.store.main('main').pendingNotes).toHaveLength(1)
+    await t.manager.recordReport('session-2', report('b 做完了'))
+    await t.manager.onIdle('session-2')
+    expect(t.main.followups).toHaveLength(2)
+    expect(t.main.followups[1]).toContain('构建通过')
+    expect(t.main.followups[1]).toContain('b 做完了')
+  })
+
+  it('stops waking at maxAutoWakes: the late report is put in quietly', async () => {
+    t = setup({ maxAutoWakes: 1 })
+    const thread = await reportedOnce()
+    expect(t.store.main('main').autoWakeStreak).toBe(1)
+    await jobWakes(thread)
+    await t.manager.recordReport('session-1', report('构建通过'))
+    thread.status = 'idle'
+    await t.manager.onIdle('session-1')
+    expect(t.main.followups).toHaveLength(1)
+    expect(t.main.injects).toHaveLength(1)
+    expect(t.main.injects[0]).toContain('构建通过')
+    expect(t.store.main('main').pendingNotes).toEqual([])
+  })
+
+  it('is quiet when the last round was one the user drove in the thread', async () => {
+    const thread = await reportedOnce()
+    await t.manager.onInbox('session-1', 'user', 20, '再后台跑一次测试')
+    await t.manager.recordReport('session-1', report('测试已在后台启动'))
+    await t.manager.onIdle('session-1')
+    expect(t.store.thread('session-1')).toMatchObject({ round: null, lastRound: 'user' })
+    expect(t.main.injects).toHaveLength(1)
+
+    await jobWakes(thread, 40)
+    await t.manager.recordReport('session-1', report('测试通过'))
+    expect(t.store.thread('session-1')).toMatchObject({ status: 'running', round: 'user', late: true })
+    thread.status = 'idle'
+    await t.manager.onIdle('session-1')
+    expect(t.main.followups).toHaveLength(1)
+    expect(t.main.injects).toHaveLength(2)
+    expect(t.main.injects[1]).toContain('测试通过')
+    expect(t.main.injects[1]).toContain('补交的回报')
+    // Nothing the user said belongs to this round.
+    expect(t.main.injects[1]).not.toContain('用户的原话')
+    expect(t.store.thread('session-1')).toMatchObject({ lastRound: 'user' })
+  })
+
+  it('keeps only the newest report when the thread reports twice in that turn', async () => {
+    const thread = await reportedOnce()
+    await jobWakes(thread)
+    await t.manager.recordReport('session-1', report('构建结束，正在看日志'))
+    await t.manager.recordReport('session-1', report('构建通过，日志无警告'))
+    expect(t.store.thread('session-1')).toMatchObject({ round: 'dispatch', late: true, roundStartSeq: 30 })
+    thread.status = 'idle'
+    await t.manager.onIdle('session-1')
+    expect(t.main.followups).toHaveLength(2)
+    expect(t.main.followups[1]).toContain('构建通过，日志无警告')
+    expect(t.main.followups[1]).not.toContain('正在看日志')
+  })
+
+  it('settles as stopped when the user stops that turn after the report', async () => {
+    const thread = await reportedOnce()
+    await jobWakes(thread)
+    await t.manager.recordReport('session-1', report('构建通过'))
+    await t.manager.stop('session-1')
+    await t.manager.onIdle('session-1')
+    expect(t.store.thread('session-1')).toMatchObject({ status: 'idle', round: null, stopped: true, late: false })
+    expect(t.main.followups).toHaveLength(1)
+    expect(t.main.injects).toHaveLength(1)
+    expect(t.main.injects[0]).toContain('· stopped ·')
+    expect(t.main.injects[0]).toContain('构建通过')
+    // From here on it is a stopped thread: the next job notice cannot report.
+    await jobWakes(thread, 50)
+    await expect(t.manager.recordReport('session-1', report('又一个任务结束了'))).rejects.toThrow('用户已经停止了这个讨论串')
+  })
+
+  it('becomes an ordinary task round when the main conversation sends a follow-up meanwhile', async () => {
+    const thread = await reportedOnce()
+    await jobWakes(thread)
+    await t.manager.recordReport('session-1', report('构建失败', 'failed'))
+    await t.manager.reply('main', 1, '失败的话顺手修掉')
+    expect(t.store.thread('session-1')).toMatchObject({ status: 'running', round: 'dispatch', late: false })
+    await t.manager.recordReport('session-1', report('修好了，构建通过'))
+    thread.status = 'idle'
+    await t.manager.onIdle('session-1')
+    expect(t.main.followups).toHaveLength(2)
+    expect(t.main.followups[1]).toContain('修好了，构建通过')
+    expect(t.main.followups[1]).not.toContain('补交')
+  })
+
+  it('does not lose a follow-up that arrives while the report is being recorded', async () => {
+    const thread = await reportedOnce()
+    await jobWakes(thread)
+    // Both read the record before either writes.
+    const recording = t.manager.recordReport('session-1', report('构建失败', 'failed'))
+    const replying = t.manager.reply('main', 1, '失败的话顺手修掉')
+    await Promise.all([recording, replying])
+    expect(t.store.thread('session-1')).toMatchObject({ status: 'running', round: 'dispatch', late: false, lastReport: { summary: '构建失败' } })
+  })
+
+  it('delivers a late round that was still open when DSH restarted', async () => {
+    const thread = await reportedOnce()
+    await jobWakes(thread)
+    await t.manager.recordReport('session-1', report('构建通过'))
+    thread.status = 'idle'
+    await t.manager.recover()
+    expect(t.store.thread('session-1')).toMatchObject({ status: 'idle', round: null })
+    expect(t.main.followups).toHaveLength(2)
+    expect(t.main.followups[1]).toContain('构建通过')
+  })
+
+  it('only records the report in a deleted project\'s thread', async () => {
+    const thread = await reportedOnce()
+    await t.store.removeProject('project-1')
+    await jobWakes(thread)
+    await t.manager.recordReport('session-1', report('构建通过'))
+    expect(t.store.thread('session-1')).toMatchObject({ status: 'idle', round: null, late: false, lastReport: { summary: '构建通过' } })
+    thread.status = 'idle'
+    await t.manager.onIdle('session-1')
+    expect(t.main.followups).toHaveLength(1)
   })
 })
 

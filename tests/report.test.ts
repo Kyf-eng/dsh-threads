@@ -59,11 +59,28 @@ describe('composeNote', () => {
   })
 })
 
+describe('a report made after the round ended', () => {
+  const thread = { id: 'session-1', n: 2, title: '构建' }
+  const report = normalizeReport({ status: 'failed', summary: '构建失败：3 个测试没过' }, 300, 'now')
+
+  it('says right under the header that DSH woke the thread and that it replaces the earlier report', () => {
+    const lines = composeNote(thread, report, undefined, 600, { late: true }).split('\n')
+    expect(lines[0]).toContain('#2「构建」· failed')
+    expect(lines[1]).toContain('上一轮结束之后补交的回报')
+    expect(lines[1]).toContain('取代这个讨论串之前的回报')
+    expect(lines[2]).toBe('摘要：构建失败：3 个测试没过')
+  })
+
+  it('leaves an ordinary report as it was', () => {
+    expect(composeNote(thread, report, undefined, 600)).not.toContain('补交')
+  })
+})
+
 describe('currentReport', () => {
   const base: ThreadRecord = {
     id: 'session-1', mainSessionId: 'main', n: 1, title: 't', task: 'x', initiation: 'user_asked',
     status: 'running', resolved: false, archived: false, round: 'dispatch', userMessages: [], roundStartSeq: 0, roundStartedAt: '2026-10-23T10:00:00.000Z',
-    lastReport: null, error: null, worktree: null, reminder: null, stopped: false, createdAt: '', updatedAt: '',
+    lastReport: null, error: null, worktree: null, reminder: null, stopped: false, lastRound: null, late: false, createdAt: '', updatedAt: '',
   }
   const report = (at: string) => normalizeReport({ status: 'done', summary: 's' }, 300, at)
 

@@ -210,6 +210,7 @@ export class ThreadManager {
       worktree,
       reminder: null,
       stopped: false,
+      lastRound: null, late: false,
       createdAt, updatedAt: createdAt,
     }
     this.creating.add(id)
@@ -244,7 +245,7 @@ export class ThreadManager {
   /** Start a round the main conversation asked for. The record is saved before the message is sent. */
   private async dispatch(record: ThreadRecord, agent: ThreadAgent, text: string): Promise<ThreadRecord> {
     const at = this.deps.now()
-    const next: ThreadRecord = { ...record, status: 'running', round: 'dispatch', userMessages: [], roundStartSeq: agent.seq, roundStartedAt: at, reminder: null, stopped: false, updatedAt: at }
+    const next: ThreadRecord = { ...record, status: 'running', round: 'dispatch', userMessages: [], roundStartSeq: agent.seq, roundStartedAt: at, reminder: null, stopped: false, late: false, updatedAt: at }
     await this.deps.store.putThread(next)
     agent.followup(text, noticeSummary(next, msg().noticeBrief), { role: 'brief', threads: [cardOf(next)], wake: true })
     return next
@@ -267,9 +268,12 @@ export class ThreadManager {
     const agent = await this.deps.host.resolve(thread.id)
     if (agent === undefined) throw new ThreadError(msg().unreachable(n))
     const at = this.deps.now()
-    const next: ThreadRecord = thread.round === null
-      ? { ...thread, status: 'running', round: 'dispatch', userMessages: [], roundStartSeq: agent.seq, roundStartedAt: at, resolved: false, reminder: null, stopped: false, updatedAt: at }
-      : { ...thread, round: 'dispatch', resolved: false, reminder: null, stopped: false, updatedAt: at }
+    // Read again: the thread may have reported (and opened a round of its own) while we waited.
+    const current = this.deps.store.thread(thread.id) ?? thread
+    const next: ThreadRecord = current.round === null
+      ? { ...current, status: 'running', round: 'dispatch', userMessages: [], roundStartSeq: agent.seq, roundStartedAt: at, resolved: false, reminder: null, stopped: false, late: false, updatedAt: at }
+      // A round the thread's own late report opened becomes an ordinary task round.
+      : { ...current, round: 'dispatch', resolved: false, reminder: null, stopped: false, late: false, updatedAt: at }
     await this.deps.store.putThread(next)
     agent.followup(replyText(next, text), noticeSummary(next, msg().noticeReply), { role: 'reply', threads: [cardOf(next)], wake: true })
     return next
@@ -303,8 +307,9 @@ export class ThreadManager {
   /**
    * A message entered a session's inbox. A user message in an idle thread starts a user-driven
    * round; in any round, the user's words are kept for the report. Anything else that wakes an
-   * idle thread (DSH's own notices, such as a background job finishing) starts no round: a
-   * stopped thread stays stopped through it.
+   * idle thread (DSH's own notices, such as a background job finishing) starts no round here: a
+   * stopped thread stays stopped through it, and any other thread opens a round only if it
+   * reports in that turn (recordReport).
    */
   async onInbox(sessionId: string, sourceKind: string, seq: number, text = ''): Promise<void> {
     if (!this.isThread(sessionId)) this.inboxCounts.set(sessionId, this.inboxCount(sessionId) + 1)
@@ -322,7 +327,7 @@ export class ThreadManager {
       if (said.length > 0) await this.deps.store.putThread({ ...thread, userMessages: [...thread.userMessages, ...said].slice(-USER_MESSAGES_MAX), updatedAt: at })
       return
     }
-    await this.deps.store.putThread({ ...thread, status: 'running', round: 'user', userMessages: said, roundStartSeq: seq, roundStartedAt: at, resolved: false, reminder: null, stopped: false, updatedAt: at })
+    await this.deps.store.putThread({ ...thread, status: 'running', round: 'user', userMessages: said, roundStartSeq: seq, roundStartedAt: at, resolved: false, reminder: null, stopped: false, late: false, updatedAt: at })
   }
 
   /** The user spoke in a main conversation: automatic wake-ups may start again. */
@@ -385,7 +390,7 @@ export class ThreadManager {
       : this.deps.host.roundOutput(thread.id, thread.roundStartSeq ?? 0)
     const note: PendingNote = {
       threadId: thread.id,
-      text: composeNote(thread, report, fallback, this.deps.config.noteMaxChars, { stopped }),
+      text: composeNote(thread, report, fallback, this.deps.config.noteMaxChars, { stopped, late: thread.late }),
       quiet: thread.round === 'user' || stopped,
       card: {
         ...cardOf(thread),
@@ -395,7 +400,7 @@ export class ThreadManager {
         ...(report === null || report.changedFiles.length === 0 ? {} : { files: report.changedFiles.slice(0, CARD_FILES_MAX) }),
       },
     }
-    await this.deps.store.putThread({ ...thread, status: 'idle', round: null, userMessages: [], reminder: null, stopped, updatedAt: this.deps.now() })
+    await this.deps.store.putThread({ ...thread, status: 'idle', round: null, userMessages: [], reminder: null, stopped, lastRound: thread.round, late: false, updatedAt: this.deps.now() })
     // Start queued proposals first: the note then waits for them, and the main conversation
     // hears from the whole batch once instead of once per thread.
     await this.drainQueue(thread.mainSessionId)
@@ -542,14 +547,36 @@ export class ThreadManager {
     return next
   }
 
+  /**
+   * thread_report. In a round, the report is kept until the round settles. Outside one (DSH
+   * started this turn on its own, usually because a background job the thread left running
+   * finished), the report opens a round of its own, so that it settles into a note like any
+   * other: what the cards and thread_status show never differs from what the main conversation
+   * was told. That round is delivered the way the thread's last round was (`lastRound`). A turn
+   * DSH started in which the thread does not report stays outside any round: nothing new to tell.
+   */
   async recordReport(threadId: string, input: Omit<ThreadReport, 'at'>): Promise<ThreadReport> {
-    const thread = this.deps.store.thread(threadId)
-    if (thread === undefined) throw new ThreadError(msg().reportFromThreadsOnly)
+    const { store, host, config, now } = this.deps
+    if (store.thread(threadId) === undefined) throw new ThreadError(msg().reportFromThreadsOnly)
     // Stopping is the user's call: a turn DSH started on its own afterwards cannot turn the
     // thread into "done" behind their back.
     if (this.isStopped(threadId)) throw new ThreadError(msg().reportAfterStop)
-    const report = normalizeReport(input, this.deps.config.summaryMaxChars, this.deps.now())
-    await this.deps.store.putThread({ ...thread, lastReport: report, updatedAt: report.at })
+    // The offset is read first: the record is then read and written with nothing in between,
+    // so a follow-up from the main conversation arriving at this moment is not overwritten.
+    const seq = store.thread(threadId)?.round === null ? (await host.resolve(threadId))?.seq : undefined
+    const thread = store.thread(threadId)
+    if (thread === undefined) throw new ThreadError(msg().reportFromThreadsOnly)
+    const report = normalizeReport(input, config.summaryMaxChars, now())
+    // A deleted project's thread is an ordinary conversation: there is nobody to deliver to.
+    const late = thread.round === null && thread.status !== 'failed' && thread.status !== 'starting' && !thread.stopped && this.isDispatcher(thread.mainSessionId)
+    await store.putThread(late
+      ? {
+          ...thread,
+          status: 'running', round: thread.lastRound ?? 'dispatch', late: true, userMessages: [], reminder: null,
+          roundStartSeq: seq ?? thread.roundStartSeq, roundStartedAt: report.at,
+          lastReport: report, updatedAt: report.at,
+        }
+      : { ...thread, lastReport: report, updatedAt: report.at })
     return report
   }
 

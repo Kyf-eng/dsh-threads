@@ -77,6 +77,19 @@ export interface ThreadRecord {
    * between (a background job finishing) is not a round, and a report from it is refused.
    */
   stopped: boolean
+  /**
+   * Who started the last round that settled. A report the thread makes after that round, in a
+   * turn DSH started on its own (a background job finishing), is delivered the way that round
+   * was: by the wake-up rules after a task, quietly after a round the user drove. Null until a
+   * round has settled (and on records from earlier versions), which counts as `dispatch`.
+   */
+  lastRound: RoundOrigin | null
+  /**
+   * The current round was not started by a brief, a follow-up or the user: the thread reported
+   * in a turn DSH started on its own, and that report opened the round so it reaches the main
+   * conversation. Its note says so.
+   */
+  late: boolean
   createdAt: string
   updatedAt: string
 }

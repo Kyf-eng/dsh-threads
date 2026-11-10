@@ -8,7 +8,7 @@ function thread(report: ThreadRecord['lastReport']): ThreadRecord {
   return {
     id: 'session-t', mainSessionId: 'session-m', n: 3, title: '查依赖', task: 'x', initiation: 'user_asked', status: 'idle',
     resolved: false, archived: false, round: null, userMessages: [], roundStartSeq: null, roundStartedAt: null, lastReport: report, error: null,
-    worktree: null, reminder: null, stopped: false, createdAt: '', updatedAt: '',
+    worktree: null, reminder: null, stopped: false, lastRound: null, late: false, createdAt: '', updatedAt: '',
   }
 }
 

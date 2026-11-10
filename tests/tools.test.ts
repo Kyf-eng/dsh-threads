@@ -175,6 +175,21 @@ describe('thread_report', () => {
     expect(t.store.thread('session-1')?.lastReport).toBeNull()
   })
 
+  it('records a report made after the round ended and says it will be delivered, which is now true', async () => {
+    const t = setup()
+    await t.manager.open('main', { title: 'a', task: 'x', initiation: 'user_asked' })
+    const tool = threadReportTool(t.manager, 300)
+    await call(tool, { status: 'done', summary: '后台任务已启动' }, 'session-1')
+    await t.manager.onIdle('session-1')
+    // DSH wakes the thread for the finished job; there is no round.
+    await t.manager.onInbox('session-1', 'tool-jobs', 30, 'background job finished')
+    const text = await call(tool, { status: 'done', summary: '后台任务已结束' }, 'session-1')
+    expect(text).toContain('结束本轮时会发给主对话')
+    await t.manager.onIdle('session-1')
+    expect(t.main.followups).toHaveLength(2)
+    expect(t.main.followups[1]).toContain('后台任务已结束')
+  })
+
   it('refuses sessions that are not threads, and statuses outside the list', async () => {
     const t = setup()
     const tool = threadReportTool(t.manager, 300)

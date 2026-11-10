@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.0 — 2026-11-10
+
+Tested on DeepSeek Harness 0.2.2-rc.1, with a new option that opens threads without the confirmation card and two fixes for threads that DeepSeek Harness wakes on its own. The same `dsh plugin add` command upgrades from 0.1.x; projects and threads are kept.
+
+- New: the `offerApproval` option (#51). With `offerApproval: open`, a thread for a task you named without asking for a thread opens right away, and the main conversation says which threads it opened. The default, `ask`, still shows the "Open a thread / Do it here / Not now" card first.
+- DeepSeek Harness 0.2.2-rc.1: the upgrade checklist passes on Desktop and Web. 0.2.2 changed the sidebar's spacing, which left the "Projects" section a few pixels off the workspace list; the section now follows the host's spacing on both 0.2.1 and 0.2.2.
+- Fix: a thread you stopped stays stopped. DeepSeek Harness keeps a stopped thread's background jobs running and wakes the thread when one finishes; the thread used to carry on and report "done". It now stays "stopped", on its cards and for the main conversation, until you write in it or the main conversation sends it more work, and a report made in between is refused.
+- Fix: a report a thread sends after its round ended reaches the main conversation. A thread that ended its round with a background job still running, and reported again when the job finished, changed its card without the main conversation hearing of it. The later report is now delivered like any other and says that it replaces the earlier one; after a round you drove in the thread yourself it arrives quietly.
+- Fix: Stop (the pane's button and `/thread stop`) also stops a turn DeepSeek Harness started in a thread on its own.
+- The `@deepseek-ai/cordis` and `@deepseek-ai/schemastery` peer ranges cover 4.1.x and 3.19.x.
+
 ## 0.1.1 — 2026-11-10
 
 Fixes for phones, touch screens and narrow windows, and for errors that went unseen. Most of it is the work of @aaaa0ggMC (#52). The same `dsh plugin add` command upgrades from 0.1.0; nothing stored changes.

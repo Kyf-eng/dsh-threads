@@ -645,7 +645,8 @@ const STATUS_KEYS$1 = {
 	blocked: "status.blocked",
 	needs_decision: "status.needsDecision",
 	failed: "status.failed",
-	"no-report": "status.noReport"
+	"no-report": "status.noReport",
+	stopped: "status.stopped"
 };
 function message(target, t, asking) {
 	const title = target.kind === "main" ? target.projectTitle : `${target.projectTitle} · #${target.n} ${target.title}`;
@@ -734,6 +735,7 @@ function glyphState(thread, running = false, asking = false) {
 	if (thread.status === "failed") return "failed";
 	if (thread.resolved) return "resolved";
 	if (thread.archived === true) return "done";
+	if (thread.stopped) return "done";
 	return reportGlyph(thread.lastReport?.status);
 }
 /** For card data that carries only the report status (`done`, `needs_decision`, `no-report`, …). */
@@ -1232,7 +1234,7 @@ function ReportCard({ cards, sessionId, useSessionStatus, t, openThread }) {
 			children: waitingFirst(cards).map((card) => {
 				const thread = byId.get(card.threadId);
 				const state = thread === void 0 ? reportGlyph(card.status) : glyphState(thread, live.running.has(card.threadId), live.asking.has(card.threadId));
-				const status = state === "running" ? t("status.running") : state === "resolved" ? t("list.resolved") : t(STATUS_KEYS[thread?.lastReport?.status ?? card.status ?? "no-report"] ?? "status.noReport");
+				const status = state === "running" ? t("status.running") : state === "resolved" ? t("list.resolved") : t(STATUS_KEYS[thread?.stopped === true ? "stopped" : thread?.lastReport?.status ?? card.status ?? "no-report"] ?? "status.noReport");
 				return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ThreadItem, {
 					n: card.n,
 					title: card.title,
@@ -1254,7 +1256,7 @@ function ReportCard({ cards, sessionId, useSessionStatus, t, openThread }) {
 function OpenedItem({ card, thread, live, t, openThread }) {
 	const state = thread === void 0 ? "running" : glyphState(thread, live.running.has(card.threadId), live.asking.has(card.threadId));
 	const report = thread?.lastReport ?? null;
-	const status = state === "running" ? t("status.running") : state === "resolved" ? t("list.resolved") : report === null ? void 0 : t(STATUS_KEYS[report.status] ?? "status.noReport");
+	const status = state === "running" ? t("status.running") : state === "resolved" ? t("list.resolved") : thread?.stopped === true ? t("status.stopped") : report === null ? void 0 : t(STATUS_KEYS[report.status] ?? "status.noReport");
 	return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ThreadItem, {
 		compact: true,
 		n: card.n,

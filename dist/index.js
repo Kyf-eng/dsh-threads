@@ -45,12 +45,14 @@ const zh = {
 	notRunning: (n) => `讨论串 #${n} 现在没有在运行。`,
 	stopBeforeArchive: (n) => `讨论串 #${n} 还在运行，先停止再归档。`,
 	reportFromThreadsOnly: "只有讨论串会话能调用 thread_report。",
+	reportAfterStop: "没有记录这份回报：用户已经停止了这个讨论串，主对话那边它保持“已停止”。不要继续这项任务，也不要再调用工具；用一两句话结束回复，等用户在这里发话或主对话追加指令。",
 	cleanupFailed: (n, reason) => `#${n}：删除失败（${reason}）`,
 	cleanupDirty: (n, path) => `#${n}：${path} 里有没提交的改动，没删；先提交或丢弃。`,
 	cleanupRemoved: (n, branch, kept) => `#${n}：已删除 worktree，${kept ? `分支 ${branch} 还有没合并的提交，保留` : `分支 ${branch} 已合并，一并删除`}。`,
 	noSuchThread: (n) => `没有讨论串 #${n}。`,
 	noThreads: "这个主对话还没有讨论串。",
 	archivedMark: " · 已归档",
+	stoppedMark: " · 用户已停止",
 	describeHead: (n, title, status, archived, id) => `讨论串 #${n}「${title}」· ${status}${archived}（会话 ${id}）`,
 	describeWorktree: (path, branch, removed) => `worktree：${path}，分支 ${branch}${removed ? "（已删除 worktree）" : ""}`,
 	describeTask: (task) => `任务：${task}`,
@@ -159,12 +161,14 @@ const en = {
 	notRunning: (n) => `Thread #${n} is not running.`,
 	stopBeforeArchive: (n) => `Thread #${n} is still running; stop it before archiving.`,
 	reportFromThreadsOnly: "Only thread sessions can call thread_report.",
+	reportAfterStop: "This report was not recorded: the user stopped this thread, and it stays \"stopped\" for the main conversation. Do not continue the task and call no more tools; end your reply in a sentence or two and wait for the user to write here or for a follow-up from the main conversation.",
 	cleanupFailed: (n, reason) => `#${n}: removal failed (${reason})`,
 	cleanupDirty: (n, path) => `#${n}: ${path} has uncommitted changes, so it was kept; commit or discard them first.`,
 	cleanupRemoved: (n, branch, kept) => `#${n}: worktree removed; ${kept ? `branch ${branch} has unmerged commits and was kept` : `branch ${branch} was merged and was deleted too`}.`,
 	noSuchThread: (n) => `No thread #${n}.`,
 	noThreads: "This main conversation has no threads yet.",
 	archivedMark: " · archived",
+	stoppedMark: " · stopped by the user",
 	describeHead: (n, title, status, archived, id) => `Thread #${n} "${title}" · ${status}${archived} (session ${id})`,
 	describeWorktree: (path, branch, removed) => `Worktree: ${path}, branch ${branch}${removed ? " (worktree removed)" : ""}`,
 	describeTask: (task) => `Task: ${task}`,
@@ -618,12 +622,12 @@ function notifyTarget(id, deps) {
 		waiting,
 		n: thread.n,
 		title: thread.title,
-		status: report?.status ?? "no-report",
-		text: clip(waiting ? report?.decisions[0] ?? report?.summary : report?.summary ?? deps.lastReply(id))
+		status: thread.stopped ? "stopped" : report?.status ?? "no-report",
+		text: clip(waiting ? report?.decisions[0] ?? report?.summary : thread.stopped ? deps.lastReply(id) : report?.summary ?? deps.lastReply(id))
 	};
 }
 function summarize(thread) {
-	const { id, mainSessionId, n, title, status, resolved, archived, initiation, lastReport, error, createdAt, updatedAt } = thread;
+	const { id, mainSessionId, n, title, status, resolved, archived, initiation, lastReport, stopped, error, createdAt, updatedAt } = thread;
 	return {
 		id,
 		mainSessionId,
@@ -634,6 +638,7 @@ function summarize(thread) {
 		archived,
 		initiation,
 		lastReport,
+		stopped,
 		error,
 		worktree: thread.worktree === null ? null : {
 			branch: thread.worktree.branch,
@@ -644,10 +649,10 @@ function summarize(thread) {
 		updatedAt
 	};
 }
-/** A thread that stopped to ask the user something (Claude's raised hand). */
+/** A thread that stopped to ask the user something (Claude's raised hand). One the user stopped no longer asks. */
 function isWaiting(thread) {
 	const status = thread.lastReport?.status;
-	return !thread.resolved && !thread.archived && thread.status === "idle" && (status === "needs_decision" || status === "blocked");
+	return !thread.resolved && !thread.archived && !thread.stopped && thread.status === "idle" && (status === "needs_decision" || status === "blocked");
 }
 function parse(schema, payload) {
 	const result = schema.safeParse(payload);
@@ -1177,6 +1182,7 @@ var ThreadManager = class {
 			error: null,
 			worktree,
 			reminder: null,
+			stopped: false,
 			createdAt,
 			updatedAt: createdAt
 		};
@@ -1221,6 +1227,7 @@ var ThreadManager = class {
 			roundStartSeq: agent.seq,
 			roundStartedAt: at,
 			reminder: null,
+			stopped: false,
 			updatedAt: at
 		};
 		await this.deps.store.putThread(next);
@@ -1255,12 +1262,14 @@ var ThreadManager = class {
 			roundStartedAt: at,
 			resolved: false,
 			reminder: null,
+			stopped: false,
 			updatedAt: at
 		} : {
 			...thread,
 			round: "dispatch",
 			resolved: false,
 			reminder: null,
+			stopped: false,
 			updatedAt: at
 		};
 		await this.deps.store.putThread(next);
@@ -1306,7 +1315,9 @@ var ThreadManager = class {
 	}
 	/**
 	* A message entered a session's inbox. A user message in an idle thread starts a user-driven
-	* round; in any round, the user's words are kept for the report.
+	* round; in any round, the user's words are kept for the report. Anything else that wakes an
+	* idle thread (DSH's own notices, such as a background job finishing) starts no round: a
+	* stopped thread stays stopped through it.
 	*/
 	async onInbox(sessionId, sourceKind, seq, text = "") {
 		if (!this.isThread(sessionId)) this.inboxCounts.set(sessionId, this.inboxCount(sessionId) + 1);
@@ -1336,6 +1347,7 @@ var ThreadManager = class {
 			roundStartedAt: at,
 			resolved: false,
 			reminder: null,
+			stopped: false,
 			updatedAt: at
 		});
 	}
@@ -1417,6 +1429,7 @@ var ThreadManager = class {
 			round: null,
 			userMessages: [],
 			reminder: null,
+			stopped,
 			updatedAt: this.deps.now()
 		});
 		await this.drainQueue(thread.mainSessionId);
@@ -1533,14 +1546,24 @@ var ThreadManager = class {
 	}
 	/**
 	* Stop a running thread (the pane's stop, `/thread stop`). Its round then settles as stopped,
-	* quietly and without a reminder (onIdle reads the turn's end).
+	* quietly and without a reminder (onIdle reads the turn's end). A turn outside any round (DSH
+	* woke the thread itself, say for a finished background job) is stopped the same way.
 	*/
 	async stop(threadId) {
 		const thread = this.deps.store.thread(threadId);
 		if (thread === void 0) throw new ThreadError(msg().threadNotFound);
 		if (thread.status === "starting") throw new ThreadError(msg().stillStarting(thread.n));
-		if (thread.status !== "running" || !await this.deps.host.cancel(threadId)) throw new ThreadError(msg().notRunning(thread.n));
+		if (thread.status === "failed" || !await this.deps.host.cancel(threadId)) throw new ThreadError(msg().notRunning(thread.n));
 		return thread;
+	}
+	/**
+	* Whether the user stopped this thread and nobody has set it going again. Background jobs it
+	* started keep running (DSH's stop ends the turn, not the jobs), and DSH wakes the session
+	* when one finishes; that turn must not carry on with the task or report it as done.
+	*/
+	isStopped(sessionId) {
+		const thread = this.deps.store.thread(sessionId);
+		return thread !== void 0 && thread.stopped && thread.round === null;
 	}
 	/** `/thread stop <n>` from a main conversation. */
 	stopNumber(mainSessionId, n) {
@@ -1571,6 +1594,7 @@ var ThreadManager = class {
 	async recordReport(threadId, input) {
 		const thread = this.deps.store.thread(threadId);
 		if (thread === void 0) throw new ThreadError(msg().reportFromThreadsOnly);
+		if (this.isStopped(threadId)) throw new ThreadError(msg().reportAfterStop);
 		const report = normalizeReport(input, this.deps.config.summaryMaxChars, this.deps.now());
 		await this.deps.store.putThread({
 			...thread,
@@ -1634,13 +1658,14 @@ var ThreadManager = class {
 	/** Text for thread_status: every thread of this main conversation, or one thread in detail. */
 	describe(mainSessionId, n) {
 		const m = msg();
+		const marks = (thread) => `${this.isStopped(thread.id) ? m.stoppedMark : ""}${thread.archived ? m.archivedMark : ""}`;
 		const threads = this.deps.store.threadsOf(mainSessionId);
 		if (n !== void 0) {
 			const thread = threads.find((t) => t.n === n);
 			if (thread === void 0) throw new ThreadError(msg().noSuchThread(n));
 			const report = thread.lastReport;
 			return [
-				m.describeHead(thread.n, thread.title, thread.status, thread.archived ? m.archivedMark : "", thread.id),
+				m.describeHead(thread.n, thread.title, thread.status, marks(thread), thread.id),
 				thread.worktree === null ? "" : m.describeWorktree(thread.worktree.path, thread.worktree.branch, thread.worktree.removed),
 				m.describeTask(truncate(thread.task, 600)),
 				report === null ? m.describeNoReport : [
@@ -1654,7 +1679,7 @@ var ThreadManager = class {
 		if (threads.length === 0) return m.noThreads;
 		return threads.map((t) => {
 			const latest = t.lastReport === null ? m.listNoReport : m.listLatest(t.lastReport.status, truncate(t.lastReport.summary, 80));
-			return m.listLine(t.n, t.title, t.status, t.archived ? m.archivedMark : "", latest);
+			return m.listLine(t.n, t.title, t.status, marks(t), latest);
 		}).join("\n");
 	}
 };
@@ -2014,6 +2039,16 @@ function leadReminder(count) {
 - Keep your turn short and never wait for a thread.`;
 }
 /**
+* Put next to whatever wakes a thread the user stopped (a runtime-context snapshot): DSH keeps
+* the thread's background jobs running after a stop and starts a turn when one finishes. Worded
+* so that it stays true if a real message arrives in the same turn.
+*/
+function stoppedReminder() {
+	return `dsh-threads: the user stopped this thread, and it is still stopped.
+- A turn that starts without a new message from the user or a new task or follow-up from the main conversation (for example a notice that a background job finished) is not a request to continue. Do not resume the task, do not start new work, and do not call thread_report: it is refused while the thread is stopped.
+- Say in a line or two what arrived, then end your reply. The thread continues when the user writes here or the main conversation sends a follow-up.`;
+}
+/**
 * The project's own context, shared by its main conversation and every thread. The goal (what
 * the coordinator works towards, as in Claude's project settings) goes to the main conversation only.
 */
@@ -2337,6 +2372,7 @@ function threadStatusTool(manager) {
 const SECTION_NAME = "dsh-threads";
 const PROJECT_SECTION_NAME = "dsh-threads-project";
 const LEAD_CONTEXT_NAME = "dsh-threads-lead";
+const STOPPED_CONTEXT_NAME = "dsh-threads-stopped";
 function installPerAgent(ctx, manager, projects, config) {
 	const installed = /* @__PURE__ */ new Map();
 	const install = (agent) => {
@@ -2369,6 +2405,11 @@ function installPerAgent(ctx, manager, projects, config) {
 					name: SECTION_NAME,
 					order: SECTION_ORDER,
 					text: () => threadPrompt(config.summaryMaxChars, manager.worktreeOf(agent.id))
+				}));
+				disposers.push(scope.systemPrompt.context({
+					name: STOPPED_CONTEXT_NAME,
+					order: 230,
+					text: () => manager.isStopped(agent.id) ? stoppedReminder() : ""
 				}));
 			} else {
 				disposers.push(scope.tools.register(threadOpenTool(ctx, manager, config.offerApproval)));
@@ -2511,6 +2552,7 @@ const threadSchema = z.object({
 		removed: z.boolean().default(false)
 	}).nullable().default(null),
 	reminder: z.object({ fallback: z.string().nullable() }).nullable().default(null),
+	stopped: z.boolean().default(false),
 	createdAt: z.string(),
 	updatedAt: z.string()
 });

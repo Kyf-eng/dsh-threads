@@ -9,7 +9,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Config } from './config.ts'
 import type { ThreadManager } from './manager.ts'
 import type { Projects } from './projects.ts'
-import { dispatcherPrompt, LEAD_CONTEXT_ORDER, leadReminder, projectPrompt, SECTION_ORDER, threadPrompt } from './prompts.ts'
+import { dispatcherPrompt, LEAD_CONTEXT_ORDER, leadReminder, projectPrompt, SECTION_ORDER, STOPPED_CONTEXT_ORDER, stoppedReminder, threadPrompt } from './prompts.ts'
 import { type Role, roleOf } from './roles.ts'
 import { threadOpenTool } from './tools/thread-open.ts'
 import { threadProposeTool } from './tools/thread-propose.ts'
@@ -20,6 +20,7 @@ import { threadStatusTool } from './tools/thread-status.ts'
 const SECTION_NAME = 'dsh-threads'
 const PROJECT_SECTION_NAME = 'dsh-threads-project'
 const LEAD_CONTEXT_NAME = 'dsh-threads-lead'
+const STOPPED_CONTEXT_NAME = 'dsh-threads-stopped'
 
 export function installPerAgent(ctx: Context, manager: ThreadManager, projects: Projects, config: Config): void {
   const installed = new Map<Agent, { role: Role; dispose: () => void }>()
@@ -49,6 +50,8 @@ export function installPerAgent(ctx: Context, manager: ThreadManager, projects: 
           order: SECTION_ORDER,
           text: () => threadPrompt(config.summaryMaxChars, manager.worktreeOf(agent.id)),
         }))
+        // Empty (no snapshot) unless the user stopped the thread; then it rides with whatever DSH wakes it for.
+        disposers.push(scope.systemPrompt.context({ name: STOPPED_CONTEXT_NAME, order: STOPPED_CONTEXT_ORDER, text: () => (manager.isStopped(agent.id) ? stoppedReminder() : '') }))
       } else {
         disposers.push(scope.tools.register(threadOpenTool(ctx, manager, config.offerApproval)))
         disposers.push(scope.tools.register(threadProposeTool(manager, config.maxProposalsPerTurn)))

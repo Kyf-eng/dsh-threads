@@ -15,6 +15,8 @@ export interface ThreadView {
   archived: boolean
   initiation: 'user_asked' | 'offer' | 'proposal'
   lastReport: { status: 'done' | 'blocked' | 'needs_decision' | 'failed'; summary: string; changedFiles: string[]; decisions: string[]; at: string } | null
+  /** The user stopped its last round and has not set it going again. */
+  stopped: boolean
   error: string | null
   worktree: { branch: string; path: string; removed: boolean } | null
   createdAt: string

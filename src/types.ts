@@ -70,6 +70,13 @@ export interface ThreadRecord {
    * `fallback` is its last reply from before the reminder, used if it still does not report.
    */
   reminder: { fallback: string | null } | null
+  /**
+   * The user stopped this thread's last round (our stop, or DSH's own button) and has not set it
+   * going again. It stays stopped, on the cards and for the main conversation, until the user
+   * writes in it or the main conversation sends it more work: a turn DSH starts on its own in
+   * between (a background job finishing) is not a round, and a report from it is refused.
+   */
+  stopped: boolean
   createdAt: string
   updatedAt: string
 }

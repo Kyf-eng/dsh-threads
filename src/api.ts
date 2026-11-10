@@ -42,7 +42,7 @@ export interface NotifyTarget {
   waiting: boolean
   n: number | null
   title: string | null
-  /** Report status of a thread (`done`, `needs_decision`, …, `no-report`). */
+  /** Report status of a thread (`done`, `needs_decision`, …, `no-report`), or `stopped` when the user stopped it. */
   status: string | null
   /** The decision a waiting thread asks for, a thread's summary, or the main conversation's last reply. */
   text: string
@@ -70,26 +70,27 @@ export function notifyTarget(id: string, deps: {
   const waiting = isWaiting(thread)
   return {
     sessionId: id, kind: 'thread', mainSessionId: thread.mainSessionId, projectTitle: project.title, level: project.notify,
-    waiting, n: thread.n, title: thread.title, status: report?.status ?? 'no-report',
-    text: clip(waiting ? report?.decisions[0] ?? report?.summary : report?.summary ?? deps.lastReply(id)),
+    waiting, n: thread.n, title: thread.title, status: thread.stopped ? 'stopped' : report?.status ?? 'no-report',
+    // A stopped thread's report is from an earlier round; its last reply says where it stands.
+    text: clip(waiting ? report?.decisions[0] ?? report?.summary : thread.stopped ? deps.lastReply(id) : report?.summary ?? deps.lastReply(id)),
   }
 }
 
 /** What the panel shows for a thread; the brief and internal round bookkeeping stay on the host. */
-export type ThreadSummary = Pick<ThreadRecord, 'id' | 'mainSessionId' | 'n' | 'title' | 'status' | 'resolved' | 'archived' | 'initiation' | 'lastReport' | 'error' | 'createdAt' | 'updatedAt'> & {
+export type ThreadSummary = Pick<ThreadRecord, 'id' | 'mainSessionId' | 'n' | 'title' | 'status' | 'resolved' | 'archived' | 'initiation' | 'lastReport' | 'stopped' | 'error' | 'createdAt' | 'updatedAt'> & {
   worktree: { branch: string; path: string; removed: boolean } | null
 }
 
 export function summarize(thread: ThreadRecord): ThreadSummary {
-  const { id, mainSessionId, n, title, status, resolved, archived, initiation, lastReport, error, createdAt, updatedAt } = thread
+  const { id, mainSessionId, n, title, status, resolved, archived, initiation, lastReport, stopped, error, createdAt, updatedAt } = thread
   const worktree = thread.worktree === null ? null : { branch: thread.worktree.branch, path: thread.worktree.path, removed: thread.worktree.removed }
-  return { id, mainSessionId, n, title, status, resolved, archived, initiation, lastReport, error, worktree, createdAt, updatedAt }
+  return { id, mainSessionId, n, title, status, resolved, archived, initiation, lastReport, stopped, error, worktree, createdAt, updatedAt }
 }
 
-/** A thread that stopped to ask the user something (Claude's raised hand). */
+/** A thread that stopped to ask the user something (Claude's raised hand). One the user stopped no longer asks. */
 export function isWaiting(thread: ThreadRecord): boolean {
   const status = thread.lastReport?.status
-  return !thread.resolved && !thread.archived && thread.status === 'idle' && (status === 'needs_decision' || status === 'blocked')
+  return !thread.resolved && !thread.archived && !thread.stopped && thread.status === 'idle' && (status === 'needs_decision' || status === 'blocked')
 }
 
 function parse<T>(schema: z.ZodType<T>, payload: unknown): T {

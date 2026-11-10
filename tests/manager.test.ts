@@ -145,6 +145,16 @@ describe('ThreadManager', () => {
     expect(t.main.injects[0]).toContain('· stopped ·')
   })
 
+  it('keeps a report made before the stop, and still counts the thread as stopped', async () => {
+    await t.manager.open('main', { title: 'a', task: 'x', initiation: 'user_asked' })
+    await t.manager.recordReport('session-1', { status: 'done', summary: '做了一半', changedFiles: [], decisions: [] })
+    t.stopped.add('session-1')
+    await t.manager.onIdle('session-1')
+    expect(t.main.injects[0]).toContain('· stopped ·')
+    expect(t.main.injects[0]).toContain('做了一半')
+    expect(t.store.thread('session-1')).toMatchObject({ stopped: true, lastReport: { status: 'done' } })
+  })
+
   it('refuses to stop a thread that is not running', async () => {
     await t.manager.open('main', { title: 'a', task: 'x', initiation: 'user_asked' })
     // The record says running but the agent is idle: nothing to cancel.
@@ -187,6 +197,94 @@ describe('ThreadManager', () => {
     await t.manager.onIdle('session-1')
     expect(t.store.thread('session-1')).toMatchObject({ status: 'idle', round: null })
     expect(t.main.injects).toHaveLength(0)
+  })
+})
+
+// DSH's stop ends the turn, not the background jobs the thread started. When one finishes, DSH
+// puts a `tool-jobs` notice in the idle session's inbox and that starts a turn by itself.
+describe('a stopped thread that DSH wakes for a finished background job', () => {
+  let t: ReturnType<typeof setup>
+  beforeEach(() => { t = setup({ reportReminder: true }) })
+
+  /** Open #1, stop it (our stop, or DSH's own button), let the round settle, then let the job notice start a turn. */
+  async function stopThenWake(how: 'ours' | 'dsh') {
+    await t.manager.open('main', { title: 'a', task: 'sleep 61 后回报', initiation: 'user_asked' })
+    const thread = t.agents.get('session-1')!
+    thread.status = 'running'
+    if (how === 'ours') await t.manager.stop('session-1')
+    else { thread.status = 'idle'; t.stopped.add('session-1') }
+    await t.manager.onIdle('session-1')
+    thread.status = 'running'
+    await t.manager.onInbox('session-1', 'tool-jobs', 30, 'background job bash-1 (bash: sleep 61) finished [status: completed, exit code: 0]')
+    return thread
+  }
+
+  for (const how of ['ours', 'dsh'] as const) {
+    it(`stays stopped and refuses the late report (${how === 'ours' ? 'our stop' : "DSH's stop button"})`, async () => {
+      const thread = await stopThenWake(how)
+      // Not a round: nothing to settle, nothing to remind.
+      expect(t.store.thread('session-1')).toMatchObject({ status: 'idle', round: null, stopped: true })
+      expect(t.manager.isStopped('session-1')).toBe(true)
+      await expect(t.manager.recordReport('session-1', { status: 'done', summary: 'sleep 结束了', changedFiles: [], decisions: [] })).rejects.toThrow('用户已经停止了这个讨论串')
+      thread.status = 'idle'
+      await t.manager.onIdle('session-1')
+      expect(t.store.thread('session-1')).toMatchObject({ status: 'idle', round: null, stopped: true, lastReport: null })
+      // Only the brief ever went to the thread; the main conversation heard once, quietly, that the user stopped it.
+      expect(thread.followups).toHaveLength(1)
+      expect(t.main.followups).toHaveLength(0)
+      expect(t.main.injects).toHaveLength(1)
+      expect(t.main.injects[0]).toContain('· stopped ·')
+      expect(t.store.main('main').pendingNotes).toEqual([])
+      expect(t.manager.describe('main')).toContain('· idle · 用户已停止 ·')
+      expect(t.manager.describe('main', 1)).toContain('· idle · 用户已停止（会话')
+    })
+  }
+
+  it('lets the user stop the turn DSH started', async () => {
+    const thread = await stopThenWake('ours')
+    await t.manager.stop('session-1')
+    expect(thread.status).toBe('idle')
+    await t.manager.onIdle('session-1')
+    expect(t.main.injects).toHaveLength(1)
+  })
+
+  it('runs again when the user writes in it: a user-driven round whose report is recorded', async () => {
+    const thread = await stopThenWake('dsh')
+    thread.status = 'idle'
+    await t.manager.onIdle('session-1')
+    // The user's own message starts a turn that ends normally.
+    t.stopped.delete('session-1')
+    await t.manager.onInbox('session-1', 'user', 40, '继续，把结果告诉我')
+    expect(t.store.thread('session-1')).toMatchObject({ status: 'running', round: 'user', stopped: false })
+    expect(t.manager.isStopped('session-1')).toBe(false)
+    await t.manager.recordReport('session-1', { status: 'done', summary: 'sleep 结束了', changedFiles: [], decisions: [] })
+    await t.manager.onIdle('session-1')
+    expect(t.main.injects).toHaveLength(2)
+    expect(t.main.injects[1]).toContain('· done ·')
+    expect(t.manager.describe('main')).not.toContain('用户已停止')
+  })
+
+  it('runs again when the main conversation sends a follow-up', async () => {
+    const thread = await stopThenWake('ours')
+    thread.status = 'idle'
+    await t.manager.onIdle('session-1')
+    t.stopped.delete('session-1')
+    await t.manager.reply('main', 1, '用户让你接着做')
+    expect(t.store.thread('session-1')).toMatchObject({ status: 'running', round: 'dispatch', stopped: false })
+    await t.manager.recordReport('session-1', { status: 'done', summary: '做完了', changedFiles: [], decisions: [] })
+    await t.manager.onIdle('session-1')
+    expect(t.main.followups).toHaveLength(1)
+    expect(t.main.followups[0]).toContain('做完了')
+  })
+
+  it('leaves a thread that was not stopped alone', async () => {
+    await t.manager.open('main', { title: 'a', task: 'x', initiation: 'user_asked' })
+    await t.manager.recordReport('session-1', { status: 'done', summary: '第一轮', changedFiles: [], decisions: [] })
+    await t.manager.onIdle('session-1')
+    expect(t.manager.isStopped('session-1')).toBe(false)
+    await t.manager.onInbox('session-1', 'tool-jobs', 30, 'background job finished')
+    await t.manager.recordReport('session-1', { status: 'done', summary: '后台任务也好了', changedFiles: [], decisions: [] })
+    expect(t.store.thread('session-1')?.lastReport?.summary).toBe('后台任务也好了')
   })
 })
 

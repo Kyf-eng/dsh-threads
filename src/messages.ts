@@ -37,6 +37,7 @@ const zh = {
   notRunning: (n: number) => `讨论串 #${n} 现在没有在运行。`,
   stopBeforeArchive: (n: number) => `讨论串 #${n} 还在运行，先停止再归档。`,
   reportFromThreadsOnly: '只有讨论串会话能调用 thread_report。',
+  reportAfterStop: '没有记录这份回报：用户已经停止了这个讨论串，主对话那边它保持“已停止”。不要继续这项任务，也不要再调用工具；用一两句话结束回复，等用户在这里发话或主对话追加指令。',
   cleanupFailed: (n: number, reason: string) => `#${n}：删除失败（${reason}）`,
   cleanupDirty: (n: number, path: string) => `#${n}：${path} 里有没提交的改动，没删；先提交或丢弃。`,
   cleanupRemoved: (n: number, branch: string, kept: boolean) =>
@@ -46,6 +47,7 @@ const zh = {
   noSuchThread: (n: number) => `没有讨论串 #${n}。`,
   noThreads: '这个主对话还没有讨论串。',
   archivedMark: ' · 已归档',
+  stoppedMark: ' · 用户已停止',
   describeHead: (n: number, title: string, status: string, archived: string, id: string) => `讨论串 #${n}「${title}」· ${status}${archived}（会话 ${id}）`,
   describeWorktree: (path: string, branch: string, removed: boolean) => `worktree：${path}，分支 ${branch}${removed ? '（已删除 worktree）' : ''}`,
   describeTask: (task: string) => `任务：${task}`,
@@ -170,6 +172,7 @@ const en: Messages = {
   notRunning: (n) => `Thread #${n} is not running.`,
   stopBeforeArchive: (n) => `Thread #${n} is still running; stop it before archiving.`,
   reportFromThreadsOnly: 'Only thread sessions can call thread_report.',
+  reportAfterStop: 'This report was not recorded: the user stopped this thread, and it stays "stopped" for the main conversation. Do not continue the task and call no more tools; end your reply in a sentence or two and wait for the user to write here or for a follow-up from the main conversation.',
   cleanupFailed: (n, reason) => `#${n}: removal failed (${reason})`,
   cleanupDirty: (n, path) => `#${n}: ${path} has uncommitted changes, so it was kept; commit or discard them first.`,
   cleanupRemoved: (n, branch, kept) =>
@@ -178,6 +181,7 @@ const en: Messages = {
   noSuchThread: (n) => `No thread #${n}.`,
   noThreads: 'This main conversation has no threads yet.',
   archivedMark: ' · archived',
+  stoppedMark: ' · stopped by the user',
   describeHead: (n, title, status, archived, id) => `Thread #${n} "${title}" · ${status}${archived} (session ${id})`,
   describeWorktree: (path, branch, removed) => `Worktree: ${path}, branch ${branch}${removed ? ' (worktree removed)' : ''}`,
   describeTask: (task) => `Task: ${task}`,

@@ -95,6 +95,15 @@ describe('installPerAgent', () => {
     const thread = h.create('session-1')
     expect(thread.tools).toEqual(['thread_report'])
     expect(text(thread.sections[1]!)).toContain('# You are a thread (dsh-threads)')
+    // Nothing extra next to its messages while it works; a notice once the user has stopped it, until it is set going again.
+    expect(thread.contexts.map((c) => c.name)).toEqual(['dsh-threads-stopped'])
+    expect(text(thread.contexts[0]!)).toBe('')
+    h.t.stopped.add('session-1')
+    await h.t.manager.onIdle('session-1')
+    expect(text(thread.contexts[0]!)).toContain('the user stopped this thread')
+    expect(text(thread.contexts[0]!)).toContain('do not call thread_report')
+    await h.t.manager.onInbox('session-1', 'user', 5, '继续')
+    expect(text(thread.contexts[0]!)).toBe('')
     // A subagent of the main conversation (same project, but not a conversation the user dispatches from).
     expect(h.create('sub', 'subagent').tools).toEqual([])
   })
@@ -107,7 +116,7 @@ describe('installPerAgent', () => {
 
     await h.projects.remove('project-1')
     expect(h.main.disposed.sort()).toEqual(['dsh-threads', 'dsh-threads-lead', 'dsh-threads-project', 'thread_open', 'thread_propose', 'thread_reply', 'thread_status'])
-    expect(thread.disposed.sort()).toEqual(['dsh-threads', 'dsh-threads-project', 'thread_report'])
+    expect(thread.disposed.sort()).toEqual(['dsh-threads', 'dsh-threads-project', 'dsh-threads-stopped', 'thread_report'])
 
     // Making the old main conversation a project again: the main conversation and its thread get their tools back.
     await h.projects.create({ title: 'P', fromSessionId: 'main' })

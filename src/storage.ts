@@ -39,6 +39,7 @@ const threadSchema = z.object({
     removed: z.boolean().default(false),
   }).nullable().default(null),
   reminder: z.object({ fallback: z.string().nullable() }).nullable().default(null),
+  stopped: z.boolean().default(false),
   createdAt: z.string(),
   updatedAt: z.string(),
 })

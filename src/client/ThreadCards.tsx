@@ -82,7 +82,7 @@ function ReportCard({ cards, sessionId, useSessionStatus, t, openThread }: {
           const thread = byId.get(card.threadId)
           const state = thread === undefined ? reportGlyph(card.status) : glyphState(thread, live.running.has(card.threadId), live.asking.has(card.threadId))
           const status = state === 'running' ? t('status.running') : state === 'resolved' ? t('list.resolved')
-            : t(STATUS_KEYS[thread?.lastReport?.status ?? card.status ?? 'no-report'] ?? 'status.noReport')
+            : t(STATUS_KEYS[thread?.stopped === true ? 'stopped' : thread?.lastReport?.status ?? card.status ?? 'no-report'] ?? 'status.noReport')
           return (
             <ThreadItem key={card.threadId} n={card.n} title={card.title} state={state} status={status}
               summary={card.summary} decision={state === 'waiting' ? card.decision : undefined} decisionLabel={t('card.decision')}
@@ -105,7 +105,7 @@ function OpenedItem({ card, thread, live, t, openThread }: {
   const state = thread === undefined ? 'running' : glyphState(thread, live.running.has(card.threadId), live.asking.has(card.threadId))
   const report = thread?.lastReport ?? null
   const status = state === 'running' ? t('status.running') : state === 'resolved' ? t('list.resolved')
-    : report === null ? undefined : t(STATUS_KEYS[report.status] ?? 'status.noReport')
+    : thread?.stopped === true ? t('status.stopped') : report === null ? undefined : t(STATUS_KEYS[report.status] ?? 'status.noReport')
   return (
     // Compact, like Claude's inline thread cards.
     <ThreadItem compact n={card.n} title={card.title} state={state} status={status}

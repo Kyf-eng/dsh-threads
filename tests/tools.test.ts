@@ -164,6 +164,17 @@ describe('thread_report', () => {
     expect(t.store.thread('session-1')?.lastReport).toMatchObject({ status: 'needs_decision', summary: '两种做法', changedFiles: [], decisions: ['用 A 还是 B'] })
   })
 
+  it('tells a thread the user stopped that its report was not recorded', async () => {
+    const t = setup()
+    await t.manager.open('main', { title: 'a', task: 'x', initiation: 'user_asked' })
+    t.stopped.add('session-1')
+    await t.manager.onIdle('session-1')
+    const text = await call(threadReportTool(t.manager, 300), { status: 'done', summary: '后台任务结束了' }, 'session-1')
+    expect(text).toContain('没有记录这份回报')
+    expect(text).toContain('不要继续这项任务')
+    expect(t.store.thread('session-1')?.lastReport).toBeNull()
+  })
+
   it('refuses sessions that are not threads, and statuses outside the list', async () => {
     const t = setup()
     const tool = threadReportTool(t.manager, 300)

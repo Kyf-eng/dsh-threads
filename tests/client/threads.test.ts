@@ -5,7 +5,7 @@ import { groupThreads, liveKey, parseLive, type ThreadView } from '../../src/cli
 const report = (status: 'done' | 'needs_decision', summary = '') => ({ status, summary, changedFiles: [], decisions: [], at: '' })
 const thread = (n: number, patch: Partial<ThreadView> = {}): ThreadView => ({
   id: `session-${n}`, mainSessionId: 'main', n, title: `t${n}`, status: 'idle', resolved: false, archived: false,
-  initiation: 'user_asked', lastReport: report('done'), error: null, worktree: null, createdAt: '', updatedAt: `2026-10-24T0${n}:00:00Z`, ...patch,
+  initiation: 'user_asked', lastReport: report('done'), stopped: false, error: null, worktree: null, createdAt: '', updatedAt: `2026-10-24T0${n}:00:00Z`, ...patch,
 })
 
 describe('groupThreads', () => {
@@ -61,5 +61,12 @@ describe('live state', () => {
     expect(glyphState(running, true)).toBe('running')
     expect(glyphState(running, true, true)).toBe('waiting')
     expect(groupThreads([running], (t) => glyphState(t, true, true)).waiting.map((t) => t.n)).toEqual([8])
+  })
+
+  it('does not raise a hand for a thread the user stopped, though it shows running while DSH has it working', () => {
+    const stopped = thread(9, { stopped: true, lastReport: report('needs_decision') })
+    expect(glyphState(stopped)).toBe('done')
+    expect(groupThreads([stopped], (t) => glyphState(t)).idle.map((t) => t.n)).toEqual([9])
+    expect(glyphState(stopped, true)).toBe('running')
   })
 })

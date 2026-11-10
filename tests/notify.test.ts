@@ -8,7 +8,7 @@ function thread(report: ThreadRecord['lastReport']): ThreadRecord {
   return {
     id: 'session-t', mainSessionId: 'session-m', n: 3, title: '查依赖', task: 'x', initiation: 'user_asked', status: 'idle',
     resolved: false, archived: false, round: null, userMessages: [], roundStartSeq: null, roundStartedAt: null, lastReport: report, error: null,
-    worktree: null, reminder: null, createdAt: '', updatedAt: '',
+    worktree: null, reminder: null, stopped: false, createdAt: '', updatedAt: '',
   }
 }
 
@@ -28,6 +28,11 @@ describe('notifyTarget', () => {
     expect(notifyTarget('session-t', deps(waiting))).toMatchObject({ kind: 'thread', waiting: true, n: 3, text: '用方案 A 吗？', status: 'needs_decision' })
     const done = thread({ status: 'done', summary: '升级完了', changedFiles: [], decisions: [], at: '' })
     expect(notifyTarget('session-t', deps(done))).toMatchObject({ waiting: false, text: '升级完了' })
+  })
+
+  it('describes a thread the user stopped as stopped, whatever an earlier round reported', () => {
+    const stopped = { ...thread({ status: 'needs_decision', summary: '有两个方案', changedFiles: [], decisions: ['用方案 A 吗？'], at: '' }), stopped: true }
+    expect(notifyTarget('session-t', deps(stopped))).toMatchObject({ waiting: false, status: 'stopped', text: '好了，已合并' })
   })
 
   it('ignores sessions outside projects and archived projects', () => {

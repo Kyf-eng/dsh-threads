@@ -44,6 +44,7 @@ const STATUS_KEYS: Record<string, MessageKey> = {
   needs_decision: 'status.needsDecision',
   failed: 'status.failed',
   'no-report': 'status.noReport',
+  stopped: 'status.stopped',
 }
 
 function message(target: NotifyTarget, t: Translate, asking?: AskKind): { title: string; body: string } {

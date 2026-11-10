@@ -84,6 +84,20 @@ export function leadReminder(count: number): string {
 - Keep your turn short and never wait for a thread.`
 }
 
+/** Runtime-context order of the stopped-thread notice (same slot as the lead reminder; a session is never both). */
+export const STOPPED_CONTEXT_ORDER = LEAD_CONTEXT_ORDER
+
+/**
+ * Put next to whatever wakes a thread the user stopped (a runtime-context snapshot): DSH keeps
+ * the thread's background jobs running after a stop and starts a turn when one finishes. Worded
+ * so that it stays true if a real message arrives in the same turn.
+ */
+export function stoppedReminder(): string {
+  return `dsh-threads: the user stopped this thread, and it is still stopped.
+- A turn that starts without a new message from the user or a new task or follow-up from the main conversation (for example a notice that a background job finished) is not a request to continue. Do not resume the task, do not start new work, and do not call thread_report: it is refused while the thread is stopped.
+- Say in a line or two what arrived, then end your reply. The thread continues when the user writes here or the main conversation sends a follow-up.`
+}
+
 /**
  * The project's own context, shared by its main conversation and every thread. The goal (what
  * the coordinator works towards, as in Claude's project settings) goes to the main conversation only.

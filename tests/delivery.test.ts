@@ -68,4 +68,18 @@ describe('flushNotes', () => {
     expect(sent.inject).toEqual(['q'])
     expect(result.record.pendingNotes).toEqual([loud('a')])
   })
+
+  // A thread's held report and the one it sent later, after a background job ended (src/manager.ts
+  // recordReport): both are delivered, in order, so words the first carried are not lost. The
+  // later one says that it replaces the earlier.
+  it('delivers two notes of one thread together, oldest first', () => {
+    const { main, sent } = agent()
+    const first = { threadId: 'session-1', text: '[#1 · done]\n摘要：构建已启动', quiet: false }
+    const late = { threadId: 'session-1', text: '[#1 · failed]\n补交的回报\n摘要：构建失败', quiet: false }
+    const held = flushNotes(record([first, late]), main, 1, 5)
+    expect(held.record.pendingNotes).toEqual([first, late])
+    const result = flushNotes(held.record, main, 0, 5)
+    expect(sent.followup).toEqual([`${first.text}\n\n${late.text}`])
+    expect(result.record).toMatchObject({ pendingNotes: [], autoWakeStreak: 1 })
+  })
 })

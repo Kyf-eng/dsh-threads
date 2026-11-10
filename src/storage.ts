@@ -40,6 +40,8 @@ const threadSchema = z.object({
   }).nullable().default(null),
   reminder: z.object({ fallback: z.string().nullable() }).nullable().default(null),
   stopped: z.boolean().default(false),
+  lastRound: z.enum(['dispatch', 'user']).nullable().default(null),
+  late: z.boolean().default(false),
   createdAt: z.string(),
   updatedAt: z.string(),
 })

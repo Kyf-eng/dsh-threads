@@ -69,12 +69,14 @@ export function composeNote(
   report: ThreadReport | null,
   fallbackText: string | undefined,
   maxChars: number,
-  options: { stopped?: boolean } = {},
+  options: { stopped?: boolean; late?: boolean } = {},
 ): string {
   const m = msg()
   const status = options.stopped === true ? 'stopped' : report?.status ?? 'no-report'
   const lines = [m.noteHeader(thread.n, thread.title, status)]
   if (options.stopped === true) lines.push(m.noteStopped)
+  // Also under the header: the main conversation has usually been told about this thread once already.
+  if (options.late === true) lines.push(m.noteLate)
   // Right under the header so truncation never drops it.
   if (thread.worktree != null) lines.push(m.noteBranch(thread.worktree.branch))
   // Also near the top: without it a change the user asked for in the thread reads as the thread's own idea.

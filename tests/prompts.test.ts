@@ -27,6 +27,15 @@ describe('threadPrompt', () => {
     expect(sub).toContain(`${JSON.stringify(join('/r/.agents/worktrees/w', 'packages', 'app'))}: the project folder (packages/app)`)
   })
 
+  // A thread that leaves a background job running is woken by DSH when it ends; that turn's report is delivered too.
+  it('tells a thread to report again when a background job it left running finishes', () => {
+    const prompt = threadPrompt(300, null)
+    expect(prompt).toContain('A background job you start outlives your reply')
+    expect(prompt).toContain('say in the summary that the result is still to come')
+    expect(prompt).toContain('call thread_report again with the outcome')
+    expect(dispatcherPrompt(3)).toContain('A thread can report again after its round ended')
+  })
+
   // The Windows test of rc.6: a thread committed past a failing pre-commit hook with --no-verify.
   it('reports a failing hook or permission instead of getting around it', () => {
     for (const prompt of [threadPrompt(300, null), threadPrompt(300, { path: '/w', subdir: '', branch: 'dsh-threads/1-a' })]) {

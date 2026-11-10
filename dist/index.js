@@ -1742,7 +1742,8 @@ const Config = z$1.object({
 	proposalTtlDays: z$1.natural().min(1).default(7).description("Days before an unstarted thread proposal expires."),
 	maxProposalsPerTurn: z$1.natural().min(1).default(3).description("Most thread proposals the main conversation may make in one turn."),
 	reportReminder: z$1.boolean().default(true).description("When a task round ends without thread_report, ask the thread once to report before falling back to its last reply."),
-	inheritPermissionPreset: z$1.boolean().default(true).description("Give each thread the main conversation's current permission preset instead of the user default.")
+	inheritPermissionPreset: z$1.boolean().default(true).description("Give each thread the main conversation's current permission preset instead of the user default."),
+	offerApproval: z$1.union(["ask", "open"]).default("ask").description("What happens when the main conversation wants a thread for a task the user named without asking for one: \"ask\" shows the confirmation card first, \"open\" opens the thread right away.")
 });
 // src/services.ts
 /**
@@ -1943,7 +1944,7 @@ function createHost(ctx) {
 // src/prompts.ts
 /** After the built-in subagent section (2800), before the deployment persona suffix (10200). */
 const SECTION_ORDER = 2850;
-function dispatcherPrompt(maxRunning) {
+function dispatcherPrompt(maxRunning, offerApproval = "ask") {
 	return `# Threads (dsh-threads)
 
 You can delegate work to threads: real sessions that run in the background. The user can open a thread from the sidebar and talk to it directly. When a thread finishes a round, a short report arrives here as a message from source "dsh-threads".
@@ -1961,7 +1962,7 @@ This conversation is the project's lead. You know the codebase well enough to re
 
 ## How to open one: thread_open
 - initiation "user_asked": the user's latest message explicitly asks for a thread or for separate/background work. It opens immediately.
-- initiation "offer": the user named the task in their latest message but did not ask for a thread, and you think it belongs in one. The user is asked to choose first; respect the answer.
+- initiation "offer": the user named the task in their latest message but did not ask for a thread, and you think it belongs in one. ${offerApproval === "ask" ? "The user is asked to choose first; respect the answer." : "It opens immediately too, without asking the user: say in your reply which threads you opened and why, so the user can stop one they did not want."}
 - If the idea is your own (a follow-up you noticed, work that should happen next), do not call thread_open. Call thread_propose: the suggestions appear as a checklist card and start only when the user picks them. At most a few per turn, only real work worth doing, and never the same suggestion twice.
 - The thread cannot see this conversation. Write a complete brief in "task": the goal, the relevant files or context, constraints, and what done looks like.
 - When work that belongs in a thread starts with options for the user to pick (designs, approaches, names), the thread works them out: open it right away and brief it to present the options and report needs_decision before building anything. Do not draft the options here and do not use ask_user_question for this choice, even if you handled a request like this differently earlier in this conversation. The user answers in the thread, or tells you and you pass it on with thread_reply.
@@ -2046,7 +2047,12 @@ function roleOf(agent, manager) {
 // src/tools/thread-open.ts
 const OFFER_ID = "dsh-threads-offer";
 const DESCRIPTION = "Open a thread: a real background session for a self-contained task. It reports back here with a short summary when it finishes. In this project, use it instead of a subagent for work that writes files or takes more than a few minutes, so this conversation stays free. See the \"Threads (dsh-threads)\" section of your instructions for when to use it and which initiation to pass.";
-function threadOpenTool(ctx, manager) {
+/**
+* `offerApproval` (src/config.ts): with "ask" an `offer` waits for the user's answer to the
+* confirmation card; with "open" it opens at once, like `user_asked`. The record keeps
+* `initiation: 'offer'` either way.
+*/
+function threadOpenTool(ctx, manager, offerApproval = "ask") {
 	return defineTool({
 		name: "thread_open",
 		description: DESCRIPTION,
@@ -2065,7 +2071,7 @@ function threadOpenTool(ctx, manager) {
 				type: "string",
 				required: true,
 				enum: ["user_asked", "offer"],
-				description: "\"user_asked\" when the user explicitly asked for a thread or separate/background work; \"offer\" when the user named the task but did not ask for a thread (the user is asked first)."
+				description: "\"user_asked\" when the user explicitly asked for a thread or separate/background work; \"offer\" when the user named the task but did not ask for a thread " + (offerApproval === "ask" ? "(the user is asked first)." : "(it opens right away too).")
 			},
 			worktree: {
 				type: "boolean",
@@ -2100,7 +2106,7 @@ function threadOpenTool(ctx, manager) {
 			const caller = exec.agent;
 			if (caller === void 0) throw new Error("thread_open needs a calling session");
 			const m = msg();
-			if (args.initiation === "offer") {
+			if (args.initiation === "offer" && offerApproval === "ask") {
 				const questions = optional(ctx, "userQuestions");
 				if (questions === void 0) return { text: m.offerUnavailable };
 				const item = (await questions.ask({
@@ -2365,14 +2371,14 @@ function installPerAgent(ctx, manager, projects, config) {
 					text: () => threadPrompt(config.summaryMaxChars, manager.worktreeOf(agent.id))
 				}));
 			} else {
-				disposers.push(scope.tools.register(threadOpenTool(ctx, manager)));
+				disposers.push(scope.tools.register(threadOpenTool(ctx, manager, config.offerApproval)));
 				disposers.push(scope.tools.register(threadProposeTool(manager, config.maxProposalsPerTurn)));
 				disposers.push(scope.tools.register(threadReplyTool(manager)));
 				disposers.push(scope.tools.register(threadStatusTool(manager)));
 				disposers.push(scope.systemPrompt.section({
 					name: SECTION_NAME,
 					order: SECTION_ORDER,
-					text: dispatcherPrompt(config.maxRunning)
+					text: dispatcherPrompt(config.maxRunning, config.offerApproval)
 				}));
 				disposers.push(scope.systemPrompt.context({
 					name: LEAD_CONTEXT_NAME,

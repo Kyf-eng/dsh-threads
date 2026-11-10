@@ -56,6 +56,18 @@ describe('dispatcherPrompt', () => {
     // Round two on Windows: the user said 「同意」 in the thread, and the lead still called --no-verify forbidden "even if you agree".
     expect(prompt).toContain('The exception is the user asking for exactly that in their own words, here or in a thread')
   })
+
+  // Issue #51: the prompt must agree with what thread_open does for an offer.
+  it('describes an offer the way offerApproval makes it behave', () => {
+    const asks = 'The user is asked to choose first; respect the answer.'
+    expect(dispatcherPrompt(3)).toContain(asks)
+    expect(dispatcherPrompt(3, 'ask')).toBe(dispatcherPrompt(3))
+    const open = dispatcherPrompt(3, 'open')
+    expect(open).not.toContain(asks)
+    expect(open).toContain('It opens immediately too, without asking the user')
+    // Ideas of the model's own still go through thread_propose.
+    expect(open).toContain('If the idea is your own')
+  })
 })
 
 describe('leadReminder', () => {

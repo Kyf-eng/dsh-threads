@@ -261,6 +261,7 @@ docs/Plan.md 定了方向：在 DeepSeek Harness（DSH）里做一个插件—�
 | `proposalTtlDays` | 7 |
 | `maxProposalsPerTurn` | 3 |
 | `inheritPermissionPreset` | true |
+| `offerApproval` | `ask`（`open`：`offer` 不弹确认卡，直接开；issue #51） |
 
 ---
 

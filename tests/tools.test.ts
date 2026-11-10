@@ -2,6 +2,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { ToolArgsError } from '@deepseek-ai/dsh-tools'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { beforeEach, describe, expect, it } from 'vitest'
+import { Config } from '../src/config.ts'
 import { threadOpenTool } from '../src/tools/thread-open.ts'
 import { threadProposeTool } from '../src/tools/thread-propose.ts'
 import { threadReplyTool } from '../src/tools/thread-reply.ts'
@@ -72,6 +73,32 @@ describe('thread_open', () => {
     const result = await call(threadOpenTool(contextWith(undefined).ctx, t.manager), { title: 'a', task: 'x', initiation: 'offer' }) as { text: string }
     expect(result.text).toContain('userQuestions 不可用')
     expect(t.store.threadsOf('main')).toEqual([])
+  })
+
+  // Issue #51: a coordinator that decides on its own what becomes a thread, without a card per thread.
+  it('opens an offer without asking when offerApproval is "open"', async () => {
+    const answered = contextWith({ selected: ['先不做'] })
+    const tool = threadOpenTool(answered.ctx, t.manager, 'open')
+    const result = await call(tool, { title: '审查', task: 'x', initiation: 'offer' }) as { threadId?: string }
+    expect(answered.asked).toEqual([])
+    expect(result.threadId).toBe('session-1')
+    // Nothing to ask, so a host without userQuestions opens it as well.
+    await call(threadOpenTool(contextWith(undefined).ctx, t.manager, 'open'), { title: 'b', task: 'y', initiation: 'offer' })
+    // The record still says how the thread came to exist.
+    expect(t.store.threadsOf('main').map((thread) => thread.initiation)).toEqual(['offer', 'offer'])
+  })
+
+  it('tells the model whether an offer asks first', () => {
+    const initiation = (tool: ToolDefinition) => (tool.parameters as { properties: Record<string, { description?: string }> }).properties.initiation?.description
+    expect(initiation(threadOpenTool(contextWith(undefined).ctx, t.manager))).toContain('(the user is asked first)')
+    expect(initiation(threadOpenTool(contextWith(undefined).ctx, t.manager, 'ask'))).toContain('(the user is asked first)')
+    expect(initiation(threadOpenTool(contextWith(undefined).ctx, t.manager, 'open'))).toContain('(it opens right away too)')
+  })
+
+  it('keeps the confirmation card as the default', () => {
+    expect(Config({}).offerApproval).toBe('ask')
+    expect(Config({ offerApproval: 'open' }).offerApproval).toBe('open')
+    expect(() => Config({ offerApproval: 'never' } as never)).toThrow()
   })
 
   it('returns refusals as text the model can act on', async () => {

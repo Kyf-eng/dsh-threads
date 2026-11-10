@@ -70,6 +70,7 @@ Add a `config` to the plugin's entry in your profile's `cordis.patch.yml` (for D
 | `maxProposalsPerTurn` | 3 | Suggestions the model may make at once |
 | `reportReminder` | true | Remind a thread once when it ends a task without reporting |
 | `inheritPermissionPreset` | true | Threads get the main conversation's permission preset |
+| `offerApproval` | `ask` | When you name a task without asking for a thread: `ask` shows the confirmation card first (open a thread / do it here / not now), `open` opens the thread without asking |
 
 ## Troubleshooting
 

@@ -1,6 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
+import type { OfferApproval } from '../config.ts'
 import { type ThreadManager, ThreadError } from '../manager.ts'
 import { inEveryLanguage, msg } from '../messages.ts'
 import { truncate } from '../report.ts'
@@ -27,7 +28,12 @@ const DESCRIPTION = 'Open a thread: a real background session for a self-contain
   + 'In this project, use it instead of a subagent for work that writes files or takes more than a few minutes, so this conversation stays free. '
   + 'See the "Threads (dsh-threads)" section of your instructions for when to use it and which initiation to pass.'
 
-export function threadOpenTool(ctx: Context, manager: ThreadManager): ToolDefinition {
+/**
+ * `offerApproval` (src/config.ts): with "ask" an `offer` waits for the user's answer to the
+ * confirmation card; with "open" it opens at once, like `user_asked`. The record keeps
+ * `initiation: 'offer'` either way.
+ */
+export function threadOpenTool(ctx: Context, manager: ThreadManager, offerApproval: OfferApproval = 'ask'): ToolDefinition {
   return defineTool({
     name: 'thread_open',
     description: DESCRIPTION,
@@ -42,7 +48,8 @@ export function threadOpenTool(ctx: Context, manager: ThreadManager): ToolDefini
         type: 'string',
         required: true,
         enum: ['user_asked', 'offer'],
-        description: '"user_asked" when the user explicitly asked for a thread or separate/background work; "offer" when the user named the task but did not ask for a thread (the user is asked first).',
+        description: '"user_asked" when the user explicitly asked for a thread or separate/background work; "offer" when the user named the task but did not ask for a thread '
+          + (offerApproval === 'ask' ? '(the user is asked first).' : '(it opens right away too).'),
       },
       worktree: {
         type: 'boolean',
@@ -70,7 +77,7 @@ export function threadOpenTool(ctx: Context, manager: ThreadManager): ToolDefini
       const caller = exec.agent
       if (caller === undefined) throw new Error('thread_open needs a calling session')
       const m = msg()
-      if (args.initiation === 'offer') {
+      if (args.initiation === 'offer' && offerApproval === 'ask') {
         const questions = optional<UserQuestionsLike>(ctx, 'userQuestions')
         if (questions === undefined) return { text: m.offerUnavailable }
         const answer = await questions.ask({

@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.1.1 — 2026-11-10
+
+Fixes for phones, touch screens and narrow windows, and for errors that went unseen. Most of it is the work of @aaaa0ggMC (#52). The same `dsh plugin add` command upgrades from 0.1.0; nothing stored changes.
+
+- Fix, phones (DeepSeek Harness Web with the dsh-web-mobile layout): the new project dialog is a centred card again instead of a sideways row with its title and buttons gone; the Projects page title is clear of the floating back button; tapping a project in the drawer closes the drawer; the project menu lists the notification levels in place, where the submenu ran off the screen; the thread pane's header puts its buttons under the title instead of cutting the title short.
+- Fix, touch screens: controls that only appeared on hover (a project's "⋯" menu, the sidebar row's actions, dismissing a proposal, collapsing the section) are always there, and targets are thumb-sized.
+- Fix: project settings scroll. In a short window, on Desktop too, everything below "Model" was out of reach.
+- Fix: below 768px wide the Projects page is one column, and dialogs and menus stay inside the window.
+- Fix, new project on Web: where the host has no folder chooser, "Choose a folder…" switches to the path field with a hint instead of ending in an error. Enter creates the project under the folder's name while the name is empty, and no longer submits in the middle of IME input.
+- Fix: the project list could show the list from before a create, delete, pin or archive (a deleted project back, a new one missing) until something else reloaded it.
+- Fix: refusals that used to be silent are shown: archiving or deleting a project with a running thread from the sidebar, "Make project", starting or dismissing a proposal, reopening a resolved thread. The Projects page can retry after a failed load.
+- Fix: closing project settings waits for the pending fields to be saved. A failed save keeps the dialog open with the error; closing again leaves without saving.
+- Fix: archiving a project from the sidebar keeps you on the panel you were on. DeepSeek Harness used to drop to the welcome page when the archived project's main conversation was the current one.
+- Fix: the project menu's single-key shortcuts (P, S, A, D) ignore text fields.
+- Fix: `.env` files get the data icon; English notifications use an English colon.
+
 ## 0.1.0 — 2026-10-26
 
 First stable release, for DeepSeek Harness 0.2.x (tested on 0.2.1-rc.2 and 0.2.1-rc.3). The code is the same as 0.1.0-rc.9. From 0.1.0-rc.7 or later, the same `dsh plugin add` command upgrades it; from 0.1.0-rc.6 or earlier, remove `@fky/dsh-threads` first (see 0.1.0-rc.7). Projects and threads are kept.

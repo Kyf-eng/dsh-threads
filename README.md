@@ -70,6 +70,7 @@
 | `maxProposalsPerTurn` | 3 | 模型一次最多提几个建议 |
 | `reportReminder` | true | 讨论串做完任务却没回报时，提醒它一次 |
 | `inheritPermissionPreset` | true | 讨论串沿用主对话的权限模式 |
+| `offerApproval` | `ask` | 你只说了任务、没说要开讨论串时：`ask` 先弹确认卡（开讨论串 / 在主对话里做 / 先不做），`open` 不问直接开 |
 
 ## 排错
 

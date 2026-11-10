@@ -17,6 +17,9 @@ export const Config = z.object({
     .description('When a task round ends without thread_report, ask the thread once to report before falling back to its last reply.'),
   inheritPermissionPreset: z.boolean().default(true)
     .description('Give each thread the main conversation\'s current permission preset instead of the user default.'),
+  offerApproval: z.union(['ask', 'open']).default('ask')
+    .description('What happens when the main conversation wants a thread for a task the user named without asking for one: "ask" shows the confirmation card first, "open" opens the thread right away.'),
 })
 
 export type Config = ReturnType<typeof Config>
+export type OfferApproval = Config['offerApproval']

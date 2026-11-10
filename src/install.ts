@@ -50,11 +50,11 @@ export function installPerAgent(ctx: Context, manager: ThreadManager, projects: 
           text: () => threadPrompt(config.summaryMaxChars, manager.worktreeOf(agent.id)),
         }))
       } else {
-        disposers.push(scope.tools.register(threadOpenTool(ctx, manager)))
+        disposers.push(scope.tools.register(threadOpenTool(ctx, manager, config.offerApproval)))
         disposers.push(scope.tools.register(threadProposeTool(manager, config.maxProposalsPerTurn)))
         disposers.push(scope.tools.register(threadReplyTool(manager)))
         disposers.push(scope.tools.register(threadStatusTool(manager)))
-        disposers.push(scope.systemPrompt.section({ name: SECTION_NAME, order: SECTION_ORDER, text: dispatcherPrompt(config.maxRunning) }))
+        disposers.push(scope.systemPrompt.section({ name: SECTION_NAME, order: SECTION_ORDER, text: dispatcherPrompt(config.maxRunning, config.offerApproval) }))
         disposers.push(scope.systemPrompt.context({ name: LEAD_CONTEXT_NAME, order: LEAD_CONTEXT_ORDER, text: () => leadReminder(manager.inboxCount(agent.id)) }))
       }
     } catch (error) {

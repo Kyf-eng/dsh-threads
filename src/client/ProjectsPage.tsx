@@ -113,7 +113,12 @@ export function ProjectsPage({ t, useWorkspaces, useSessionStatus, openSession, 
           <input className="dsht-text" value={query} placeholder={t('page.search')} onChange={(event) => setQuery(event.target.value)} />
         </div>
 
-        {status === 'error' && error !== null ? <div className="dsht-error">{t('page.loadFailed', { error })}</div> : null}
+        {status === 'error' && error !== null ? (
+          <div className="dsht-error" role="alert">
+            {t('page.loadFailed', { error })}
+            <button type="button" className="dsht-retry" onClick={() => { void projectsStore.refresh() }}>{t('page.retry')}</button>
+          </div>
+        ) : null}
         {actionError === null ? null : <div className="dsht-error">{actionError}</div>}
 
         {active.length === 0

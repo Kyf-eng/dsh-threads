@@ -163,7 +163,13 @@ body,[class*="dsht-"]{
 .dsht-count{border-radius:999px;padding:0 9px 0 7px;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-secondary)}
 .dsht-section-archived .dsht-row{opacity:.72}
 
-.dsht-error{font-size:13px;line-height:19px;color:var(--dsw-alias-state-error-primary)}
+.dsht-error{font-size:13px;line-height:19px;color:var(--dsw-alias-state-error-primary);overflow-wrap:anywhere}
+.dsht-retry{display:inline-flex;align-items:center;gap:4px;margin-left:8px;padding:0 7px;height:22px;border:1px solid var(--dsht-line-strong);border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px;cursor:pointer;vertical-align:1px}
+.dsht-retry:hover,.dsht-retry:focus-visible{background:var(--dsht-hover);color:var(--dsw-alias-label-primary)}
+.dsht-retry:focus-visible{outline:2px solid var(--dsht-ring);outline-offset:1px}
+.dsht-side-error{padding:6px 8px 2px;font-size:12px;line-height:17px}
+.dsht-menu-message{padding:6px 10px;max-width:260px;font-size:12.5px;line-height:18px}
+.dsht-proposal-error{padding:2px 10px 6px;font-size:12.5px;line-height:18px}
 .dsht-hint{font-size:12px;line-height:17px;color:var(--dsw-alias-label-tertiary)}
 .dsht-buttons{display:flex;justify-content:flex-end;gap:8px}
 .dsht-danger.dsht-danger{background:var(--dsw-alias-state-error-primary,#e5484d);color:#fff}
@@ -184,7 +190,11 @@ body,[class*="dsht-"]{
 .dsht-dialog-title{margin:0;font-size:18px;line-height:26px;font-weight:600;letter-spacing:-.01em;color:var(--dsw-alias-label-primary)}
 .dsht-dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:4px}
 .dsht-np.dsht-np{width:min(480px,100%)}
-.dsht-np-body{display:flex;flex-direction:column;gap:18px;padding:22px 24px 20px}
+/* The modal's only child is this wrapper (a form inside it holds the fields): dsh-web-mobile's
+   sheet heuristic keys on [aria-modal] > :first-child > :last-child > button, so keeping the
+   buttons one level deeper keeps this dialog in the host's normal centred-card branch. */
+.dsht-np-body{display:flex;flex-direction:column;min-height:0;overflow-y:auto;padding:22px 24px 20px;overscroll-behavior:contain}
+.dsht-np-form{display:flex;flex-direction:column;gap:18px;min-width:0}
 .dsht-np-field{display:flex;flex-direction:column;gap:8px}
 .dsht-np-label-row{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .dsht-np-label{font-size:13px;line-height:18px;font-weight:500;color:var(--dsw-alias-label-secondary)}
@@ -278,7 +288,7 @@ body,[class*="dsht-"]{
 .dsht-settings-nav-item{display:flex;align-items:center;gap:10px;height:34px;padding:0 10px;border:0;border-radius:9px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:14px;text-align:left;cursor:pointer;transition:background .15s var(--dsht-ease)}
 .dsht-settings-nav-item:hover,.dsht-settings-nav-item:focus-visible{background:var(--dsht-hover);color:var(--dsw-alias-label-primary)}
 .dsht-settings-nav-item.is-active{background:var(--dsht-press);color:var(--dsw-alias-label-primary);font-weight:550}
-.dsht-settings-main{flex:1;min-width:0;display:flex;flex-direction:column}
+.dsht-settings-main{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column}
 .dsht-settings-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 18px 6px 32px}
 .dsht-settings-body{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;padding:4px 32px 28px}
 .dsht-setting-row{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:16px 0;border-bottom:1px solid var(--dsht-line)}
@@ -318,7 +328,109 @@ body,[class*="dsht-"]{
 .dsht-icon-cell:hover,.dsht-icon-cell:focus-visible{background:var(--dsht-hover);color:var(--dsw-alias-label-primary)}
 .dsht-icon-cell.is-active{background:var(--dsht-press);color:var(--dsw-alias-label-primary);box-shadow:inset 0 0 0 1.5px var(--dsht-ring)}
 
-@media (max-width:640px){.dsht-page{padding-left:16px;padding-right:16px}.dsht-head{flex-direction:column;align-items:flex-start}.dsht-card{max-width:none}.dsht-settings-layout{flex-direction:column}.dsht-settings-nav{width:auto;flex-direction:row;border-right:0;border-bottom:1px solid var(--dsht-line)}.dsht-settings-nav-title{display:none}.dsht-settings-head,.dsht-settings-body{padding-left:20px;padding-right:20px}}
+/* dsh-web-mobile (the phone layout plugin) floats a back button over the top-left corner of the
+   main panel (10,12, 38x38) up to 1023px on coarse pointers, so the page needs top clearance
+   there. Only where that plugin is running, which its frame marker says: a narrow Desktop window
+   or a touch tablet without it has no such button and keeps the normal top padding. */
+@media (max-width:1023px) and (pointer:coarse),(max-width:767px){
+  html:has([data-mobile-nav="frame"]) .dsht-page{padding-top:calc(var(--dsh-frame-top-clearance,0px) + 58px)}
+}
+
+/* Narrow windows and phones: every plugin surface stays inside the viewport, scrolls there, and
+   (with the touch rules below) is thumb-sized. dsh-web-mobile also turns its own dialogs into
+   sheets; ours stay centred cards. */
+@media (max-width:767px){
+  .dsht-page{padding:calc(var(--dsh-frame-top-clearance,0px) + 36px) 16px calc(28px + env(safe-area-inset-bottom,0px))}
+  .dsht-inner{gap:14px}
+  .dsht-head{flex-direction:column;align-items:stretch;gap:12px}
+  .dsht-title{font-size:24px;line-height:30px}
+  .dsht-actions{width:100%;gap:8px}
+  .dsht-select-button{flex:1 1 45%;justify-content:space-between;height:38px;min-width:0}
+  .dsht-split{flex:1 1 45%;min-width:0}
+  .dsht-split>button:first-child{flex:1;justify-content:center}
+  .dsht-search .dsht-text{height:42px;font-size:16px}
+  .dsht-search svg{top:13px}
+  .dsht-grid{grid-template-columns:1fr}
+  .dsht-project{min-height:0;padding:12px 12px 14px 14px}
+  .dsht-project-tools{opacity:1}
+  .dsht-empty{padding:40px 18px}
+  .dsht-card{max-width:none}
+
+  /* New project dialog: host centres a min(380px,100%) card on phones; the body scrolls
+     when the keyboard shrinks the viewport, and the actions get full-width targets. */
+  .dsht-np.dsht-np{width:calc(100vw - 24px);max-width:min(480px,calc(100vw - 24px))}
+  .dsht-np-body{padding:18px 16px 16px;max-height:calc(var(--dsh-web-mobile-vh,100dvh) - 96px)}
+  .dsht-np-form{gap:16px}
+  .dsht-np-field{gap:7px}
+  .dsht-np-input{height:44px;font-size:16px}
+  .dsht-np-folder{min-height:56px;padding:10px 12px;gap:10px}
+  .dsht-np-folder-name{font-size:15px}
+  .dsht-np-folder-path{font-size:12px}
+  .dsht-dialog-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:0}
+  .dsht-dialog-actions>button{width:100%;height:44px;justify-content:center}
+
+  /* Project settings: one column, scrolling body, stacked title/control rows. */
+  .dsht-settings.dsht-settings{width:calc(100vw - 24px);height:min(720px,calc(var(--dsh-web-mobile-vh,100dvh) - 24px))}
+  .dsht-settings-layout{flex-direction:column;min-height:0}
+  .dsht-settings-nav{width:auto;flex:none;flex-direction:row;gap:2px;overflow-x:auto;border-right:0;border-bottom:1px solid var(--dsht-line);padding:8px 10px;scrollbar-width:none}
+  .dsht-settings-nav-title{display:none}
+  .dsht-settings-nav-item{flex:none;height:38px;padding:0 12px}
+  .dsht-settings-main{min-height:0}
+  /* The active tab already names the section; keep the header row for its close button only. */
+  .dsht-settings-head{justify-content:flex-end;padding:8px 12px 0}
+  .dsht-settings-head .dsht-dialog-title{display:none}
+  /* Menus opened from the plugin (recent folders, project actions) size to their content;
+     a long folder path made them wider than the viewport and pushed the left edge offscreen. */
+  .dsht-menu-two,.dsht-menu-sub{max-width:calc(100vw - 96px)}
+  .dsht-settings-body{padding:4px 14px calc(20px + env(safe-area-inset-bottom,0px))}
+  .dsht-setting-row{flex-direction:column;align-items:stretch;gap:10px;padding:14px 0}
+  .dsht-setting-block{padding:14px 0}
+  .dsht-name-field{width:100%}
+  .dsht-select-box{width:100%}
+  .dsht-setting-textarea{font-size:16px}
+  .dsht-usage-total{gap:22px;flex-wrap:wrap}
+  .dsht-usage-table{font-size:12px}
+  .dsht-icon-grid{grid-template-columns:repeat(auto-fill,minmax(44px,1fr))}
+
+  /* Thread list and thread pane: the pane header's title, chips and three action buttons do not
+     fit one 390px row, so the actions move under the title instead of squeezing it to "#1 重构…". */
+  .dsht-list{padding-bottom:calc(16px + env(safe-area-inset-bottom,0px))}
+  .dsht-pane-head{flex-wrap:wrap;row-gap:6px;padding:8px 10px;min-height:0}
+  .dsht-pane-text{flex:1 1 calc(100% - 32px)}
+  .dsht-pane-title{font-size:14px;line-height:20px}
+  .dsht-pane-meta{font-size:11.5px;line-height:16px}
+  .dsht-pane-actions{flex:1 1 100%;justify-content:flex-end;gap:6px}
+  .dsht-pane-actions .dsht-pill{height:34px}
+}
+
+/* Touch devices have no hover: a control that only faded in on hover could never be reached. */
+@media (hover:none){
+  .dsht-project-tools{opacity:1}
+  .dsht-side-actions{display:inline-flex}
+  .dsht-side-label svg{opacity:1}
+  .dsht-proposal-actions .dsht-pill-icon:first-child{opacity:1}
+  .dsht-item-chevron{opacity:1;transform:none}
+}
+/* Thumb-sized targets on touch screens (the desktop sizes are pointer-sized by design). */
+@media (pointer:coarse){
+  .dsht-icon-button{width:32px;height:32px}
+  .dsht-pill{height:34px}
+  .dsht-side-row{height:40px}
+  .dsht-side-icon{width:32px;height:32px}
+  .dsht-side-actions .dsht-icon-button{width:32px;height:32px}
+  .dsht-np-link{min-height:32px;padding:4px 8px}
+  .dsht-settings-nav-item{height:40px}
+  .dsht-section-head{min-height:32px}
+  .dsht-row{min-height:44px}
+  .dsht-item{min-height:44px}
+}
+/* Short landscape (e.g. 667x375): the drawer does not scroll, and the host's own flex box already
+   squeezes the workspace area to zero there. Keep this section small but usable — the header plus
+   about one row, with the list scrolling internally — instead of letting it eat the drawer. */
+@media (pointer:coarse) and (max-height:520px){
+  .dsht-side{flex:0 1 auto;min-height:76px;max-height:120px;overflow:hidden}
+  .dsht-side-list{flex:1 1 auto}
+}
 `
 
 /** Add the stylesheet; returns a disposer that removes it. */

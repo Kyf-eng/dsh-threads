@@ -84,6 +84,16 @@ const projectsStore = {
 		return inflight;
 	}
 };
+/**
+* Reload the list after a mutation changed it. A `projects.list` already in flight was computed
+* before the mutation, so it must settle first: publishing it afterwards would show the
+* pre-mutation list (a deleted project back, a created one missing) until something else reloads.
+*/
+async function refreshProjects() {
+	const stale = inflight;
+	if (stale !== null) await stale.catch(() => {});
+	await projectsStore.refresh();
+}
 function useProjects() {
 	return (0, react.useSyncExternalStore)(projectsStore.subscribe, projectsStore.getSnapshot);
 }
@@ -651,9 +661,13 @@ function message(target, t, asking) {
 		title,
 		body: t("notifyMsg.waiting", { text: target.text || "…" })
 	};
+	const status = t(STATUS_KEYS$1[target.status ?? "no-report"] ?? "status.noReport");
 	return {
 		title,
-		body: `${t(STATUS_KEYS$1[target.status ?? "no-report"] ?? "status.noReport")}${target.text.length > 0 ? `：${target.text}` : ""}`
+		body: target.text.length > 0 ? t("notifyMsg.finished", {
+			status,
+			text: target.text
+		}) : status
 	};
 }
 const inBackground = () => typeof document === "undefined" || document.visibilityState !== "visible" || !document.hasFocus();
@@ -922,7 +936,7 @@ const KINDS = {
 function fileKind(path) {
 	const name = path.split(/[\\/]/).pop() ?? path;
 	const dot = name.lastIndexOf(".");
-	return dot <= 0 ? "other" : KINDS[name.slice(dot + 1).toLowerCase()] ?? "other";
+	return dot < 0 ? "other" : KINDS[name.slice(dot + 1).toLowerCase()] ?? "other";
 }
 function FileIcon({ kind }) {
 	if (kind === "code") return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Svg, { children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", { d: "m9 8-4 4 4 4M15 8l4 4-4 4" }) });
@@ -1062,16 +1076,20 @@ function ProposalsDock({ sessionId, useSessionStatus, t }) {
 		revision
 	]);
 	const [busy, setBusy] = (0, react.useState)(false);
+	const [error, setError] = (0, react.useState)(null);
 	if (sessionId === void 0 || proposals === void 0 || proposals.length === 0) return null;
 	const pending = proposals.filter((p) => p.state === "pending");
 	const act = async (method, ids) => {
 		setBusy(true);
+		setError(null);
 		try {
 			await callHost(method, {
 				mainSessionId: sessionId,
 				ids
 			});
 			threadsRevision.bump();
+		} catch (failure) {
+			setError(failure instanceof Error ? failure.message : String(failure));
 		} finally {
 			setBusy(false);
 		}
@@ -1082,6 +1100,11 @@ function ProposalsDock({ sessionId, useSessionStatus, t }) {
 			/* @__PURE__ */ (0, react_jsx_runtime.jsx)(CardHead, {
 				icon: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ThreadsIcon, { size: 14 }),
 				children: t("proposals.title")
+			}),
+			error === null ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+				className: "dsht-error dsht-proposal-error",
+				role: "alert",
+				children: error
 			}),
 			/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 				className: "dsht-proposal-list",
@@ -1318,6 +1341,7 @@ const zh = {
 	"page.empty": "还没有项目。一个项目 = 一个文件夹 + 一个主对话，主对话可以把任务派给讨论串。点\"新建项目\"，或者在左侧会话的\"…\"菜单里选\"设为项目\"。",
 	"page.noMatch": "没有匹配的项目。",
 	"page.loadFailed": "读取项目失败：{error}",
+	"page.retry": "重试",
 	"page.archived": "已归档 · {count}",
 	"card.threads": "{count} 个讨论串",
 	"card.running": "{count} 个运行中",
@@ -1355,6 +1379,7 @@ const zh = {
 	"new.change": "更改",
 	"new.pathPlaceholder": "/Users/me/code/app",
 	"new.pathHint": "写文件夹的完整路径；还不是工作区的话会自动添加。",
+	"new.pathOnly": "这里打不开文件夹选择器：直接写完整路径，或从「最近的文件夹」里选。",
 	"new.create": "新建项目",
 	"new.failed": "创建失败：{error}",
 	"new.pickFailed": "没能打开文件夹选择器：{error}",
@@ -1372,6 +1397,7 @@ const zh = {
 	"settings.instructionsHint": "会加进主对话和所有讨论串的系统提示，例如代码规范、回复语言、要避开的目录。",
 	"settings.instructionsPlaceholder": "例如：用中文回复；不要改 vendor/ 下的文件；提交信息用 Conventional Commits。",
 	"settings.saveFailed": "保存失败：{error}",
+	"settings.closeAgain": "再关一次会放弃还没保存的修改。",
 	"settings.usage": "使用情况",
 	"settings.models": "模型",
 	"settings.mainModel": "协调器模型",
@@ -1392,6 +1418,7 @@ const zh = {
 	"usage.main": "主对话",
 	"notifyMsg.main": "主对话回复了：{text}",
 	"notifyMsg.waiting": "等你决定：{text}",
+	"notifyMsg.finished": "{status}：{text}",
 	"menu.makeProject": "设为项目",
 	"time.justNow": "刚刚",
 	"time.minutes": "{count} 分钟前",
@@ -1472,6 +1499,7 @@ const en = {
 	"page.empty": "No projects yet. A project is one folder and one main conversation that can hand tasks to threads. Choose \"New project\", or \"Make project\" in a conversation's \"…\" menu.",
 	"page.noMatch": "No matching projects.",
 	"page.loadFailed": "Could not load projects: {error}",
+	"page.retry": "Retry",
 	"page.archived": "Archived · {count}",
 	"card.threads": "{count} threads",
 	"card.running": "{count} running",
@@ -1509,6 +1537,7 @@ const en = {
 	"new.change": "Change",
 	"new.pathPlaceholder": "/Users/me/code/app",
 	"new.pathHint": "The folder's full path; it is added as a workspace if it is not one yet.",
+	"new.pathOnly": "No folder picker here: type the full path, or pick one of the recent folders.",
 	"new.create": "Create project",
 	"new.failed": "Could not create the project: {error}",
 	"new.pickFailed": "Could not open the folder picker: {error}",
@@ -1526,6 +1555,7 @@ const en = {
 	"settings.instructionsHint": "Added to the system prompt of the main conversation and every thread: code style, reply language, folders to leave alone.",
 	"settings.instructionsPlaceholder": "e.g. Reply in English; do not touch vendor/; use Conventional Commits.",
 	"settings.saveFailed": "Could not save: {error}",
+	"settings.closeAgain": "Close again to leave without saving.",
 	"settings.usage": "Usage",
 	"settings.models": "Models",
 	"settings.mainModel": "Coordinator model",
@@ -1546,6 +1576,7 @@ const en = {
 	"usage.main": "Main conversation",
 	"notifyMsg.main": "Main conversation replied: {text}",
 	"notifyMsg.waiting": "Waiting for you: {text}",
+	"notifyMsg.finished": "{status}: {text}",
 	"menu.makeProject": "Make project",
 	"time.justNow": "just now",
 	"time.minutes": "{count} min ago",
@@ -1627,6 +1658,8 @@ function relativeTime(t, iso, now = Date.now()) {
 function MakeProjectMenuItem({ sessionId, displayTitle, useMenuOpenState, t, showProjects }) {
 	const [, setMenuOpen] = useMenuOpenState();
 	const [eligible, setEligible] = (0, react.useState)(false);
+	const [error, setError] = (0, react.useState)(null);
+	const [busy, setBusy] = (0, react.useState)(false);
 	(0, react.useEffect)(() => {
 		let live = true;
 		callHost("sessions.role", { id: sessionId }).then((role) => {
@@ -1639,20 +1672,47 @@ function MakeProjectMenuItem({ sessionId, displayTitle, useMenuOpenState, t, sho
 		};
 	}, [sessionId]);
 	if (!eligible) return null;
-	return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.MenuItemButton, {
-		icon: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ProjectsIcon, { size: 16 }),
-		onSelect: () => {
+	const run = () => {
+		if (busy) return;
+		setBusy(true);
+		setError(null);
+		callHost("projects.create", {
+			title: displayTitle,
+			fromSessionId: sessionId
+		}).then(() => {
+			threadsRevision.bump();
+			return refreshProjects();
+		}).then(() => {
 			setMenuOpen(false);
-			callHost("projects.create", {
-				title: displayTitle,
-				fromSessionId: sessionId
-			}).then(() => {
-				threadsRevision.bump();
-				return projectsStore.refresh();
-			}).then(showProjects);
-		},
+			showProjects();
+		}).catch((failure) => setError(failure instanceof Error ? failure.message : String(failure))).finally(() => setBusy(false));
+	};
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [error === null ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+		className: "dsht-error dsht-menu-message",
+		role: "alert",
+		children: error
+	}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.MenuItemButton, {
+		icon: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ProjectsIcon, { size: 16 }),
+		disabled: busy,
+		onSelect: run,
 		children: t("menu.makeProject")
-	});
+	})] });
+}
+// src/client/picker.ts
+/**
+* Whether a failed `uiWorkspace.pickDirectory()` means this deployment has no native folder
+* chooser (Web, where folders are browsed in-page), so the dialog should offer the path field
+* instead of an error.
+*
+* DSH's typed error is `directory-picker/unavailable`. DSH Web 0.2.1-rc.5 answers with a plain
+* Error instead: `directoryPicker.pick needs the native capability; the composed picker serves
+* "browse"`. Only these two shapes count: any other failure (a 503 "Service Unavailable", say)
+* is a real error and must reach the user.
+*/
+function pickerUnavailable(failure) {
+	if (String(failure?.code ?? "").includes("unavailable")) return true;
+	const message = failure instanceof Error ? failure.message : String(failure);
+	return /directory-picker\/unavailable|needs the native capability/i.test(message);
 }
 // src/client/NewProjectDialog.tsx
 const basename = (path) => path.split(/[\\/]/).filter((part) => part.length > 0).pop() ?? path;
@@ -1662,22 +1722,38 @@ function NewProjectDialog({ open, initialFolder, onClose, onCreated, workspaces,
 	const [named, setNamed] = (0, react.useState)(false);
 	const [folder, setFolder] = (0, react.useState)(null);
 	const [typing, setTyping] = (0, react.useState)(false);
+	/** The folder picker does not exist in this deployment, so the path field is the only way in. */
+	const [typedOnly, setTypedOnly] = (0, react.useState)(false);
 	const [recentOpen, setRecentOpen] = (0, react.useState)(false);
 	const [error, setError] = (0, react.useState)(null);
 	const [busy, setBusy] = (0, react.useState)(false);
+	/** An IME candidate window is open; Enter belongs to it, not to the form. */
+	const composing = (0, react.useRef)(false);
+	/**
+	* Bumped by every opening and by a dismissal while `projects.create` is in flight. A create that
+	* returns to a different generation was abandoned: it neither navigates nor touches the dialog,
+	* even when the dialog has been opened again in the meantime.
+	*/
+	const generation = (0, react.useRef)(0);
 	(0, react.useEffect)(() => {
 		if (!open) return;
 		setFolder(initialFolder ?? null);
 		setTitle(initialFolder === null || initialFolder === void 0 ? "" : basename(initialFolder));
 		setNamed(false);
 		setTyping(false);
+		setTypedOnly(false);
+		setRecentOpen(false);
 		setError(null);
+		setBusy(false);
+		composing.current = false;
+		generation.current += 1;
 	}, [open, initialFolder]);
 	const choose = (path) => {
 		setFolder(path);
 		if (!named) setTitle(basename(path));
 	};
 	const pick = async () => {
+		if (busy) return;
 		setError(null);
 		let picked;
 		try {
@@ -1686,30 +1762,40 @@ function NewProjectDialog({ open, initialFolder, onClose, onCreated, workspaces,
 			setError(t("new.pickFailed", { error: failure instanceof Error ? failure.message : String(failure) }));
 			return;
 		}
-		if (picked === "unavailable") setTyping(true);
-		else if (picked !== null) choose(picked);
+		if (picked === "unavailable") {
+			setTypedOnly(true);
+			setTyping(true);
+		} else if (picked !== null) choose(picked);
 	};
+	const folderPath = (folder ?? "").trim();
+	/** A typed folder still names the project after its basename, exactly like a picked one. */
+	const effectiveTitle = title.trim().length > 0 ? title.trim() : named ? "" : basename(folderPath);
+	const ready = folderPath.length > 0 && effectiveTitle.length > 0;
 	const close = () => {
+		if (busy) generation.current += 1;
 		setRecentOpen(false);
 		onClose();
 	};
-	const ready = title.trim().length > 0 && (folder ?? "").trim().length > 0;
 	const submit = async () => {
-		if (!ready || busy) return;
+		if (!ready || busy || composing.current) return;
 		setBusy(true);
 		setError(null);
+		const mine = generation.current;
 		try {
 			const project = await callHost("projects.create", {
-				title,
-				folder: (folder ?? "").trim()
+				title: effectiveTitle,
+				folder: folderPath
 			});
-			await projectsStore.refresh();
-			close();
+			await refreshProjects();
+			if (generation.current !== mine) return;
+			setBusy(false);
+			setRecentOpen(false);
+			onClose();
 			onCreated(project);
 		} catch (failure) {
-			setError(t("new.failed", { error: failure instanceof Error ? failure.message : String(failure) }));
-		} finally {
+			if (generation.current !== mine) return;
 			setBusy(false);
+			setError(t("new.failed", { error: failure instanceof Error ? failure.message : String(failure) }));
 		}
 	};
 	return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Modal, {
@@ -1718,139 +1804,178 @@ function NewProjectDialog({ open, initialFolder, onClose, onCreated, workspaces,
 		title: t("new.title"),
 		headless: true,
 		className: "dsht-dialog dsht-np",
-		children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("form", {
+		children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 			className: "dsht-np-body",
-			onSubmit: (event) => {
-				event.preventDefault();
-				submit();
-			},
-			children: [
-				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-					className: "dsht-dialog-head",
-					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", {
-						className: "dsht-dialog-title",
-						children: t("new.title")
-					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-						type: "button",
-						className: "dsht-icon-button",
-						"aria-label": t("common.close"),
-						title: t("common.close"),
-						onClick: close,
-						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CloseIcon, {})
-					})]
-				}),
-				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-					className: "dsht-np-field",
-					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-						className: "dsht-np-label",
-						children: t("new.name")
-					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-						className: "dsht-np-input",
-						value: title,
-						placeholder: t("new.namePlaceholder"),
-						maxLength: 60,
-						"data-modal-autofocus": true,
-						onChange: (event) => {
-							setTitle(event.target.value);
-							setNamed(event.target.value.length > 0);
-						}
-					})]
-				}),
-				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-					className: "dsht-np-field",
-					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-						className: "dsht-np-label-row",
+			children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("form", {
+				className: "dsht-np-form",
+				"aria-busy": busy,
+				onSubmit: (event) => {
+					event.preventDefault();
+					submit();
+				},
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: "dsht-dialog-head",
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", {
+							className: "dsht-dialog-title",
+							children: t("new.title")
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+							type: "button",
+							className: "dsht-icon-button",
+							"aria-label": t("common.close"),
+							title: t("common.close"),
+							onClick: close,
+							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CloseIcon, {})
+						})]
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+						className: "dsht-np-field",
 						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 							className: "dsht-np-label",
-							children: t("new.folder")
-						}), workspaces.length === 0 ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Menu, {
-							open: recentOpen,
-							onClose: () => setRecentOpen(false),
-							align: "end",
-							portal: true,
-							anchor: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
-								type: "button",
-								className: "dsht-np-link",
-								onClick: () => setRecentOpen(!recentOpen),
-								children: [t("new.recent"), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronDownOutlineRegular, { size: 14 })]
-							}),
-							children: workspaces.map((workspace) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.MenuItemButton, {
-								icon: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(FolderIcon, { size: 16 }),
-								onSelect: () => {
-									choose(workspace.path);
-									setTyping(false);
-									setRecentOpen(false);
-								},
-								children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-									className: "dsht-menu-two",
-									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: workspace.title }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										className: "dsht-menu-sub",
-										children: workspace.path
-									})]
-								})
-							}, workspace.workspaceId))
+							children: t("new.name")
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+							className: "dsht-np-input",
+							value: title,
+							placeholder: t("new.namePlaceholder"),
+							maxLength: 60,
+							"data-modal-autofocus": true,
+							onChange: (event) => {
+								setTitle(event.target.value);
+								setNamed(event.target.value.length > 0);
+							},
+							onCompositionStart: () => {
+								composing.current = true;
+							},
+							onCompositionEnd: () => {
+								composing.current = false;
+							}
 						})]
-					}), typing ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-						className: "dsht-np-input dsht-mono",
-						value: folder ?? "",
-						placeholder: t("new.pathPlaceholder"),
-						spellCheck: false,
-						onChange: (event) => setFolder(event.target.value),
-						onBlur: () => {
-							if (!named && (folder ?? "").trim().length > 0) setTitle(basename(folder ?? ""));
-						}
-					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-						className: "dsht-hint",
-						children: t("new.pathHint")
-					})] }) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
-						type: "button",
-						className: `dsht-np-folder${folder === null ? " dsht-np-folder-empty" : ""}`,
-						onClick: () => {
-							pick();
-						},
-						children: [
-							/* @__PURE__ */ (0, react_jsx_runtime.jsx)(FolderIcon, { size: 18 }),
-							folder === null ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								className: "dsht-np-folder-text",
-								children: t("new.chooseFolder")
-							}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-								className: "dsht-np-folder-text",
-								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: "dsht-np-folder-name",
-									children: basename(folder)
-								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: "dsht-np-folder-path",
-									children: folder
-								})]
-							}),
-							folder === null ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								className: "dsht-np-change",
-								children: t("new.change")
-							})
-						]
-					})]
-				}),
-				error === null ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-					className: "dsht-error",
-					children: error
-				}),
-				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-					className: "dsht-dialog-actions",
-					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
-						variant: "ghost",
-						type: "button",
-						onClick: close,
-						children: t("common.cancel")
-					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
-						variant: "primary",
-						type: "submit",
-						disabled: busy || !ready,
-						children: t("new.create")
-					})]
-				})
-			]
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: "dsht-np-field",
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: "dsht-np-label-row",
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "dsht-np-label",
+								children: t("new.folder")
+							}), workspaces.length === 0 ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Menu, {
+								open: recentOpen,
+								onClose: () => setRecentOpen(false),
+								align: "end",
+								portal: true,
+								anchor: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+									type: "button",
+									className: "dsht-np-link",
+									onClick: () => setRecentOpen(!recentOpen),
+									children: [t("new.recent"), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronDownOutlineRegular, { size: 14 })]
+								}),
+								children: workspaces.map((workspace) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.MenuItemButton, {
+									icon: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(FolderIcon, { size: 16 }),
+									onSelect: () => {
+										choose(workspace.path);
+										setTyping(false);
+										setTypedOnly(false);
+										setRecentOpen(false);
+									},
+									children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+										className: "dsht-menu-two",
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: workspace.title }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "dsht-menu-sub",
+											children: workspace.path
+										})]
+									})
+								}, workspace.workspaceId))
+							})]
+						}), typing ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+							className: "dsht-np-input dsht-mono",
+							value: folder ?? "",
+							placeholder: t("new.pathPlaceholder"),
+							spellCheck: false,
+							autoCapitalize: "off",
+							autoCorrect: "off",
+							onChange: (event) => setFolder(event.target.value),
+							onCompositionStart: () => {
+								composing.current = true;
+							},
+							onCompositionEnd: () => {
+								composing.current = false;
+							},
+							onBlur: () => {
+								if (!named && (folder ?? "").trim().length > 0) setTitle(basename(folder ?? ""));
+							}
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: "dsht-hint",
+							children: typedOnly ? t("new.pathOnly") : t("new.pathHint")
+						})] }) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+							type: "button",
+							className: `dsht-np-folder${folder === null ? " dsht-np-folder-empty" : ""}`,
+							onClick: () => {
+								pick();
+							},
+							children: [
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(FolderIcon, { size: 18 }),
+								folder === null ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "dsht-np-folder-text",
+									children: t("new.chooseFolder")
+								}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+									className: "dsht-np-folder-text",
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "dsht-np-folder-name",
+										children: basename(folder)
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "dsht-np-folder-path",
+										children: folder
+									})]
+								}),
+								folder === null ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "dsht-np-change",
+									children: t("new.change")
+								})
+							]
+						})]
+					}),
+					error === null ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: "dsht-error",
+						children: error
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: "dsht-dialog-actions",
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
+							variant: "ghost",
+							type: "button",
+							onClick: close,
+							children: t("common.cancel")
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
+							variant: "primary",
+							type: "submit",
+							disabled: busy || !ready,
+							children: t("new.create")
+						})]
+					})
+				]
+			})
 		})
 	});
+}
+// src/client/closeGate.ts
+function createCloseGate() {
+	let attempts = 0;
+	let waiting = null;
+	return {
+		request() {
+			if (waiting !== null) {
+				waiting = null;
+				return "leave";
+			}
+			attempts += 1;
+			waiting = attempts;
+			return attempts;
+		},
+		current: (attempt) => waiting === attempt,
+		reset() {
+			waiting = null;
+		}
+	};
 }
 // src/client/ProjectModels.tsx
 const DEFAULT = "default";
@@ -2098,8 +2223,19 @@ function ProjectSettings({ project, open, onClose, t }) {
 	const [memory, setMemory] = (0, react.useState)("");
 	const [picking, setPicking] = (0, react.useState)(false);
 	const [error, setError] = (0, react.useState)(null);
+	/** Decides which close attempt's save may still close the dialog (closeGate.ts). */
+	const [gate] = (0, react.useState)(createCloseGate);
+	(0, react.useEffect)(() => {
+		gate.reset();
+	}, [
+		gate,
+		title,
+		goal,
+		memory
+	]);
 	(0, react.useEffect)(() => {
 		if (!open || project === null) return;
+		gate.reset();
 		setTitle(project.title);
 		setGoal(project.goal);
 		setMemory(project.instructions);
@@ -2107,26 +2243,39 @@ function ProjectSettings({ project, open, onClose, t }) {
 		setError(null);
 	}, [open, project?.id]);
 	if (project === null) return null;
+	/** @returns whether everything is saved, so closing can wait for it instead of losing the error. */
 	const save = async (patch) => {
-		if (!Object.entries(patch).some(([key, value]) => JSON.stringify(project[key]) !== JSON.stringify(value))) return;
+		if (!Object.entries(patch).some(([key, value]) => JSON.stringify(project[key]) !== JSON.stringify(value))) return true;
 		setError(null);
 		try {
 			await callHost("projects.update", {
 				id: project.id,
 				...patch
 			});
-			await projectsStore.refresh();
+			await refreshProjects();
+			return true;
 		} catch (failure) {
 			setError(t("settings.saveFailed", { error: failure instanceof Error ? failure.message : String(failure) }));
+			return false;
 		}
 	};
 	const close = () => {
+		const attempt = gate.request();
+		if (attempt === "leave") {
+			onClose();
+			return;
+		}
 		save({
 			title: title.trim().length > 0 ? title : project.title,
 			goal,
 			instructions: memory
+		}).then((saved) => {
+			if (!gate.current(attempt)) return;
+			if (saved) {
+				gate.reset();
+				onClose();
+			} else setError((current) => current === null ? null : `${current} ${t("settings.closeAgain")}`);
 		});
-		onClose();
 	};
 	return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Modal, {
 		open,
@@ -2335,7 +2484,7 @@ function useProjectActions({ projects, t, pinSession, afterArchive }) {
 			setError(failure instanceof Error ? failure.message : String(failure));
 		} finally {
 			threadsRevision.bump();
-			await projectsStore.refresh();
+			await refreshProjects();
 		}
 	};
 	const actions = {
@@ -2419,6 +2568,8 @@ function ProjectMenu({ project, actions, t, onOpenChange }) {
 		if (!open) return;
 		const onKey = (event) => {
 			if (event.metaKey || event.ctrlKey || event.altKey) return;
+			const target = event.target;
+			if (target instanceof HTMLElement && (target.isContentEditable || target.closest("input,textarea,select,[contenteditable=\"true\"]") !== null)) return;
 			const id = SHORTCUTS[event.key.toLowerCase()];
 			if (id === void 0 || id === "pin" && project.archived) return;
 			event.preventDefault();
@@ -2428,6 +2579,38 @@ function ProjectMenu({ project, actions, t, onOpenChange }) {
 		document.addEventListener("keydown", onKey, true);
 		return () => document.removeEventListener("keydown", onKey, true);
 	}, [open, project]);
+	const narrow = typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(max-width: 767px)").matches;
+	const notifyLabel = (level) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+		className: "dsht-menu-two",
+		children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t(`notify.${level}`) }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+			className: "dsht-menu-sub",
+			children: t(`notify.${level}.hint`)
+		})]
+	});
+	const notifyItems = narrow ? [{
+		type: "label",
+		id: "notify-heading",
+		text: t("menu.notify")
+	}, ...NOTIFY_LEVELS.map((level) => ({
+		id: `notify:${level}`,
+		icon: project.notify === level ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconCheckOutlineRegular, { size: 16 }) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: "dsht-menu-icon-space" }),
+		label: notifyLabel(level)
+	}))] : [{
+		id: "notify",
+		label: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+			className: "dsht-menu-aside-row",
+			children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("menu.notify") }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+				className: "dsht-menu-aside",
+				children: t(`notify.${project.notify}.short`)
+			})]
+		}),
+		icon: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(BellIcon, { size: 16 }),
+		submenu: NOTIFY_LEVELS.map((level) => ({
+			id: `notify:${level}`,
+			icon: project.notify === level ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconCheckOutlineRegular, { size: 16 }) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: "dsht-menu-icon-space" }),
+			label: notifyLabel(level)
+		}))
+	}];
 	const items = [
 		...project.archived ? [] : [{
 			id: "pin",
@@ -2435,28 +2618,7 @@ function ProjectMenu({ project, actions, t, onOpenChange }) {
 			icon: project.pinned ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconPinFillRegular, { size: 16 }) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconPinOutlineRegular, { size: 16 }),
 			shortcut: { keys: ["P"] }
 		}],
-		{
-			id: "notify",
-			label: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-				className: "dsht-menu-aside-row",
-				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("menu.notify") }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-					className: "dsht-menu-aside",
-					children: t(`notify.${project.notify}.short`)
-				})]
-			}),
-			icon: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(BellIcon, { size: 16 }),
-			submenu: NOTIFY_LEVELS.map((level) => ({
-				id: `notify:${level}`,
-				icon: project.notify === level ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconCheckOutlineRegular, { size: 16 }) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: "dsht-menu-icon-space" }),
-				label: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-					className: "dsht-menu-two",
-					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t(`notify.${level}`) }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-						className: "dsht-menu-sub",
-						children: t(`notify.${level}.hint`)
-					})]
-				})
-			}))
-		},
+		...notifyItems,
 		{
 			id: "settings",
 			label: t("menu.settings"),
@@ -2642,9 +2804,17 @@ function ProjectsPage({ t, useWorkspaces, useSessionStatus, openSession, pinSess
 							onChange: (event) => setQuery(event.target.value)
 						})]
 					}),
-					status === "error" && error !== null ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+					status === "error" && error !== null ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: "dsht-error",
-						children: t("page.loadFailed", { error })
+						role: "alert",
+						children: [t("page.loadFailed", { error }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+							type: "button",
+							className: "dsht-retry",
+							onClick: () => {
+								projectsStore.refresh();
+							},
+							children: t("page.retry")
+						})]
 					}) : null,
 					actionError === null ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						className: "dsht-error",
@@ -2813,6 +2983,7 @@ async function setThreadResolved(threadId, resolved) {
 async function setThreadArchived(threadId, archived) {
 	await callHost(archived ? "threads.archive" : "threads.unarchive", { id: threadId });
 	threadsRevision.bump();
+	refreshProjects();
 }
 async function stopThread(threadId) {
 	await callHost("threads.stop", { id: threadId });
@@ -2903,17 +3074,19 @@ function readCollapsed() {
 		return false;
 	}
 }
-function SidebarProjects({ t, useWorkspaces, useSessions, useSessionStatus, usePanelInfo, openSession, pinSession, pickFolder }) {
+function SidebarProjects({ t, useWorkspaces, useSessions, useSessionStatus, usePanelInfo, openSession, pinSession, pickFolder, selectPanel, closePhoneDrawer }) {
 	const { projects } = useProjects();
 	const { mains } = useKinds();
 	const [collapsed, setCollapsed] = (0, react.useState)(readCollapsed);
 	const [expanded, setExpanded] = (0, react.useState)(false);
 	const [creating, setCreating] = (0, react.useState)(false);
 	const [menuFor, setMenuFor] = (0, react.useState)(null);
-	const { actions, dialogs } = useProjectActions({
+	const openPanelId = usePanelInfo((info) => info.activePanelId);
+	const { actions, dialogs, error } = useProjectActions({
 		projects,
 		t,
-		pinSession
+		pinSession,
+		afterArchive: openPanelId === null ? void 0 : () => selectPanel(openPanelId)
 	});
 	const workspaces = useWorkspaces((snapshot) => snapshot.items, sameList);
 	const live = useLive(useSessionStatus);
@@ -2958,59 +3131,73 @@ function SidebarProjects({ t, useWorkspaces, useSessions, useSessionStatus, useP
 			className: "dsht-side-list",
 			role: "tree",
 			"aria-label": t("side.title"),
-			children: [rows.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-				type: "button",
-				className: "dsht-side-more",
-				onClick: () => setCreating(true),
-				children: t("side.empty")
-			}) : shown.map((project) => {
-				const selected = currentId === project.mainSessionId;
-				const threads = mains.get(project.mainSessionId)?.threads ?? project.threads;
-				return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-					role: "treeitem",
-					"aria-selected": selected,
-					tabIndex: 0,
-					className: `dsht-side-row${selected ? " is-selected" : ""}${menuFor === project.id ? " is-menu-open" : ""}`,
-					onClick: () => openSession(project.mainSessionId),
-					onKeyDown: (event) => {
-						if (event.key === "Enter" && event.target === event.currentTarget) openSession(project.mainSessionId);
-					},
-					children: [
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-							className: "dsht-side-slot",
-							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(RowMark, {
-								project,
-								main: mains.get(project.mainSessionId),
-								live,
-								t
+			children: [
+				rows.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+					type: "button",
+					className: "dsht-side-more",
+					onClick: () => setCreating(true),
+					children: t("side.empty")
+				}) : shown.map((project) => {
+					const selected = currentId === project.mainSessionId;
+					const threads = mains.get(project.mainSessionId)?.threads ?? project.threads;
+					return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						role: "treeitem",
+						"aria-selected": selected,
+						tabIndex: 0,
+						className: `dsht-side-row${selected ? " is-selected" : ""}${menuFor === project.id ? " is-menu-open" : ""}`,
+						onClick: () => {
+							openSession(project.mainSessionId);
+							closePhoneDrawer();
+						},
+						onKeyDown: (event) => {
+							if (event.key === "Enter" && event.target === event.currentTarget) {
+								openSession(project.mainSessionId);
+								closePhoneDrawer();
+							}
+						},
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "dsht-side-slot",
+								children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(RowMark, {
+									project,
+									main: mains.get(project.mainSessionId),
+									live,
+									t
+								})
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "dsht-side-title",
+								children: project.title
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+								className: "dsht-side-meta",
+								children: [project.pinned ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconPinFillRegular, { size: 14 }) : null, threads > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", { children: ["↳ ", threads] }) : null]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "dsht-side-actions",
+								onClick: (event) => event.stopPropagation(),
+								children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ProjectMenu, {
+									project,
+									actions,
+									t,
+									onOpenChange: (open) => setMenuFor(open ? project.id : null)
+								})
 							})
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-							className: "dsht-side-title",
-							children: project.title
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-							className: "dsht-side-meta",
-							children: [project.pinned ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconPinFillRegular, { size: 14 }) : null, threads > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", { children: ["↳ ", threads] }) : null]
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-							className: "dsht-side-actions",
-							onClick: (event) => event.stopPropagation(),
-							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ProjectMenu, {
-								project,
-								actions,
-								t,
-								onOpenChange: (open) => setMenuFor(open ? project.id : null)
-							})
-						})
-					]
-				}, project.id);
-			}), rows.length > 8 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-				type: "button",
-				className: "dsht-side-more",
-				onClick: () => setExpanded(!expanded),
-				children: expanded ? t("side.less") : t("side.more", { count: rows.length - 8 })
-			}) : null]
+						]
+					}, project.id);
+				}),
+				rows.length > 8 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+					type: "button",
+					className: "dsht-side-more",
+					onClick: () => setExpanded(!expanded),
+					children: expanded ? t("side.less") : t("side.more", { count: rows.length - 8 })
+				}) : null,
+				error === null ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+					className: "dsht-error dsht-side-error",
+					role: "alert",
+					children: error
+				})
+			]
 		}),
 		/* @__PURE__ */ (0, react_jsx_runtime.jsx)(NewProjectDialog, {
 			open: creating,
@@ -3216,7 +3403,13 @@ body,[class*="dsht-"]{
 .dsht-count{border-radius:999px;padding:0 9px 0 7px;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-secondary)}
 .dsht-section-archived .dsht-row{opacity:.72}
 
-.dsht-error{font-size:13px;line-height:19px;color:var(--dsw-alias-state-error-primary)}
+.dsht-error{font-size:13px;line-height:19px;color:var(--dsw-alias-state-error-primary);overflow-wrap:anywhere}
+.dsht-retry{display:inline-flex;align-items:center;gap:4px;margin-left:8px;padding:0 7px;height:22px;border:1px solid var(--dsht-line-strong);border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px;cursor:pointer;vertical-align:1px}
+.dsht-retry:hover,.dsht-retry:focus-visible{background:var(--dsht-hover);color:var(--dsw-alias-label-primary)}
+.dsht-retry:focus-visible{outline:2px solid var(--dsht-ring);outline-offset:1px}
+.dsht-side-error{padding:6px 8px 2px;font-size:12px;line-height:17px}
+.dsht-menu-message{padding:6px 10px;max-width:260px;font-size:12.5px;line-height:18px}
+.dsht-proposal-error{padding:2px 10px 6px;font-size:12.5px;line-height:18px}
 .dsht-hint{font-size:12px;line-height:17px;color:var(--dsw-alias-label-tertiary)}
 .dsht-buttons{display:flex;justify-content:flex-end;gap:8px}
 .dsht-danger.dsht-danger{background:var(--dsw-alias-state-error-primary,#e5484d);color:#fff}
@@ -3237,7 +3430,11 @@ body,[class*="dsht-"]{
 .dsht-dialog-title{margin:0;font-size:18px;line-height:26px;font-weight:600;letter-spacing:-.01em;color:var(--dsw-alias-label-primary)}
 .dsht-dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:4px}
 .dsht-np.dsht-np{width:min(480px,100%)}
-.dsht-np-body{display:flex;flex-direction:column;gap:18px;padding:22px 24px 20px}
+/* The modal's only child is this wrapper (a form inside it holds the fields): dsh-web-mobile's
+   sheet heuristic keys on [aria-modal] > :first-child > :last-child > button, so keeping the
+   buttons one level deeper keeps this dialog in the host's normal centred-card branch. */
+.dsht-np-body{display:flex;flex-direction:column;min-height:0;overflow-y:auto;padding:22px 24px 20px;overscroll-behavior:contain}
+.dsht-np-form{display:flex;flex-direction:column;gap:18px;min-width:0}
 .dsht-np-field{display:flex;flex-direction:column;gap:8px}
 .dsht-np-label-row{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .dsht-np-label{font-size:13px;line-height:18px;font-weight:500;color:var(--dsw-alias-label-secondary)}
@@ -3331,7 +3528,7 @@ body,[class*="dsht-"]{
 .dsht-settings-nav-item{display:flex;align-items:center;gap:10px;height:34px;padding:0 10px;border:0;border-radius:9px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:14px;text-align:left;cursor:pointer;transition:background .15s var(--dsht-ease)}
 .dsht-settings-nav-item:hover,.dsht-settings-nav-item:focus-visible{background:var(--dsht-hover);color:var(--dsw-alias-label-primary)}
 .dsht-settings-nav-item.is-active{background:var(--dsht-press);color:var(--dsw-alias-label-primary);font-weight:550}
-.dsht-settings-main{flex:1;min-width:0;display:flex;flex-direction:column}
+.dsht-settings-main{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column}
 .dsht-settings-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 18px 6px 32px}
 .dsht-settings-body{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;padding:4px 32px 28px}
 .dsht-setting-row{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:16px 0;border-bottom:1px solid var(--dsht-line)}
@@ -3371,7 +3568,109 @@ body,[class*="dsht-"]{
 .dsht-icon-cell:hover,.dsht-icon-cell:focus-visible{background:var(--dsht-hover);color:var(--dsw-alias-label-primary)}
 .dsht-icon-cell.is-active{background:var(--dsht-press);color:var(--dsw-alias-label-primary);box-shadow:inset 0 0 0 1.5px var(--dsht-ring)}
 
-@media (max-width:640px){.dsht-page{padding-left:16px;padding-right:16px}.dsht-head{flex-direction:column;align-items:flex-start}.dsht-card{max-width:none}.dsht-settings-layout{flex-direction:column}.dsht-settings-nav{width:auto;flex-direction:row;border-right:0;border-bottom:1px solid var(--dsht-line)}.dsht-settings-nav-title{display:none}.dsht-settings-head,.dsht-settings-body{padding-left:20px;padding-right:20px}}
+/* dsh-web-mobile (the phone layout plugin) floats a back button over the top-left corner of the
+   main panel (10,12, 38x38) up to 1023px on coarse pointers, so the page needs top clearance
+   there. Only where that plugin is running, which its frame marker says: a narrow Desktop window
+   or a touch tablet without it has no such button and keeps the normal top padding. */
+@media (max-width:1023px) and (pointer:coarse),(max-width:767px){
+  html:has([data-mobile-nav="frame"]) .dsht-page{padding-top:calc(var(--dsh-frame-top-clearance,0px) + 58px)}
+}
+
+/* Narrow windows and phones: every plugin surface stays inside the viewport, scrolls there, and
+   (with the touch rules below) is thumb-sized. dsh-web-mobile also turns its own dialogs into
+   sheets; ours stay centred cards. */
+@media (max-width:767px){
+  .dsht-page{padding:calc(var(--dsh-frame-top-clearance,0px) + 36px) 16px calc(28px + env(safe-area-inset-bottom,0px))}
+  .dsht-inner{gap:14px}
+  .dsht-head{flex-direction:column;align-items:stretch;gap:12px}
+  .dsht-title{font-size:24px;line-height:30px}
+  .dsht-actions{width:100%;gap:8px}
+  .dsht-select-button{flex:1 1 45%;justify-content:space-between;height:38px;min-width:0}
+  .dsht-split{flex:1 1 45%;min-width:0}
+  .dsht-split>button:first-child{flex:1;justify-content:center}
+  .dsht-search .dsht-text{height:42px;font-size:16px}
+  .dsht-search svg{top:13px}
+  .dsht-grid{grid-template-columns:1fr}
+  .dsht-project{min-height:0;padding:12px 12px 14px 14px}
+  .dsht-project-tools{opacity:1}
+  .dsht-empty{padding:40px 18px}
+  .dsht-card{max-width:none}
+
+  /* New project dialog: host centres a min(380px,100%) card on phones; the body scrolls
+     when the keyboard shrinks the viewport, and the actions get full-width targets. */
+  .dsht-np.dsht-np{width:calc(100vw - 24px);max-width:min(480px,calc(100vw - 24px))}
+  .dsht-np-body{padding:18px 16px 16px;max-height:calc(var(--dsh-web-mobile-vh,100dvh) - 96px)}
+  .dsht-np-form{gap:16px}
+  .dsht-np-field{gap:7px}
+  .dsht-np-input{height:44px;font-size:16px}
+  .dsht-np-folder{min-height:56px;padding:10px 12px;gap:10px}
+  .dsht-np-folder-name{font-size:15px}
+  .dsht-np-folder-path{font-size:12px}
+  .dsht-dialog-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:0}
+  .dsht-dialog-actions>button{width:100%;height:44px;justify-content:center}
+
+  /* Project settings: one column, scrolling body, stacked title/control rows. */
+  .dsht-settings.dsht-settings{width:calc(100vw - 24px);height:min(720px,calc(var(--dsh-web-mobile-vh,100dvh) - 24px))}
+  .dsht-settings-layout{flex-direction:column;min-height:0}
+  .dsht-settings-nav{width:auto;flex:none;flex-direction:row;gap:2px;overflow-x:auto;border-right:0;border-bottom:1px solid var(--dsht-line);padding:8px 10px;scrollbar-width:none}
+  .dsht-settings-nav-title{display:none}
+  .dsht-settings-nav-item{flex:none;height:38px;padding:0 12px}
+  .dsht-settings-main{min-height:0}
+  /* The active tab already names the section; keep the header row for its close button only. */
+  .dsht-settings-head{justify-content:flex-end;padding:8px 12px 0}
+  .dsht-settings-head .dsht-dialog-title{display:none}
+  /* Menus opened from the plugin (recent folders, project actions) size to their content;
+     a long folder path made them wider than the viewport and pushed the left edge offscreen. */
+  .dsht-menu-two,.dsht-menu-sub{max-width:calc(100vw - 96px)}
+  .dsht-settings-body{padding:4px 14px calc(20px + env(safe-area-inset-bottom,0px))}
+  .dsht-setting-row{flex-direction:column;align-items:stretch;gap:10px;padding:14px 0}
+  .dsht-setting-block{padding:14px 0}
+  .dsht-name-field{width:100%}
+  .dsht-select-box{width:100%}
+  .dsht-setting-textarea{font-size:16px}
+  .dsht-usage-total{gap:22px;flex-wrap:wrap}
+  .dsht-usage-table{font-size:12px}
+  .dsht-icon-grid{grid-template-columns:repeat(auto-fill,minmax(44px,1fr))}
+
+  /* Thread list and thread pane: the pane header's title, chips and three action buttons do not
+     fit one 390px row, so the actions move under the title instead of squeezing it to "#1 重构…". */
+  .dsht-list{padding-bottom:calc(16px + env(safe-area-inset-bottom,0px))}
+  .dsht-pane-head{flex-wrap:wrap;row-gap:6px;padding:8px 10px;min-height:0}
+  .dsht-pane-text{flex:1 1 calc(100% - 32px)}
+  .dsht-pane-title{font-size:14px;line-height:20px}
+  .dsht-pane-meta{font-size:11.5px;line-height:16px}
+  .dsht-pane-actions{flex:1 1 100%;justify-content:flex-end;gap:6px}
+  .dsht-pane-actions .dsht-pill{height:34px}
+}
+
+/* Touch devices have no hover: a control that only faded in on hover could never be reached. */
+@media (hover:none){
+  .dsht-project-tools{opacity:1}
+  .dsht-side-actions{display:inline-flex}
+  .dsht-side-label svg{opacity:1}
+  .dsht-proposal-actions .dsht-pill-icon:first-child{opacity:1}
+  .dsht-item-chevron{opacity:1;transform:none}
+}
+/* Thumb-sized targets on touch screens (the desktop sizes are pointer-sized by design). */
+@media (pointer:coarse){
+  .dsht-icon-button{width:32px;height:32px}
+  .dsht-pill{height:34px}
+  .dsht-side-row{height:40px}
+  .dsht-side-icon{width:32px;height:32px}
+  .dsht-side-actions .dsht-icon-button{width:32px;height:32px}
+  .dsht-np-link{min-height:32px;padding:4px 8px}
+  .dsht-settings-nav-item{height:40px}
+  .dsht-section-head{min-height:32px}
+  .dsht-row{min-height:44px}
+  .dsht-item{min-height:44px}
+}
+/* Short landscape (e.g. 667x375): the drawer does not scroll, and the host's own flex box already
+   squeezes the workspace area to zero there. Keep this section small but usable — the header plus
+   about one row, with the list scrolling internally — instead of letting it eat the drawer. */
+@media (pointer:coarse) and (max-height:520px){
+  .dsht-side{flex:0 1 auto;min-height:76px;max-height:120px;overflow:hidden}
+  .dsht-side-list{flex:1 1 auto}
+}
 `;
 /** Add the stylesheet; returns a disposer that removes it. */
 function injectStyles() {
@@ -3498,19 +3797,21 @@ function FixedChatConversationView(props) {
 /** Replaces the composer of a resolved thread (conversation.composer chain). */
 function ResolvedComposer({ sessionId, t }) {
 	const [busy, setBusy] = (0, react.useState)(false);
+	const [error, setError] = (0, react.useState)(null);
 	return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 		className: "dsht-resolved",
 		children: [
 			/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ThreadGlyph, { state: "resolved" }),
 			/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 				className: "dsht-resolved-text",
-				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("b", { children: t("resolved.notice") }), t("resolved.hint")]
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("b", { children: t("resolved.notice") }), error ?? t("resolved.hint")]
 			}),
 			/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Pill, {
 				disabled: busy,
 				onClick: () => {
 					setBusy(true);
-					setThreadResolved(sessionId, false).finally(() => setBusy(false));
+					setError(null);
+					setThreadResolved(sessionId, false).catch((failure) => setError(failure instanceof Error ? failure.message : String(failure))).finally(() => setBusy(false));
 				},
 				children: t("resolved.reopen")
 			})
@@ -3768,13 +4069,18 @@ function apply(root) {
 	const openSession = (sessionId) => ctx.uiWorkspace.openSession(sessionId);
 	const pinSession = (sessionId, pinned) => pinned ? ctx.workspaces.pinSession(sessionId) : ctx.workspaces.unpinSession(sessionId);
 	const showProjects = () => ctx.layout.selectPanel(PANEL_ID);
+	const closePhoneDrawer = () => {
+		const frame = document.querySelector("[data-mobile-nav=\"frame\"]");
+		if (frame === null || frame.hasAttribute("data-sidebar-collapsed")) return;
+		ctx.layout.toggleSidebar();
+	};
 	const pickFolder = async () => {
 		const desktop = globalThis.__DSH_DIRECTORY_PICKER__;
 		if (desktop !== void 0) return desktop.pick();
 		try {
 			return await ctx.uiWorkspace.pickDirectory();
 		} catch (error) {
-			if (String(error?.code ?? error).includes("unavailable")) return "unavailable";
+			if (pickerUnavailable(error)) return "unavailable";
 			throw error;
 		}
 	};
@@ -3805,7 +4111,9 @@ function apply(root) {
 		inject: () => ({
 			openSession,
 			pinSession,
-			pickFolder
+			pickFolder,
+			selectPanel: (panelId) => ctx.layout.selectPanel(panelId),
+			closePhoneDrawer
 		})
 	}, SidebarProjectsHost));
 	ctx.slots.inject("sidebar.workspaces.session.menu.item", () => ctx.slots.register({

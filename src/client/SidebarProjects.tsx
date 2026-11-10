@@ -73,6 +73,10 @@ export interface SidebarProjectsProps {
   openSession: (sessionId: string) => void
   pinSession: (sessionId: string, pinned: boolean) => Promise<void>
   pickFolder: PickFolder
+  /** Show a panel by id (`ctx.layout.selectPanel`). */
+  selectPanel: (panelId: string) => void
+  /** Close the phone drawer, which is where this section lives on a phone. */
+  closePhoneDrawer: () => void
 }
 
 /** The session DSH highlights: the one its main view holds, unless a panel is open. */
@@ -126,14 +130,23 @@ function readCollapsed(): boolean {
   }
 }
 
-function SidebarProjects({ t, useWorkspaces, useSessions, useSessionStatus, usePanelInfo, openSession, pinSession, pickFolder }: SidebarProjectsProps) {
+function SidebarProjects({ t, useWorkspaces, useSessions, useSessionStatus, usePanelInfo, openSession, pinSession, pickFolder, selectPanel, closePhoneDrawer }: SidebarProjectsProps) {
   const { projects } = useProjects()
   const { mains } = useKinds()
   const [collapsed, setCollapsed] = useState(readCollapsed)
   const [expanded, setExpanded] = useState(false)
   const [creating, setCreating] = useState(false)
   const [menuFor, setMenuFor] = useState<string | null>(null)
-  const { actions, dialogs } = useProjectActions({ projects, t, pinSession })
+  // Archiving the project whose main session DSH's main view holds makes DSH leave whatever panel
+  // is open for the welcome page. Put the user back on the panel they were on, whichever it is
+  // (the Projects page, Plugins, …); someone in a conversation has no panel and is left alone.
+  const openPanelId = usePanelInfo((info) => info.activePanelId)
+  const { actions, dialogs, error } = useProjectActions({
+    projects,
+    t,
+    pinSession,
+    afterArchive: openPanelId === null ? undefined : () => selectPanel(openPanelId),
+  })
   const workspaces = useWorkspaces((snapshot) => snapshot.items, sameList)
   const live = useLive(useSessionStatus)
   const currentId = useCurrentSession({ useSessions, usePanelInfo })
@@ -176,8 +189,8 @@ function SidebarProjects({ t, useWorkspaces, useSessions, useSessionStatus, useP
             return (
               <div key={project.id} role="treeitem" aria-selected={selected} tabIndex={0}
                 className={`dsht-side-row${selected ? ' is-selected' : ''}${menuFor === project.id ? ' is-menu-open' : ''}`}
-                onClick={() => openSession(project.mainSessionId)}
-                onKeyDown={(event) => { if (event.key === 'Enter' && event.target === event.currentTarget) openSession(project.mainSessionId) }}>
+                onClick={() => { openSession(project.mainSessionId); closePhoneDrawer() }}
+                onKeyDown={(event) => { if (event.key === 'Enter' && event.target === event.currentTarget) { openSession(project.mainSessionId); closePhoneDrawer() } }}>
                 <span className="dsht-side-slot">
                   <RowMark project={project} main={mains.get(project.mainSessionId)} live={live} t={t} />
                 </span>
@@ -197,6 +210,7 @@ function SidebarProjects({ t, useWorkspaces, useSessions, useSessionStatus, useP
               {expanded ? t('side.less') : t('side.more', { count: rows.length - SIDEBAR_VISIBLE })}
             </button>
           ) : null}
+          {error === null ? null : <div className="dsht-error dsht-side-error" role="alert">{error}</div>}
         </div>
       )}
 

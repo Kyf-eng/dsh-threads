@@ -101,6 +101,17 @@ export const projectsStore = {
   },
 }
 
+/**
+ * Reload the list after a mutation changed it. A `projects.list` already in flight was computed
+ * before the mutation, so it must settle first: publishing it afterwards would show the
+ * pre-mutation list (a deleted project back, a created one missing) until something else reloads.
+ */
+export async function refreshProjects(): Promise<void> {
+  const stale = inflight
+  if (stale !== null) await stale.catch(() => {})
+  await projectsStore.refresh()
+}
+
 export function useProjects(): ProjectsState {
   return useSyncExternalStore(projectsStore.subscribe, projectsStore.getSnapshot)
 }

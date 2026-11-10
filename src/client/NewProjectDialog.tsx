@@ -1,9 +1,19 @@
 // "新建项目", after Claude's: a name and a folder chosen with the system folder picker
 // (Electron's on Desktop, the host's elsewhere; see `pickFolder` in index.tsx). A typed path
-// is the fallback only where no picker exists (Web deployments that browse folders in-page).
+// is the fallback where no native picker exists (Web deployments whose picker only browses
+// in-page), the same fallback the host's own "add workspace" has: asking for the folder then
+// silently lands in the path field instead of failing.
+//
+// DOM shape matters: dsh-web-mobile (the phone layout plugin) treats any `[aria-modal="true"]`
+// dialog whose FIRST child's LAST child holds a <button> as its settings sheet and transposes
+// it into a row (`aria-modal > :first-child { flex-direction: row !important }`, plus hiding
+// that child's first element). A form with its buttons as the last child matches by accident
+// and the dialog collapses sideways on phones (2026-11-04 report). The body is therefore a
+// plain wrapper and the form lives inside it, which keeps the dialog in the host's normal
+// centred-card branch on every device.
 import { Button, IconChevronDownOutlineRegular, Menu, MenuItemButton, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
-import { useEffect, useState } from 'react'
-import { callHost, projectsStore, type ProjectView } from './api.ts'
+import { useEffect, useRef, useState } from 'react'
+import { callHost, refreshProjects, type ProjectView } from './api.ts'
 import { FolderIcon } from './icons.tsx'
 import type { Translate } from './locale.ts'
 import { CloseIcon } from './ui.tsx'
@@ -34,9 +44,19 @@ export function NewProjectDialog({ open, initialFolder, onClose, onCreated, work
   const [named, setNamed] = useState(false)
   const [folder, setFolder] = useState<string | null>(null)
   const [typing, setTyping] = useState(false)
+  /** The folder picker does not exist in this deployment, so the path field is the only way in. */
+  const [typedOnly, setTypedOnly] = useState(false)
   const [recentOpen, setRecentOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  /** An IME candidate window is open; Enter belongs to it, not to the form. */
+  const composing = useRef(false)
+  /**
+   * Bumped by every opening and by a dismissal while `projects.create` is in flight. A create that
+   * returns to a different generation was abandoned: it neither navigates nor touches the dialog,
+   * even when the dialog has been opened again in the meantime.
+   */
+  const generation = useRef(0)
 
   // The dialog stays mounted between openings: start each one fresh, with the preselected folder.
   useEffect(() => {
@@ -45,7 +65,12 @@ export function NewProjectDialog({ open, initialFolder, onClose, onCreated, work
     setTitle(initialFolder === null || initialFolder === undefined ? '' : basename(initialFolder))
     setNamed(false)
     setTyping(false)
+    setTypedOnly(false)
+    setRecentOpen(false)
     setError(null)
+    setBusy(false)
+    composing.current = false
+    generation.current += 1
   }, [open, initialFolder])
 
   const choose = (path: string) => {
@@ -54,6 +79,7 @@ export function NewProjectDialog({ open, initialFolder, onClose, onCreated, work
   }
 
   const pick = async () => {
+    if (busy) return
     setError(null)
     let picked: string | null | 'unavailable'
     try {
@@ -62,100 +88,122 @@ export function NewProjectDialog({ open, initialFolder, onClose, onCreated, work
       setError(t('new.pickFailed', { error: failure instanceof Error ? failure.message : String(failure) }))
       return
     }
-    if (picked === 'unavailable') setTyping(true)
-    else if (picked !== null) choose(picked)
+    if (picked === 'unavailable') {
+      setTypedOnly(true)
+      setTyping(true)
+    } else if (picked !== null) choose(picked)
   }
 
+  const folderPath = (folder ?? '').trim()
+  /** A typed folder still names the project after its basename, exactly like a picked one. */
+  const effectiveTitle = title.trim().length > 0 ? title.trim() : named ? '' : basename(folderPath)
+  const ready = folderPath.length > 0 && effectiveTitle.length > 0
+
   const close = () => {
+    // Closing while the create is in flight is allowed (a stalled request must never trap the
+    // dialog), but the result only navigates when the user is still looking at it.
+    if (busy) generation.current += 1
     setRecentOpen(false)
     onClose()
   }
 
-  const ready = title.trim().length > 0 && (folder ?? '').trim().length > 0
   const submit = async () => {
-    if (!ready || busy) return
+    if (!ready || busy || composing.current) return
     setBusy(true)
     setError(null)
+    const mine = generation.current
     try {
-      const project = await callHost<ProjectView>('projects.create', { title, folder: (folder ?? '').trim() })
-      await projectsStore.refresh()
-      close()
+      const project = await callHost<ProjectView>('projects.create', { title: effectiveTitle, folder: folderPath })
+      await refreshProjects()
+      // Dismissed meanwhile (and maybe opened again): the project exists and the list shows it,
+      // but this answer must not close or navigate the dialog the user is looking at now.
+      if (generation.current !== mine) return
+      setBusy(false)
+      setRecentOpen(false)
+      onClose()
       onCreated(project)
     } catch (failure) {
-      setError(t('new.failed', { error: failure instanceof Error ? failure.message : String(failure) }))
-    } finally {
+      if (generation.current !== mine) return
       setBusy(false)
+      setError(t('new.failed', { error: failure instanceof Error ? failure.message : String(failure) }))
     }
   }
 
   return (
     <Modal open={open} onClose={close} title={t('new.title')} headless className="dsht-dialog dsht-np">
-      <form className="dsht-np-body" onSubmit={(event) => { event.preventDefault(); void submit() }}>
-        <div className="dsht-dialog-head">
-          <h2 className="dsht-dialog-title">{t('new.title')}</h2>
-          <button type="button" className="dsht-icon-button" aria-label={t('common.close')} title={t('common.close')} onClick={close}>
-            <CloseIcon />
-          </button>
-        </div>
+      <div className="dsht-np-body">
+        <form className="dsht-np-form" aria-busy={busy} onSubmit={(event) => { event.preventDefault(); void submit() }}>
+          <div className="dsht-dialog-head">
+            <h2 className="dsht-dialog-title">{t('new.title')}</h2>
+            <button type="button" className="dsht-icon-button" aria-label={t('common.close')} title={t('common.close')} onClick={close}>
+              <CloseIcon />
+            </button>
+          </div>
 
-        <label className="dsht-np-field">
-          <span className="dsht-np-label">{t('new.name')}</span>
-          <input className="dsht-np-input" value={title} placeholder={t('new.namePlaceholder')} maxLength={60} data-modal-autofocus
-            onChange={(event) => { setTitle(event.target.value); setNamed(event.target.value.length > 0) }} />
-        </label>
+          <label className="dsht-np-field">
+            <span className="dsht-np-label">{t('new.name')}</span>
+            <input className="dsht-np-input" value={title} placeholder={t('new.namePlaceholder')} maxLength={60} data-modal-autofocus
+              onChange={(event) => { setTitle(event.target.value); setNamed(event.target.value.length > 0) }}
+              onCompositionStart={() => { composing.current = true }}
+              onCompositionEnd={() => { composing.current = false }} />
+          </label>
 
-        <div className="dsht-np-field">
-          <div className="dsht-np-label-row">
-            <span className="dsht-np-label">{t('new.folder')}</span>
-            {workspaces.length === 0 ? null : (
-              <Menu open={recentOpen} onClose={() => setRecentOpen(false)} align="end" portal
-                anchor={(
-                  <button type="button" className="dsht-np-link" onClick={() => setRecentOpen(!recentOpen)}>
-                    {t('new.recent')}<IconChevronDownOutlineRegular size={14} />
-                  </button>
-                )}>
-                {workspaces.map((workspace) => (
-                  <MenuItemButton key={workspace.workspaceId} icon={<FolderIcon size={16} />}
-                    onSelect={() => { choose(workspace.path); setTyping(false); setRecentOpen(false) }}>
-                    <span className="dsht-menu-two">
-                      <span>{workspace.title}</span>
-                      <span className="dsht-menu-sub">{workspace.path}</span>
-                    </span>
-                  </MenuItemButton>
-                ))}
-              </Menu>
+          <div className="dsht-np-field">
+            <div className="dsht-np-label-row">
+              <span className="dsht-np-label">{t('new.folder')}</span>
+              {workspaces.length === 0 ? null : (
+                <Menu open={recentOpen} onClose={() => setRecentOpen(false)} align="end" portal
+                  anchor={(
+                    <button type="button" className="dsht-np-link" onClick={() => setRecentOpen(!recentOpen)}>
+                      {t('new.recent')}<IconChevronDownOutlineRegular size={14} />
+                    </button>
+                  )}>
+                  {workspaces.map((workspace) => (
+                    <MenuItemButton key={workspace.workspaceId} icon={<FolderIcon size={16} />}
+                      onSelect={() => { choose(workspace.path); setTyping(false); setTypedOnly(false); setRecentOpen(false) }}>
+                      <span className="dsht-menu-two">
+                        <span>{workspace.title}</span>
+                        <span className="dsht-menu-sub">{workspace.path}</span>
+                      </span>
+                    </MenuItemButton>
+                  ))}
+                </Menu>
+              )}
+            </div>
+            {typing ? (
+              <>
+                <input className="dsht-np-input dsht-mono" value={folder ?? ''} placeholder={t('new.pathPlaceholder')} spellCheck={false}
+                  autoCapitalize="off" autoCorrect="off"
+                  onChange={(event) => setFolder(event.target.value)}
+                  onCompositionStart={() => { composing.current = true }}
+                  onCompositionEnd={() => { composing.current = false }}
+                  onBlur={() => { if (!named && (folder ?? '').trim().length > 0) setTitle(basename(folder ?? '')) }} />
+                <span className="dsht-hint">{typedOnly ? t('new.pathOnly') : t('new.pathHint')}</span>
+              </>
+            ) : (
+              <button type="button" className={`dsht-np-folder${folder === null ? ' dsht-np-folder-empty' : ''}`} onClick={() => { void pick() }}>
+                <FolderIcon size={18} />
+                {folder === null
+                  ? <span className="dsht-np-folder-text">{t('new.chooseFolder')}</span>
+                  : (
+                      <span className="dsht-np-folder-text">
+                        <span className="dsht-np-folder-name">{basename(folder)}</span>
+                        <span className="dsht-np-folder-path">{folder}</span>
+                      </span>
+                    )}
+                {folder === null ? null : <span className="dsht-np-change">{t('new.change')}</span>}
+              </button>
             )}
           </div>
-          {typing ? (
-            <>
-              <input className="dsht-np-input dsht-mono" value={folder ?? ''} placeholder={t('new.pathPlaceholder')} spellCheck={false}
-                onChange={(event) => setFolder(event.target.value)}
-                onBlur={() => { if (!named && (folder ?? '').trim().length > 0) setTitle(basename(folder ?? '')) }} />
-              <span className="dsht-hint">{t('new.pathHint')}</span>
-            </>
-          ) : (
-            <button type="button" className={`dsht-np-folder${folder === null ? ' dsht-np-folder-empty' : ''}`} onClick={() => { void pick() }}>
-              <FolderIcon size={18} />
-              {folder === null
-                ? <span className="dsht-np-folder-text">{t('new.chooseFolder')}</span>
-                : (
-                    <span className="dsht-np-folder-text">
-                      <span className="dsht-np-folder-name">{basename(folder)}</span>
-                      <span className="dsht-np-folder-path">{folder}</span>
-                    </span>
-                  )}
-              {folder === null ? null : <span className="dsht-np-change">{t('new.change')}</span>}
-            </button>
-          )}
-        </div>
 
-        {error === null ? null : <div className="dsht-error">{error}</div>}
+          {error === null ? null : <div className="dsht-error">{error}</div>}
 
-        <div className="dsht-dialog-actions">
-          <Button variant="ghost" type="button" onClick={close}>{t('common.cancel')}</Button>
-          <Button variant="primary" type="submit" disabled={busy || !ready}>{t('new.create')}</Button>
-        </div>
-      </form>
+          <div className="dsht-dialog-actions">
+            <Button variant="ghost" type="button" onClick={close}>{t('common.cancel')}</Button>
+            <Button variant="primary" type="submit" disabled={busy || !ready}>{t('new.create')}</Button>
+          </div>
+        </form>
+      </div>
     </Modal>
   )
 }

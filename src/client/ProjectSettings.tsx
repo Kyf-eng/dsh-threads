@@ -3,7 +3,8 @@
 // at once.
 import { IconSettingsOutlineRegular, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import { type ReactNode, useEffect, useState } from 'react'
-import { callHost, projectsStore, type ProjectView } from './api.ts'
+import { callHost, refreshProjects, type ProjectView } from './api.ts'
+import { createCloseGate } from './closeGate.ts'
 import { PROJECT_ICON_IDS, ProjectIcon } from './icons.tsx'
 import type { MessageKey, Translate } from './locale.ts'
 import { ModelSettings, UsageSection } from './ProjectModels.tsx'
@@ -35,8 +36,16 @@ export function ProjectSettings({ project, open, onClose, t }: {
   const [picking, setPicking] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  /** Decides which close attempt's save may still close the dialog (closeGate.ts). */
+  const [gate] = useState(createCloseGate)
+
+  // An edit starts over: a close that is waiting on its save no longer decides anything, and the
+  // next close tries to save again.
+  useEffect(() => { gate.reset() }, [gate, title, goal, memory])
+
   useEffect(() => {
     if (!open || project === null) return
+    gate.reset()
     setTitle(project.title)
     setGoal(project.goal)
     setMemory(project.instructions)
@@ -48,21 +57,40 @@ export function ProjectSettings({ project, open, onClose, t }: {
 
   if (project === null) return null
 
-  const save = async (patch: Patch) => {
+  /** @returns whether everything is saved, so closing can wait for it instead of losing the error. */
+  const save = async (patch: Patch): Promise<boolean> => {
     const changed = Object.entries(patch).some(([key, value]) => JSON.stringify(project[key as keyof Patch]) !== JSON.stringify(value))
-    if (!changed) return
+    if (!changed) return true
     setError(null)
     try {
       await callHost('projects.update', { id: project.id, ...patch })
-      await projectsStore.refresh()
+      await refreshProjects()
+      return true
     } catch (failure) {
       setError(t('settings.saveFailed', { error: failure instanceof Error ? failure.message : String(failure) }))
+      return false
     }
   }
 
+  // Closing saves the pending fields first, and a failed save stays on screen with its error
+  // rather than disappearing with the unsaved edits. But a save must never trap the dialog: asking
+  // to close a second time (while that save is still out, or after it failed) leaves at once.
   const close = () => {
-    void save({ title: title.trim().length > 0 ? title : project.title, goal, instructions: memory })
-    onClose()
+    const attempt = gate.request()
+    if (attempt === 'leave') {
+      onClose()
+      return
+    }
+    void save({ title: title.trim().length > 0 ? title : project.title, goal, instructions: memory }).then((saved) => {
+      // Dismissed, edited, reopened or asked again meanwhile: this answer no longer decides anything.
+      if (!gate.current(attempt)) return
+      if (saved) {
+        gate.reset()
+        onClose()
+      } else {
+        setError((current) => current === null ? null : `${current} ${t('settings.closeAgain')}`)
+      }
+    })
   }
 
   return (

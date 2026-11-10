@@ -936,7 +936,8 @@ v0.1.0 阶段 1 合并后，在 test1 跑完整流程时，主对话没让合并
 | 侧栏会话行的 `data-row-key="session:<id>"`、`workspace:<id>`、`overflow:<id>` | `src/client/kinds.ts` 生成 CSS 隐藏讨论串、项目主对话和只剩项目会话的工作区 | 讨论串和主对话重新出现在“工作区”列表里 |
 | 侧栏结构：`sidebar.panellist` 所在的 `<nav>` 后面能插元素；导航图标 16px 表示展开 | `src/client/SidebarProjects.tsx` 用 portal 插“项目”分组 | “项目”分组不显示，或者窄侧栏时位置不对 |
 | `retainedBy.mainView > 0` 的会话就是当前会话 | 侧栏项目行的高亮 | 高亮错行 |
-| `globalThis.__DSH_DIRECTORY_PICKER__.pick()`（桌面版）；`uiWorkspace.pickDirectory()` 在 browse 模式抛 `directory-picker/unavailable` | 新建项目选文件夹 | 弹不出系统文件夹选择器，退回手填路径 |
+| `globalThis.__DSH_DIRECTORY_PICKER__.pick()`（桌面版）；`uiWorkspace.pickDirectory()` 在 browse 模式抛 `directory-picker/unavailable`，Web 版 0.2.1-rc.5 抛的是普通 Error（`… needs the native capability …`，没有错误码） | 新建项目选文件夹；`src/client/picker.ts` 只认这两种写法 | 弹不出系统文件夹选择器，退回手填路径；DSH 换了说法的话，Web 上会显示成报错而不是退回手填 |
+| **第三方插件 dsh-web-mobile（手机布局，按 3.2.1 实测）**：它给宿主的 frame 元素加 `data-mobile-nav="frame"`；在主面板左上角浮一个返回键（10,12，38×38，粗指针下到 1023px 宽）；点宿主自己的会话行才收起抽屉；把 `[aria-modal="true"]:has(> :first-child > :last-child > button)` 当成它的设置面板改成横排；提供 `--dsh-web-mobile-vh` | `src/client/styles.ts` 只在有这个标记时给项目页留 58px 顶部空间；`closePhoneDrawer`（`src/client/index.tsx`）点项目行后用 `layout.toggleSidebar()` 收起抽屉；新建项目对话框把表单包在 `.dsht-np-body` 里躲开那个选择器 | 手机上项目页标题被返回键盖住；点项目行后抽屉不收；新建项目对话框被横过来。桌面版和没装这个插件的环境不受影响 |
 | `sessionController.selectModel` 顺带把选择存成新会话默认模型；`agentDefaultModel.saveSelection` 按提交顺序执行 | `host.applyModel` 先记下默认、再改回去 | 换项目模型会改掉用户的全局默认模型 |
 | `permissionPresets.current()` 对不上任何模式时返回 `custom`；`set()` 只接受真实模式名；新会话由 `pinInitialPermission` 钉成用户默认模式 | 讨论串沿用主对话的审批模式 | 讨论串开不出来，或者用了更宽的默认模式 |
 | 用户停止的一轮以 `turn/end`、`reason: { kind: 'aborted', reason: { kind: 'user' } }` 结束 | `host.stoppedByUser`：停掉的一轮不提醒 | 停掉的讨论串又被“提醒回报”叫醒 |
@@ -964,3 +965,5 @@ v0.1.0 阶段 1 合并后，在 test1 跑完整流程时，主对话没让合并
 | 8 | 项目设置：换协调器模型和讨论串模型 | 生效，DSH 的全局默认模型不变 |
 | 9 | 主对话设成 ask 模式，开一个写文件的讨论串（隔离的官方 DSH，§六 第 8 条） | 讨论串弹审批，不自动通过 |
 | 10 | 切换 DSH 的界面语言 | `/thread stop 99` 的回复跟着换语言 |
+| 11 | 把窗口缩到 767px 以下（没装 dsh-web-mobile）：项目页、新建项目、项目设置、项目菜单 | 一列卡片，对话框不超出窗口、内容能滚动，通知档位直接列在菜单里；项目页顶部没有多出的空白 |
+| 12 | 装了 dsh-web-mobile 的 Web 版，用手机宽度（或浏览器的触屏模拟）：项目页、从抽屉点项目行、新建项目（“选择文件夹…”） | 标题不被返回键盖住；抽屉收起；对话框是居中的卡片，选文件夹退回手填路径并有说明 |

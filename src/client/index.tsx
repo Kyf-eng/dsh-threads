@@ -15,6 +15,7 @@ import { ProposalsDock } from './ProposalsDock.tsx'
 import { CommandThreadCard, NoticeCard, TurnThreadsCard } from './ThreadCards.tsx'
 import { en, NS, type Translate, zh } from './locale.ts'
 import { MakeProjectMenuItem } from './MakeProjectMenuItem.tsx'
+import { pickerUnavailable } from './picker.ts'
 import { ProjectsPage } from './ProjectsPage.tsx'
 import { RESOLVED_KIND, type ResolvedInteraction, syncResolved } from './resolved.ts'
 import { SidebarProjectsHost, useSidebarAnchor } from './SidebarProjects.tsx'
@@ -49,7 +50,7 @@ interface ClientContext {
     bind(ns: string): (key: string, params?: Record<string, string | number>) => string
     getLocale(): { active: string }
   }
-  layout: { selectPanel(id: string | null): void }
+  layout: { selectPanel(id: string | null): void; toggleSidebar(): void }
   uiWorkspace: {
     openSession(sessionId: string): void
     /** The host's folder chooser; throws `directory-picker/unavailable` where folders are browsed in-page. */
@@ -115,6 +116,14 @@ export function apply(root: Context): void {
   const pinSession = (sessionId: string, pinned: boolean) =>
     (pinned ? ctx.workspaces.pinSession(sessionId) : ctx.workspaces.unpinSession(sessionId))
   const showProjects = () => ctx.layout.selectPanel(PANEL_ID)
+  // dsh-web-mobile closes its drawer when one of the host's own rows is tapped (its selector only
+  // knows the host's rows), so a project row opened from the drawer used to leave the drawer on top
+  // of the conversation it just opened. Close it here, the same way the phone layout does.
+  const closePhoneDrawer = () => {
+    const frame = document.querySelector('[data-mobile-nav="frame"]')
+    if (frame === null || frame.hasAttribute('data-sidebar-collapsed')) return
+    ctx.layout.toggleSidebar()
+  }
   // The folder chooser DSH's own "add workspace" uses (dsh-client-ui-directory-picker-native):
   // Electron's dialog on Desktop, the host's picker otherwise.
   const pickFolder = async (): Promise<string | null | 'unavailable'> => {
@@ -123,7 +132,7 @@ export function apply(root: Context): void {
     try {
       return await ctx.uiWorkspace.pickDirectory()
     } catch (error) {
-      if (String((error as { code?: unknown })?.code ?? error).includes('unavailable')) return 'unavailable'
+      if (pickerUnavailable(error)) return 'unavailable'
       throw error
     }
   }
@@ -141,7 +150,7 @@ export function apply(root: Context): void {
   ))
   // The sidebar's own "Projects" section (SidebarProjects.tsx), portalled from an overlay entry.
   ctx.slots.inject('shell.overlay', () => ctx.slots.register(
-    { name: 'shell.overlay', id: 'dsh-threads-sidebar-projects', locale: NS, inject: () => ({ openSession, pinSession, pickFolder }) },
+    { name: 'shell.overlay', id: 'dsh-threads-sidebar-projects', locale: NS, inject: () => ({ openSession, pinSession, pickFolder, selectPanel: (panelId: string) => ctx.layout.selectPanel(panelId), closePhoneDrawer }) },
     SidebarProjectsHost as ComponentType<never>,
   ))
   ctx.slots.inject('sidebar.workspaces.session.menu.item', () => ctx.slots.register(

@@ -29,18 +29,6 @@ export type PickFolder = () => Promise<string | null | 'unavailable'>
 
 const basename = (path: string) => path.split(/[\\/]/).filter((part) => part.length > 0).pop() ?? path
 
-/**
- * A failed folder pick that means "there is no native chooser here" rather than a real error.
- * The host answers `directoryPicker.pick needs the native capability; the composed picker
- * serves "browse"` on Web, and Desktop answers `directory-picker/unavailable` — both send the
- * user to the path field.
- */
-function pickerUnavailable(failure: unknown): boolean {
-  const code = String((failure as { code?: unknown } | null)?.code ?? '')
-  const message = failure instanceof Error ? failure.message : String(failure)
-  return code.includes('unavailable') || /unavailable|needs the native capability|not supported|serves "browse"/i.test(message)
-}
-
 export function NewProjectDialog({ open, initialFolder, onClose, onCreated, workspaces, pickFolder, t }: {
   open: boolean
   /** Preselected folder (the page's "new from workspace" menu). */
@@ -63,8 +51,12 @@ export function NewProjectDialog({ open, initialFolder, onClose, onCreated, work
   const [busy, setBusy] = useState(false)
   /** An IME candidate window is open; Enter belongs to it, not to the form. */
   const composing = useRef(false)
-  /** The dialog was dismissed while `projects.create` was in flight: do not navigate afterwards. */
-  const abandoned = useRef(false)
+  /**
+   * Bumped by every opening and by a dismissal while `projects.create` is in flight. A create that
+   * returns to a different generation was abandoned: it neither navigates nor touches the dialog,
+   * even when the dialog has been opened again in the meantime.
+   */
+  const generation = useRef(0)
 
   // The dialog stays mounted between openings: start each one fresh, with the preselected folder.
   useEffect(() => {
@@ -78,7 +70,7 @@ export function NewProjectDialog({ open, initialFolder, onClose, onCreated, work
     setError(null)
     setBusy(false)
     composing.current = false
-    abandoned.current = false
+    generation.current += 1
   }, [open, initialFolder])
 
   const choose = (path: string) => {
@@ -93,16 +85,13 @@ export function NewProjectDialog({ open, initialFolder, onClose, onCreated, work
     try {
       picked = await pickFolder()
     } catch (failure) {
-      if (pickerUnavailable(failure)) {
-        setTypedOnly(true)
-        setTyping(true)
-        return
-      }
       setError(t('new.pickFailed', { error: failure instanceof Error ? failure.message : String(failure) }))
       return
     }
-    if (picked === 'unavailable') setTyping(true)
-    else if (picked !== null) choose(picked)
+    if (picked === 'unavailable') {
+      setTypedOnly(true)
+      setTyping(true)
+    } else if (picked !== null) choose(picked)
   }
 
   const folderPath = (folder ?? '').trim()
@@ -113,7 +102,7 @@ export function NewProjectDialog({ open, initialFolder, onClose, onCreated, work
   const close = () => {
     // Closing while the create is in flight is allowed (a stalled request must never trap the
     // dialog), but the result only navigates when the user is still looking at it.
-    if (busy) abandoned.current = true
+    if (busy) generation.current += 1
     setRecentOpen(false)
     onClose()
   }
@@ -122,18 +111,20 @@ export function NewProjectDialog({ open, initialFolder, onClose, onCreated, work
     if (!ready || busy || composing.current) return
     setBusy(true)
     setError(null)
-    abandoned.current = false
+    const mine = generation.current
     try {
       const project = await callHost<ProjectView>('projects.create', { title: effectiveTitle, folder: folderPath })
       await refreshProjects()
+      // Dismissed meanwhile (and maybe opened again): the project exists and the list shows it,
+      // but this answer must not close or navigate the dialog the user is looking at now.
+      if (generation.current !== mine) return
       setBusy(false)
-      if (abandoned.current) return
       setRecentOpen(false)
       onClose()
       onCreated(project)
     } catch (failure) {
+      if (generation.current !== mine) return
       setBusy(false)
-      if (abandoned.current) return
       setError(t('new.failed', { error: failure instanceof Error ? failure.message : String(failure) }))
     }
   }

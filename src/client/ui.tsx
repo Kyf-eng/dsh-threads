@@ -74,10 +74,8 @@ const KINDS: Record<string, FileKind> = {
 export function fileKind(path: string): FileKind {
   const name = path.split(/[\\/]/).pop() ?? path
   const dot = name.lastIndexOf('.')
-  // `.env` is an extension-carrying name, not an extensionless file: its "extension" follows the
-  // leading dot, so a leading-dot name gets the same lookup as any other.
-  const extension = dot < 0 ? '' : name.slice(dot + 1)
-  return extension.length === 0 || extension === name ? 'other' : KINDS[extension.toLowerCase()] ?? 'other'
+  // A leading-dot name gets the same lookup as any other, so `.env` counts as data.
+  return dot < 0 ? 'other' : KINDS[name.slice(dot + 1).toLowerCase()] ?? 'other'
 }
 
 export function FileIcon({ kind }: { kind: FileKind }) {

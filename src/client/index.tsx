@@ -15,6 +15,7 @@ import { ProposalsDock } from './ProposalsDock.tsx'
 import { CommandThreadCard, NoticeCard, TurnThreadsCard } from './ThreadCards.tsx'
 import { en, NS, type Translate, zh } from './locale.ts'
 import { MakeProjectMenuItem } from './MakeProjectMenuItem.tsx'
+import { pickerUnavailable } from './picker.ts'
 import { ProjectsPage } from './ProjectsPage.tsx'
 import { RESOLVED_KIND, type ResolvedInteraction, syncResolved } from './resolved.ts'
 import { SidebarProjectsHost, useSidebarAnchor } from './SidebarProjects.tsx'
@@ -131,7 +132,7 @@ export function apply(root: Context): void {
     try {
       return await ctx.uiWorkspace.pickDirectory()
     } catch (error) {
-      if (String((error as { code?: unknown })?.code ?? error).includes('unavailable')) return 'unavailable'
+      if (pickerUnavailable(error)) return 'unavailable'
       throw error
     }
   }
@@ -149,7 +150,7 @@ export function apply(root: Context): void {
   ))
   // The sidebar's own "Projects" section (SidebarProjects.tsx), portalled from an overlay entry.
   ctx.slots.inject('shell.overlay', () => ctx.slots.register(
-    { name: 'shell.overlay', id: 'dsh-threads-sidebar-projects', locale: NS, inject: () => ({ openSession, pinSession, pickFolder, showProjects, closePhoneDrawer }) },
+    { name: 'shell.overlay', id: 'dsh-threads-sidebar-projects', locale: NS, inject: () => ({ openSession, pinSession, pickFolder, selectPanel: (panelId: string) => ctx.layout.selectPanel(panelId), closePhoneDrawer }) },
     SidebarProjectsHost as ComponentType<never>,
   ))
   ctx.slots.inject('sidebar.workspaces.session.menu.item', () => ctx.slots.register(

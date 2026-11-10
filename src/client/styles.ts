@@ -328,19 +328,19 @@ body,[class*="dsht-"]{
 .dsht-icon-cell:hover,.dsht-icon-cell:focus-visible{background:var(--dsht-hover);color:var(--dsw-alias-label-primary)}
 .dsht-icon-cell.is-active{background:var(--dsht-press);color:var(--dsw-alias-label-primary);box-shadow:inset 0 0 0 1.5px var(--dsht-ring)}
 
-/* dsh-web-mobile's phone/tablet tier floats a back button over the top-left corner of the main
-   panel up to 1023px on coarse pointers, so the page needs its own top clearance at tablet widths
-   too (the phone block below repeats it inside the compact layout). */
-@media (max-width:1023px) and (pointer:coarse){
-  .dsht-page{padding-top:calc(var(--dsh-frame-top-clearance,0px) + 58px)}
+/* dsh-web-mobile (the phone layout plugin) floats a back button over the top-left corner of the
+   main panel (10,12, 38x38) up to 1023px on coarse pointers, so the page needs top clearance
+   there. Only where that plugin is running, which its frame marker says: a narrow Desktop window
+   or a touch tablet without it has no such button and keeps the normal top padding. */
+@media (max-width:1023px) and (pointer:coarse),(max-width:767px){
+  html:has([data-mobile-nav="frame"]) .dsht-page{padding-top:calc(var(--dsh-frame-top-clearance,0px) + 58px)}
 }
 
-/* Phones. DSH's mobile layer (dsh-web-mobile) floats a back button over the top-left corner and
-   turns its own dialogs into sheets; these rules keep every plugin surface clear of that button,
-   scrollable inside the viewport, and touch-sized. */
+/* Narrow windows and phones: every plugin surface stays inside the viewport, scrolls there, and
+   (with the touch rules below) is thumb-sized. dsh-web-mobile also turns its own dialogs into
+   sheets; ours stay centred cards. */
 @media (max-width:767px){
-  /* The panel content starts under the floating back button (10,12, 38x38). */
-  .dsht-page{padding:calc(var(--dsh-frame-top-clearance,0px) + 58px) 16px calc(28px + env(safe-area-inset-bottom,0px))}
+  .dsht-page{padding:calc(var(--dsh-frame-top-clearance,0px) + 36px) 16px calc(28px + env(safe-area-inset-bottom,0px))}
   .dsht-inner{gap:14px}
   .dsht-head{flex-direction:column;align-items:stretch;gap:12px}
   .dsht-title{font-size:24px;line-height:30px}

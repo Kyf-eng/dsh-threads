@@ -2,7 +2,7 @@
 // Text fields save when they lose focus and when the dialog closes; the icon and the models save
 // at once.
 import { IconSettingsOutlineRegular, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
-import { type ReactNode, useEffect, useState } from 'react'
+import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { callHost, refreshProjects, type ProjectView } from './api.ts'
 import { PROJECT_ICON_IDS, ProjectIcon } from './icons.tsx'
 import type { MessageKey, Translate } from './locale.ts'
@@ -35,8 +35,18 @@ export function ProjectSettings({ project, open, onClose, t }: {
   const [picking, setPicking] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  /** Counts openings, so an answer that arrives for an earlier one is recognised and dropped. */
+  const opening = useRef(0)
+  /** The opening whose close is waiting on (or was refused by) a save; null when none is. */
+  const leaving = useRef<number | null>(null)
+
+  // An edit after a refused close starts over: the next close tries to save again.
+  useEffect(() => { leaving.current = null }, [title, goal, memory])
+
   useEffect(() => {
     if (!open || project === null) return
+    opening.current += 1
+    leaving.current = null
     setTitle(project.title)
     setGoal(project.goal)
     setMemory(project.instructions)
@@ -63,11 +73,27 @@ export function ProjectSettings({ project, open, onClose, t }: {
     }
   }
 
-  // The dialog closes only once the pending fields are saved: a failed save stays on screen with
-  // its error, rather than disappearing with the unsaved edits.
+  // Closing saves the pending fields first, and a failed save stays on screen with its error
+  // rather than disappearing with the unsaved edits. But a save must never trap the dialog: asking
+  // to close a second time (while that save is still out, or after it failed) leaves at once.
   const close = () => {
-    void save({ title: title.trim().length > 0 ? title : project.title, goal, instructions: memory })
-      .then((saved) => { if (saved) onClose() })
+    if (leaving.current !== null) {
+      leaving.current = null
+      onClose()
+      return
+    }
+    const mine = opening.current
+    leaving.current = mine
+    void save({ title: title.trim().length > 0 ? title : project.title, goal, instructions: memory }).then((saved) => {
+      // Dismissed, edited or reopened meanwhile: this answer no longer decides anything.
+      if (leaving.current !== mine || opening.current !== mine) return
+      if (saved) {
+        leaving.current = null
+        onClose()
+      } else {
+        setError((current) => current === null ? null : `${current} ${t('settings.closeAgain')}`)
+      }
+    })
   }
 
   return (

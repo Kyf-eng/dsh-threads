@@ -936,8 +936,7 @@ const KINDS = {
 function fileKind(path) {
 	const name = path.split(/[\\/]/).pop() ?? path;
 	const dot = name.lastIndexOf(".");
-	const extension = dot < 0 ? "" : name.slice(dot + 1);
-	return extension.length === 0 || extension === name ? "other" : KINDS[extension.toLowerCase()] ?? "other";
+	return dot < 0 ? "other" : KINDS[name.slice(dot + 1).toLowerCase()] ?? "other";
 }
 function FileIcon({ kind }) {
 	if (kind === "code") return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Svg, { children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", { d: "m9 8-4 4 4 4M15 8l4 4-4 4" }) });
@@ -1398,6 +1397,7 @@ const zh = {
 	"settings.instructionsHint": "会加进主对话和所有讨论串的系统提示，例如代码规范、回复语言、要避开的目录。",
 	"settings.instructionsPlaceholder": "例如：用中文回复；不要改 vendor/ 下的文件；提交信息用 Conventional Commits。",
 	"settings.saveFailed": "保存失败：{error}",
+	"settings.closeAgain": "再关一次会放弃还没保存的修改。",
 	"settings.usage": "使用情况",
 	"settings.models": "模型",
 	"settings.mainModel": "协调器模型",
@@ -1555,6 +1555,7 @@ const en = {
 	"settings.instructionsHint": "Added to the system prompt of the main conversation and every thread: code style, reply language, folders to leave alone.",
 	"settings.instructionsPlaceholder": "e.g. Reply in English; do not touch vendor/; use Conventional Commits.",
 	"settings.saveFailed": "Could not save: {error}",
+	"settings.closeAgain": "Close again to leave without saving.",
 	"settings.usage": "Usage",
 	"settings.models": "Models",
 	"settings.mainModel": "Coordinator model",
@@ -1658,6 +1659,7 @@ function MakeProjectMenuItem({ sessionId, displayTitle, useMenuOpenState, t, sho
 	const [, setMenuOpen] = useMenuOpenState();
 	const [eligible, setEligible] = (0, react.useState)(false);
 	const [error, setError] = (0, react.useState)(null);
+	const [busy, setBusy] = (0, react.useState)(false);
 	(0, react.useEffect)(() => {
 		let live = true;
 		callHost("sessions.role", { id: sessionId }).then((role) => {
@@ -1671,18 +1673,19 @@ function MakeProjectMenuItem({ sessionId, displayTitle, useMenuOpenState, t, sho
 	}, [sessionId]);
 	if (!eligible) return null;
 	const run = () => {
+		if (busy) return;
+		setBusy(true);
 		setError(null);
-		setMenuOpen(false);
 		callHost("projects.create", {
 			title: displayTitle,
 			fromSessionId: sessionId
 		}).then(() => {
 			threadsRevision.bump();
 			return refreshProjects();
-		}).then(showProjects).catch((failure) => {
-			setError(failure instanceof Error ? failure.message : String(failure));
-			setMenuOpen(true);
-		});
+		}).then(() => {
+			setMenuOpen(false);
+			showProjects();
+		}).catch((failure) => setError(failure instanceof Error ? failure.message : String(failure))).finally(() => setBusy(false));
 	};
 	return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [error === null ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 		className: "dsht-error dsht-menu-message",
@@ -1690,23 +1693,29 @@ function MakeProjectMenuItem({ sessionId, displayTitle, useMenuOpenState, t, sho
 		children: error
 	}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.MenuItemButton, {
 		icon: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ProjectsIcon, { size: 16 }),
+		disabled: busy,
 		onSelect: run,
 		children: t("menu.makeProject")
 	})] });
 }
-// src/client/NewProjectDialog.tsx
-const basename = (path) => path.split(/[\\/]/).filter((part) => part.length > 0).pop() ?? path;
+// src/client/picker.ts
 /**
-* A failed folder pick that means "there is no native chooser here" rather than a real error.
-* The host answers `directoryPicker.pick needs the native capability; the composed picker
-* serves "browse"` on Web, and Desktop answers `directory-picker/unavailable` — both send the
-* user to the path field.
+* Whether a failed `uiWorkspace.pickDirectory()` means this deployment has no native folder
+* chooser (Web, where folders are browsed in-page), so the dialog should offer the path field
+* instead of an error.
+*
+* DSH's typed error is `directory-picker/unavailable`. DSH Web 0.2.1-rc.5 answers with a plain
+* Error instead: `directoryPicker.pick needs the native capability; the composed picker serves
+* "browse"`. Only these two shapes count: any other failure (a 503 "Service Unavailable", say)
+* is a real error and must reach the user.
 */
 function pickerUnavailable(failure) {
-	const code = String(failure?.code ?? "");
+	if (String(failure?.code ?? "").includes("unavailable")) return true;
 	const message = failure instanceof Error ? failure.message : String(failure);
-	return code.includes("unavailable") || /unavailable|needs the native capability|not supported|serves "browse"/i.test(message);
+	return /directory-picker\/unavailable|needs the native capability/i.test(message);
 }
+// src/client/NewProjectDialog.tsx
+const basename = (path) => path.split(/[\\/]/).filter((part) => part.length > 0).pop() ?? path;
 function NewProjectDialog({ open, initialFolder, onClose, onCreated, workspaces, pickFolder, t }) {
 	const [title, setTitle] = (0, react.useState)("");
 	/** The user typed the name; picking a folder no longer overwrites it. */
@@ -1720,8 +1729,12 @@ function NewProjectDialog({ open, initialFolder, onClose, onCreated, workspaces,
 	const [busy, setBusy] = (0, react.useState)(false);
 	/** An IME candidate window is open; Enter belongs to it, not to the form. */
 	const composing = (0, react.useRef)(false);
-	/** The dialog was dismissed while `projects.create` was in flight: do not navigate afterwards. */
-	const abandoned = (0, react.useRef)(false);
+	/**
+	* Bumped by every opening and by a dismissal while `projects.create` is in flight. A create that
+	* returns to a different generation was abandoned: it neither navigates nor touches the dialog,
+	* even when the dialog has been opened again in the meantime.
+	*/
+	const generation = (0, react.useRef)(0);
 	(0, react.useEffect)(() => {
 		if (!open) return;
 		setFolder(initialFolder ?? null);
@@ -1733,7 +1746,7 @@ function NewProjectDialog({ open, initialFolder, onClose, onCreated, workspaces,
 		setError(null);
 		setBusy(false);
 		composing.current = false;
-		abandoned.current = false;
+		generation.current += 1;
 	}, [open, initialFolder]);
 	const choose = (path) => {
 		setFolder(path);
@@ -1746,23 +1759,20 @@ function NewProjectDialog({ open, initialFolder, onClose, onCreated, workspaces,
 		try {
 			picked = await pickFolder();
 		} catch (failure) {
-			if (pickerUnavailable(failure)) {
-				setTypedOnly(true);
-				setTyping(true);
-				return;
-			}
 			setError(t("new.pickFailed", { error: failure instanceof Error ? failure.message : String(failure) }));
 			return;
 		}
-		if (picked === "unavailable") setTyping(true);
-		else if (picked !== null) choose(picked);
+		if (picked === "unavailable") {
+			setTypedOnly(true);
+			setTyping(true);
+		} else if (picked !== null) choose(picked);
 	};
 	const folderPath = (folder ?? "").trim();
 	/** A typed folder still names the project after its basename, exactly like a picked one. */
 	const effectiveTitle = title.trim().length > 0 ? title.trim() : named ? "" : basename(folderPath);
 	const ready = folderPath.length > 0 && effectiveTitle.length > 0;
 	const close = () => {
-		if (busy) abandoned.current = true;
+		if (busy) generation.current += 1;
 		setRecentOpen(false);
 		onClose();
 	};
@@ -1770,21 +1780,21 @@ function NewProjectDialog({ open, initialFolder, onClose, onCreated, workspaces,
 		if (!ready || busy || composing.current) return;
 		setBusy(true);
 		setError(null);
-		abandoned.current = false;
+		const mine = generation.current;
 		try {
 			const project = await callHost("projects.create", {
 				title: effectiveTitle,
 				folder: folderPath
 			});
 			await refreshProjects();
+			if (generation.current !== mine) return;
 			setBusy(false);
-			if (abandoned.current) return;
 			setRecentOpen(false);
 			onClose();
 			onCreated(project);
 		} catch (failure) {
+			if (generation.current !== mine) return;
 			setBusy(false);
-			if (abandoned.current) return;
 			setError(t("new.failed", { error: failure instanceof Error ? failure.message : String(failure) }));
 		}
 	};
@@ -2193,8 +2203,21 @@ function ProjectSettings({ project, open, onClose, t }) {
 	const [memory, setMemory] = (0, react.useState)("");
 	const [picking, setPicking] = (0, react.useState)(false);
 	const [error, setError] = (0, react.useState)(null);
+	/** Counts openings, so an answer that arrives for an earlier one is recognised and dropped. */
+	const opening = (0, react.useRef)(0);
+	/** The opening whose close is waiting on (or was refused by) a save; null when none is. */
+	const leaving = (0, react.useRef)(null);
+	(0, react.useEffect)(() => {
+		leaving.current = null;
+	}, [
+		title,
+		goal,
+		memory
+	]);
 	(0, react.useEffect)(() => {
 		if (!open || project === null) return;
+		opening.current += 1;
+		leaving.current = null;
 		setTitle(project.title);
 		setGoal(project.goal);
 		setMemory(project.instructions);
@@ -2219,12 +2242,23 @@ function ProjectSettings({ project, open, onClose, t }) {
 		}
 	};
 	const close = () => {
+		if (leaving.current !== null) {
+			leaving.current = null;
+			onClose();
+			return;
+		}
+		const mine = opening.current;
+		leaving.current = mine;
 		save({
 			title: title.trim().length > 0 ? title : project.title,
 			goal,
 			instructions: memory
 		}).then((saved) => {
-			if (saved) onClose();
+			if (leaving.current !== mine || opening.current !== mine) return;
+			if (saved) {
+				leaving.current = null;
+				onClose();
+			} else setError((current) => current === null ? null : `${current} ${t("settings.closeAgain")}`);
 		});
 	};
 	return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Modal, {
@@ -3024,18 +3058,19 @@ function readCollapsed() {
 		return false;
 	}
 }
-function SidebarProjects({ t, useWorkspaces, useSessions, useSessionStatus, usePanelInfo, openSession, pinSession, pickFolder, showProjects, closePhoneDrawer }) {
+function SidebarProjects({ t, useWorkspaces, useSessions, useSessionStatus, usePanelInfo, openSession, pinSession, pickFolder, selectPanel, closePhoneDrawer }) {
 	const { projects } = useProjects();
 	const { mains } = useKinds();
 	const [collapsed, setCollapsed] = (0, react.useState)(readCollapsed);
 	const [expanded, setExpanded] = (0, react.useState)(false);
 	const [creating, setCreating] = (0, react.useState)(false);
 	const [menuFor, setMenuFor] = (0, react.useState)(null);
+	const openPanelId = usePanelInfo((info) => info.activePanelId);
 	const { actions, dialogs, error } = useProjectActions({
 		projects,
 		t,
 		pinSession,
-		afterArchive: usePanelInfo((info) => info.activePanelId !== null) ? showProjects : void 0
+		afterArchive: openPanelId === null ? void 0 : () => selectPanel(openPanelId)
 	});
 	const workspaces = useWorkspaces((snapshot) => snapshot.items, sameList);
 	const live = useLive(useSessionStatus);
@@ -3517,19 +3552,19 @@ body,[class*="dsht-"]{
 .dsht-icon-cell:hover,.dsht-icon-cell:focus-visible{background:var(--dsht-hover);color:var(--dsw-alias-label-primary)}
 .dsht-icon-cell.is-active{background:var(--dsht-press);color:var(--dsw-alias-label-primary);box-shadow:inset 0 0 0 1.5px var(--dsht-ring)}
 
-/* dsh-web-mobile's phone/tablet tier floats a back button over the top-left corner of the main
-   panel up to 1023px on coarse pointers, so the page needs its own top clearance at tablet widths
-   too (the phone block below repeats it inside the compact layout). */
-@media (max-width:1023px) and (pointer:coarse){
-  .dsht-page{padding-top:calc(var(--dsh-frame-top-clearance,0px) + 58px)}
+/* dsh-web-mobile (the phone layout plugin) floats a back button over the top-left corner of the
+   main panel (10,12, 38x38) up to 1023px on coarse pointers, so the page needs top clearance
+   there. Only where that plugin is running, which its frame marker says: a narrow Desktop window
+   or a touch tablet without it has no such button and keeps the normal top padding. */
+@media (max-width:1023px) and (pointer:coarse),(max-width:767px){
+  html:has([data-mobile-nav="frame"]) .dsht-page{padding-top:calc(var(--dsh-frame-top-clearance,0px) + 58px)}
 }
 
-/* Phones. DSH's mobile layer (dsh-web-mobile) floats a back button over the top-left corner and
-   turns its own dialogs into sheets; these rules keep every plugin surface clear of that button,
-   scrollable inside the viewport, and touch-sized. */
+/* Narrow windows and phones: every plugin surface stays inside the viewport, scrolls there, and
+   (with the touch rules below) is thumb-sized. dsh-web-mobile also turns its own dialogs into
+   sheets; ours stay centred cards. */
 @media (max-width:767px){
-  /* The panel content starts under the floating back button (10,12, 38x38). */
-  .dsht-page{padding:calc(var(--dsh-frame-top-clearance,0px) + 58px) 16px calc(28px + env(safe-area-inset-bottom,0px))}
+  .dsht-page{padding:calc(var(--dsh-frame-top-clearance,0px) + 36px) 16px calc(28px + env(safe-area-inset-bottom,0px))}
   .dsht-inner{gap:14px}
   .dsht-head{flex-direction:column;align-items:stretch;gap:12px}
   .dsht-title{font-size:24px;line-height:30px}
@@ -4029,7 +4064,7 @@ function apply(root) {
 		try {
 			return await ctx.uiWorkspace.pickDirectory();
 		} catch (error) {
-			if (String(error?.code ?? error).includes("unavailable")) return "unavailable";
+			if (pickerUnavailable(error)) return "unavailable";
 			throw error;
 		}
 	};
@@ -4061,7 +4096,7 @@ function apply(root) {
 			openSession,
 			pinSession,
 			pickFolder,
-			showProjects,
+			selectPanel: (panelId) => ctx.layout.selectPanel(panelId),
 			closePhoneDrawer
 		})
 	}, SidebarProjectsHost));

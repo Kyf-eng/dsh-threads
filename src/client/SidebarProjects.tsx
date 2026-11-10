@@ -73,8 +73,8 @@ export interface SidebarProjectsProps {
   openSession: (sessionId: string) => void
   pinSession: (sessionId: string, pinned: boolean) => Promise<void>
   pickFolder: PickFolder
-  /** Bring the Projects panel back, as the page does after archiving its current project. */
-  showProjects: () => void
+  /** Show a panel by id (`ctx.layout.selectPanel`). */
+  selectPanel: (panelId: string) => void
   /** Close the phone drawer, which is where this section lives on a phone. */
   closePhoneDrawer: () => void
 }
@@ -130,21 +130,22 @@ function readCollapsed(): boolean {
   }
 }
 
-function SidebarProjects({ t, useWorkspaces, useSessions, useSessionStatus, usePanelInfo, openSession, pinSession, pickFolder, showProjects, closePhoneDrawer }: SidebarProjectsProps) {
+function SidebarProjects({ t, useWorkspaces, useSessions, useSessionStatus, usePanelInfo, openSession, pinSession, pickFolder, selectPanel, closePhoneDrawer }: SidebarProjectsProps) {
   const { projects } = useProjects()
   const { mains } = useKinds()
   const [collapsed, setCollapsed] = useState(readCollapsed)
   const [expanded, setExpanded] = useState(false)
   const [creating, setCreating] = useState(false)
   const [menuFor, setMenuFor] = useState<string | null>(null)
-  // Archiving the project whose main session DSH is showing would drop the user out of an open
-  // panel; bring that panel back, but never yank someone out of a conversation.
-  const panelActive = usePanelInfo((info) => info.activePanelId !== null)
+  // Archiving the project whose main session DSH's main view holds makes DSH leave whatever panel
+  // is open for the welcome page. Put the user back on the panel they were on, whichever it is
+  // (the Projects page, Plugins, …); someone in a conversation has no panel and is left alone.
+  const openPanelId = usePanelInfo((info) => info.activePanelId)
   const { actions, dialogs, error } = useProjectActions({
     projects,
     t,
     pinSession,
-    afterArchive: panelActive ? showProjects : undefined,
+    afterArchive: openPanelId === null ? undefined : () => selectPanel(openPanelId),
   })
   const workspaces = useWorkspaces((snapshot) => snapshot.items, sameList)
   const live = useLive(useSessionStatus)

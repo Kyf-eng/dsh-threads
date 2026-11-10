@@ -1957,6 +1957,26 @@ function NewProjectDialog({ open, initialFolder, onClose, onCreated, workspaces,
 		})
 	});
 }
+// src/client/closeGate.ts
+function createCloseGate() {
+	let attempts = 0;
+	let waiting = null;
+	return {
+		request() {
+			if (waiting !== null) {
+				waiting = null;
+				return "leave";
+			}
+			attempts += 1;
+			waiting = attempts;
+			return attempts;
+		},
+		current: (attempt) => waiting === attempt,
+		reset() {
+			waiting = null;
+		}
+	};
+}
 // src/client/ProjectModels.tsx
 const DEFAULT = "default";
 const key = (provider, model) => `${provider}\u0000${model}`;
@@ -2203,21 +2223,19 @@ function ProjectSettings({ project, open, onClose, t }) {
 	const [memory, setMemory] = (0, react.useState)("");
 	const [picking, setPicking] = (0, react.useState)(false);
 	const [error, setError] = (0, react.useState)(null);
-	/** Counts openings, so an answer that arrives for an earlier one is recognised and dropped. */
-	const opening = (0, react.useRef)(0);
-	/** The opening whose close is waiting on (or was refused by) a save; null when none is. */
-	const leaving = (0, react.useRef)(null);
+	/** Decides which close attempt's save may still close the dialog (closeGate.ts). */
+	const [gate] = (0, react.useState)(createCloseGate);
 	(0, react.useEffect)(() => {
-		leaving.current = null;
+		gate.reset();
 	}, [
+		gate,
 		title,
 		goal,
 		memory
 	]);
 	(0, react.useEffect)(() => {
 		if (!open || project === null) return;
-		opening.current += 1;
-		leaving.current = null;
+		gate.reset();
 		setTitle(project.title);
 		setGoal(project.goal);
 		setMemory(project.instructions);
@@ -2242,21 +2260,19 @@ function ProjectSettings({ project, open, onClose, t }) {
 		}
 	};
 	const close = () => {
-		if (leaving.current !== null) {
-			leaving.current = null;
+		const attempt = gate.request();
+		if (attempt === "leave") {
 			onClose();
 			return;
 		}
-		const mine = opening.current;
-		leaving.current = mine;
 		save({
 			title: title.trim().length > 0 ? title : project.title,
 			goal,
 			instructions: memory
 		}).then((saved) => {
-			if (leaving.current !== mine || opening.current !== mine) return;
+			if (!gate.current(attempt)) return;
 			if (saved) {
-				leaving.current = null;
+				gate.reset();
 				onClose();
 			} else setError((current) => current === null ? null : `${current} ${t("settings.closeAgain")}`);
 		});

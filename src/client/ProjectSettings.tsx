@@ -2,8 +2,9 @@
 // Text fields save when they lose focus and when the dialog closes; the icon and the models save
 // at once.
 import { IconSettingsOutlineRegular, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
-import { type ReactNode, useEffect, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useState } from 'react'
 import { callHost, refreshProjects, type ProjectView } from './api.ts'
+import { createCloseGate } from './closeGate.ts'
 import { PROJECT_ICON_IDS, ProjectIcon } from './icons.tsx'
 import type { MessageKey, Translate } from './locale.ts'
 import { ModelSettings, UsageSection } from './ProjectModels.tsx'
@@ -35,18 +36,16 @@ export function ProjectSettings({ project, open, onClose, t }: {
   const [picking, setPicking] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  /** Counts openings, so an answer that arrives for an earlier one is recognised and dropped. */
-  const opening = useRef(0)
-  /** The opening whose close is waiting on (or was refused by) a save; null when none is. */
-  const leaving = useRef<number | null>(null)
+  /** Decides which close attempt's save may still close the dialog (closeGate.ts). */
+  const [gate] = useState(createCloseGate)
 
-  // An edit after a refused close starts over: the next close tries to save again.
-  useEffect(() => { leaving.current = null }, [title, goal, memory])
+  // An edit starts over: a close that is waiting on its save no longer decides anything, and the
+  // next close tries to save again.
+  useEffect(() => { gate.reset() }, [gate, title, goal, memory])
 
   useEffect(() => {
     if (!open || project === null) return
-    opening.current += 1
-    leaving.current = null
+    gate.reset()
     setTitle(project.title)
     setGoal(project.goal)
     setMemory(project.instructions)
@@ -77,18 +76,16 @@ export function ProjectSettings({ project, open, onClose, t }: {
   // rather than disappearing with the unsaved edits. But a save must never trap the dialog: asking
   // to close a second time (while that save is still out, or after it failed) leaves at once.
   const close = () => {
-    if (leaving.current !== null) {
-      leaving.current = null
+    const attempt = gate.request()
+    if (attempt === 'leave') {
       onClose()
       return
     }
-    const mine = opening.current
-    leaving.current = mine
     void save({ title: title.trim().length > 0 ? title : project.title, goal, instructions: memory }).then((saved) => {
-      // Dismissed, edited or reopened meanwhile: this answer no longer decides anything.
-      if (leaving.current !== mine || opening.current !== mine) return
+      // Dismissed, edited, reopened or asked again meanwhile: this answer no longer decides anything.
+      if (!gate.current(attempt)) return
       if (saved) {
-        leaving.current = null
+        gate.reset()
         onClose()
       } else {
         setError((current) => current === null ? null : `${current} ${t('settings.closeAgain')}`)

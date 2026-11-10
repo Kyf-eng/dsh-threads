@@ -4,7 +4,7 @@
 
 A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) plugin, modelled on Claude's projects and threads. Your project's main conversation acts as a dispatcher: when a task is self-contained, it opens a **thread** (a real session you can click into and keep talking to), and when the thread finishes, a short report comes back to the main conversation.
 
-> Status: stable since 0.1.0; every version is on [Releases](https://github.com/Kyf-eng/dsh-threads/releases). Built against DeepSeek Harness 0.2.1-rc.2 and tested on 0.2.1-rc.2 and 0.2.1-rc.3. See [CHANGELOG.md](CHANGELOG.md) and the design notes in [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md).
+> Status: stable since 0.1.0; every version is on [Releases](https://github.com/Kyf-eng/dsh-threads/releases). Built against DeepSeek Harness 0.2.1-rc.2 and tested on 0.2.1-rc.2, 0.2.1-rc.3 and 0.2.2-rc.1. See [CHANGELOG.md](CHANGELOG.md) and the design notes in [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md).
 
 ![One message: the main conversation opens three threads that work at the same time](https://raw.githubusercontent.com/Kyf-eng/dsh-threads/main/docs/media/demo.gif)
 
@@ -26,7 +26,7 @@ A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) plugin, mo
 
 ## Install
 
-Requires DeepSeek Harness **0.2.x** (Desktop or Web; tested on 0.2.1-rc.2 and 0.2.1-rc.3) and its `dsh` command line. On Desktop it is set up from the app menu (**Manage dsh command…**). Without it, the command line from npm at your DeepSeek Harness version works too, for example `npx -y @deepseek-ai/dsh@0.2.1-rc.2 plugin --profile web add @kyf-eng/dsh-threads`.
+Requires DeepSeek Harness **0.2.x** (Desktop or Web; tested on 0.2.1-rc.2, 0.2.1-rc.3 and 0.2.2-rc.1) and its `dsh` command line. On Desktop it is set up from the app menu (**Manage dsh command…**). Without it, the command line from npm at your DeepSeek Harness version works too, for example `npx -y @deepseek-ai/dsh@0.2.1-rc.2 plugin --profile web add @kyf-eng/dsh-threads`.
 
 1. Quit DeepSeek Harness completely (⌘Q on macOS; also quit from its menu-bar or tray icon if it has one).
 2. Add the plugin to your profile:

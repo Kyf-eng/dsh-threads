@@ -903,6 +903,33 @@ v0.1.0 阶段 1 合并后，在 test1 跑完整流程时，主对话没让合并
 - **DSH 或环境**：终端命令仍报 `SetNamedSecurityInfoW failed (Win32 5): grantWrite(...)`，讨论串提交要靠一次性提权。playground 文件夹上有 Low 完整性标签、`Everyone` 拒绝删除子项、一个 `S-1-4-…` 的写权限条目，父目录没有，说明是某个沙箱后加的。这些是 DSH Windows 沙箱的事，不是插件的。
 - **#42、#43 在 macOS 上实测**（2026-10-25）：新建项目 card-test，第一条就发 `/thread`，界面马上离开欢迎页，命令行下面出现 #1 的卡片（运行中，做完变成已完成），回报卡片和主对话的回复接在后面。同一个对话里，仓库装着必定失败的 pre-commit hook：用户说“这一次我同意你用 `--no-verify` 跳过它”，主对话只提交了那一个文件；接着再要一次提交、只说“提交不了你看着办”，它没有跳过，说明“上一次的 `--no-verify` 是你明确限定了这一次的”，并给出三个选择。
 
+#### DSH 0.2.2-rc.1 上的冒烟测试（2026-11-10，分支 `chore/dsh-0.2.2-rc.1`）
+
+本机桌面版已经是 0.2.2-rc.1（cordis 4.1.0、schemastery 3.19.0）。按 §七 的清单走了一遍，三个环境：全新的隔离原版 `dsh web`（`npx @deepseek-ai/dsh@0.2.2-rc.1`，装打出来的 `.tgz`，没有模型登录）、本机桌面版（有模型，宿主被 dsh-purge 改过）、两个版本的源码对照（npx 缓存里的原版包）。
+
+- **第 1 项**：开发依赖换成 0.2.2-rc.1 后类型检查、测试、构建都过，`dist/` 一字不差。
+- **安装和兼容性判断**：`engines.dsh` 的 `>=0.2.1-rc.2 <0.3.0` 能匹配 0.2.2-rc.1（宿主用 `semver.satisfies(…, { includePrerelease: true })`，写了 `engines.dsh` 就不看 peer）。pnpm 只装插件本身，所有 peer 都报“missing”，和 0.2.1 一样；宿主按**名字**把 peer 解析到自己的那份，不比较范围（`dsh-app-boot` 的 `profile-resolution-bootstrap.js` 两个版本只差注释）。所以 `cordis ~4.0.5`、`schemastery ~3.18.5` 对不上新版也不会出事；这次还是把这两个范围放宽成 `>=4.0.5 <5`、`>=3.18.5 <4`，免得声明和实际不符。
+- **隔离原版（第 2、3、4、5、7、10、11 项）**：插件页有“讨论串”，左侧有“项目”入口和分组，控制台没有报错；新建项目后工作区列表里看不到它；第一条 `/thread` 马上离开欢迎页，出卡片、侧栏 ↳1、回报卡片，主对话被唤醒（讨论串和主对话都停在“缺少 API Key”，这是没登录）；`/thread -w` 建出 worktree 和分支，`/thread cleanup confirm` 删掉；归档、取消归档讨论串和项目；切到 English 后 `/thread stop 99` 的回复跟着换；700px 宽时项目页一列、菜单里直接列通知档位、项目设置能滚动、新建项目对话框不超出窗口。系统文件夹选择器没点（会在这台 Mac 上弹系统对话框），项目是用 `projects.create` 建的。
+- **审批沿用（第 9 项）做了一半**：隔离原版里把主对话改成“只读”，新开的讨论串输入框显示的也是“只读”（默认是“工作区内修改”），说明 `permissionPresets.current()` / `set()` 还管用。“讨论串写文件时弹审批、不自动通过”没法测：隔离环境没有模型，桌面版的审批被 dsh-purge 改成永远允许。要补这一步，得在隔离环境里登录模型。
+- **桌面版（第 3、4、5、6、8 项，有模型）**：新建项目（用“最近的文件夹”）；第一条 `/thread` 开出 #1，回报后主对话醒来复核；`/thread -w … 提交到你的分支` 的讨论串在自己的分支提交，回报带分支和文件，主对话核对后问要不要合并，没有自己合；`/thread cleanup confirm` 删掉 worktree、保留没合并的分支；`sleep 60` 的讨论串分别用面板头“停止”和输入框里 DSH 自带的停止按钮停，都显示“已停止”，没有“提醒回报”，主对话没被叫醒；项目设置里把协调器模型和讨论串模型换成 V4-Pro，主对话输入框跟着变，`cordis.patch.yml` 里的全局默认模型还是原来的。
+- **第 12 项（dsh-web-mobile）没测**：没有在这台机器上装第三方插件。0.2.2 自己在 768px 以下有了抽屉（frame 上多了 `data-sidebar-drawer`，`layout.selectPanel` 会顺手收起它），点项目行时宿主已经把抽屉收了。担心 `closePhoneDrawer` 再 `toggleSidebar()` 一次会把它又打开，就在隔离原版里给 frame 手动加上 `data-mobile-nav="frame"` 模拟：抽屉照常收起，没有被重新打开。真装了 dsh-web-mobile 的情况仍然没有实测。
+
+源码对照（§七 第一张表逐行，加上 `defineTool`、`userQuestions.ask`、`defineDomain`、命令事件、插槽目录）：没有哪一项被删掉或改名。变了但不影响我们的：
+
+- 侧栏的内边距从 12px 改成 8px，差的 4px 挪进了行里（`--dsh-sidebar-row-padding:12px`、`--dsh-sidebar-label-gap:6px`）。“项目”分组的标题、图标、标题文字因此比宿主的工作区列表靠左 3–7px，“+” 靠右 5px。**已修**：`src/client/styles.ts` 里这几处改成按宿主的变量算，0.2.1 的值做回退；在 0.2.2-rc.1 上量过和工作区列表对齐（标题 19px、图标 20–36px、文字 42px），在 0.2.1-rc.2 上量过和原来一样（16px、20–36px、40px）。
+- 导航区多了面板的“取消固定”机制（只在内存里，原版没有入口）和一行“更多”；`nav.after()` 的位置不变。
+- `selectModel` 现在按原样保存请求的选择（原来保存解析后的配置），仍然是先存默认再返回，`saveSelection` 仍然排队，`host.applyModel` 的“记下默认、再改回去”照常工作（上面实测过）。
+- `pinInitialPermission` 从 `session/created` 改成 `agent/created` 触发；我们是在 `resolveAgent` 之后才 `set()`，顺序没变。
+- `sidebar.workspaces.session.menu.item` 成了“旧式”菜单插槽：我们的“设为项目”还在会话菜单里，位置从“置顶和重命名之间”变成“归档之前的一组”。
+- `dsh-tools` 拆成了 `index.js` 和 `pipeline.js`，`defineTool`、`tools.register`、`exec.agent/callId/signal` 都没变；`conversation.chat.node` 的 `fileMentions` 没了，我们没用。
+
+这一轮顺带看到、没在这里改的：
+
+- **停掉的讨论串可能被 DSH 自己叫醒**（0.2.1 也有，不是这次升级带来的）：#4 把 `sleep` 放进了后台任务，用 DSH 的停止按钮停掉后，后台命令照常跑完，DSH 给会话发“后台任务状态更新”又开了一轮，讨论串汇报了 `done`。主对话没被叫醒。停止时要不要连后台任务一起处理，或者停止后的回报怎么标，留到以后。
+- 右侧栏标签的标题是打开时存下来的字符串，切换界面语言后旧标签还是原来的语言。
+- 英文界面的项目卡片写的是“1 threads”。
+- 0.2.2 的 `dsh` 包声明了 `engines.node >=24.9.0`；跑隔离的 `npx @deepseek-ai/dsh@0.2.2-rc.1` 需要 Node 24.9 以上。
+
 ## 六、验证
 
 1. 本地自动检查：`npm run typecheck && npm test && npm run build`，全部通过；`dist/` 里的 `client.js` 以 `window.__ModuleLoader__.load(` 开头。
@@ -929,17 +956,17 @@ v0.1.0 阶段 1 合并后，在 test1 跑完整流程时，主对话没让合并
 
 ## 七、依赖的 DSH 内部行为和升级冒烟清单
 
-下面这些不是 DSH 公开承诺的接口，是读 0.2.1-rc.2 源码或实测得出的。DSH 升级后最先坏的就是它们，每次换 DSH 版本都按第二张表走一遍。
+下面这些不是 DSH 公开承诺的接口，是读 0.2.1-rc.2 源码或实测得出的；0.2.2-rc.1 逐行对照过源码，仍然成立（见“DSH 0.2.2-rc.1 上的冒烟测试”）。DSH 升级后最先坏的就是它们，每次换 DSH 版本都按第二张表走一遍。
 
 | 依赖 | 用在哪里 | 坏了会怎样 |
 | --- | --- | --- |
 | 侧栏会话行的 `data-row-key="session:<id>"`、`workspace:<id>`、`overflow:<id>` | `src/client/kinds.ts` 生成 CSS 隐藏讨论串、项目主对话和只剩项目会话的工作区 | 讨论串和主对话重新出现在“工作区”列表里 |
-| 侧栏结构：`sidebar.panellist` 所在的 `<nav>` 后面能插元素；导航图标 16px 表示展开 | `src/client/SidebarProjects.tsx` 用 portal 插“项目”分组 | “项目”分组不显示，或者窄侧栏时位置不对 |
+| 侧栏结构：`sidebar.panellist` 所在的 `<nav>` 后面能插元素；导航图标 16px 表示展开；侧栏的间距变量 `--dsh-sidebar-inline-padding`（0.2.1 是 12px，0.2.2 是 8px）、`--dsh-sidebar-row-padding`、`--dsh-sidebar-label-gap`（0.2.2 才有） | `src/client/SidebarProjects.tsx` 用 portal 插“项目”分组；`src/client/styles.ts` 按这些变量对齐标题、图标和“+” | “项目”分组不显示，或者窄侧栏时位置不对；间距再变的话，分组和工作区列表差几个像素 |
 | `retainedBy.mainView > 0` 的会话就是当前会话 | 侧栏项目行的高亮 | 高亮错行 |
 | `globalThis.__DSH_DIRECTORY_PICKER__.pick()`（桌面版）；`uiWorkspace.pickDirectory()` 在 browse 模式抛 `directory-picker/unavailable`，Web 版 0.2.1-rc.5 抛的是普通 Error（`… needs the native capability …`，没有错误码） | 新建项目选文件夹；`src/client/picker.ts` 只认这两种写法 | 弹不出系统文件夹选择器，退回手填路径；DSH 换了说法的话，Web 上会显示成报错而不是退回手填 |
 | **第三方插件 dsh-web-mobile（手机布局，按 3.2.1 实测）**：它给宿主的 frame 元素加 `data-mobile-nav="frame"`；在主面板左上角浮一个返回键（10,12，38×38，粗指针下到 1023px 宽）；点宿主自己的会话行才收起抽屉；把 `[aria-modal="true"]:has(> :first-child > :last-child > button)` 当成它的设置面板改成横排；提供 `--dsh-web-mobile-vh` | `src/client/styles.ts` 只在有这个标记时给项目页留 58px 顶部空间；`closePhoneDrawer`（`src/client/index.tsx`）点项目行后用 `layout.toggleSidebar()` 收起抽屉；新建项目对话框把表单包在 `.dsht-np-body` 里躲开那个选择器 | 手机上项目页标题被返回键盖住；点项目行后抽屉不收；新建项目对话框被横过来。桌面版和没装这个插件的环境不受影响 |
 | `sessionController.selectModel` 顺带把选择存成新会话默认模型；`agentDefaultModel.saveSelection` 按提交顺序执行 | `host.applyModel` 先记下默认、再改回去 | 换项目模型会改掉用户的全局默认模型 |
-| `permissionPresets.current()` 对不上任何模式时返回 `custom`；`set()` 只接受真实模式名；新会话由 `pinInitialPermission` 钉成用户默认模式 | 讨论串沿用主对话的审批模式 | 讨论串开不出来，或者用了更宽的默认模式 |
+| `permissionPresets.current()` 对不上任何模式时返回 `custom`；`set()` 只接受真实模式名；新会话由 `pinInitialPermission` 钉成用户默认模式（0.2.1 在 `session/created`，0.2.2 在 `agent/created`，都早于我们的 `set()`） | 讨论串沿用主对话的审批模式 | 讨论串开不出来，或者用了更宽的默认模式 |
 | 用户停止的一轮以 `turn/end`、`reason: { kind: 'aborted', reason: { kind: 'user' } }` 结束 | `host.stoppedByUser`：停掉的一轮不提醒 | 停掉的讨论串又被“提醒回报”叫醒 |
 | `agent.cancel({ kind: 'user' })` 不带 `keepInbox` 会丢掉排队的输入 | “停止”按钮和 `/thread stop` | 停止后讨论串接着跑排队的追加指令 |
 | `agent.session.snapshotEvents(seq)` 加 `finalAssistantOutput`（`dsh-subagent`） | 没回报时用最后一条回复兜底；通知正文 | 兜底和通知正文变空 |
@@ -949,7 +976,7 @@ v0.1.0 阶段 1 合并后，在 test1 跑完整流程时，主对话没让合并
 | `workspaceRegistry.archiveSession(id, { stopActivity: false })` 在会话运行时抛错；归档的会话从侧栏消失、不能运行 | 归档项目、归档讨论串 | 归档时把运行中的讨论串一起停掉，或者归档失败 |
 | `sessionController.projections({ sessionId })` 的 `values.tokenUsage`（会话没加载也能读） | 项目设置里的“使用情况” | 用量全是 0 |
 | `connection.fetch.register` 只放行 owner principal；桌面版 `dsh-app://app/*` 带 cookie 转发 | 浏览器 ↔ 宿主的唯一通道 `POST /api/dsh-threads` | 整个界面拿不到数据 |
-| 插槽名和作用域（`CLIENT_SLOT_API`）：`sidebar.panellist`、`main`、`shell.overlay`、`sidebar.right.pane.tab`、`conversation.session.header.actions`、`conversation.chat.node`、`conversation.chat.turnTail`、`conversation.input.dock`、`conversation.composer`、`sidebar.workspaces.session.menu.item`、`sidebar.session.row.leading` | 浏览器端所有入口 | 对应的入口不显示 |
+| 插槽名和作用域（`CLIENT_SLOT_API`）：`sidebar.panellist`、`main`、`shell.overlay`、`sidebar.right.pane.tab`、`conversation.session.header.actions`、`conversation.chat.node`、`conversation.chat.turnTail`、`conversation.input.dock`、`conversation.composer`、`sidebar.workspaces.session.menu.item`（0.2.2 起是“旧式”菜单插槽，排在归档之前） | 浏览器端所有入口 | 对应的入口不显示 |
 
 **升级冒烟清单**（新 DSH 版本，先在隔离环境 `DSH_HOME=~/dsh-clean`，再在桌面版）：
 
@@ -967,3 +994,4 @@ v0.1.0 阶段 1 合并后，在 test1 跑完整流程时，主对话没让合并
 | 10 | 切换 DSH 的界面语言 | `/thread stop 99` 的回复跟着换语言 |
 | 11 | 把窗口缩到 767px 以下（没装 dsh-web-mobile）：项目页、新建项目、项目设置、项目菜单 | 一列卡片，对话框不超出窗口、内容能滚动，通知档位直接列在菜单里；项目页顶部没有多出的空白 |
 | 12 | 装了 dsh-web-mobile 的 Web 版，用手机宽度（或浏览器的触屏模拟）：项目页、从抽屉点项目行、新建项目（“选择文件夹…”） | 标题不被返回键盖住；抽屉收起；对话框是居中的卡片，选文件夹退回手填路径并有说明 |
+| 13 | 展开的侧栏里看“项目”分组和下面的“工作区”列表 | 分组标题、行图标、行文字、右边的“+”和工作区列表各自对齐 |

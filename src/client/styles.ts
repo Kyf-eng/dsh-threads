@@ -256,10 +256,14 @@ body,[class*="dsht-"]{
 .dsht-row-icon{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;color:var(--dsw-alias-label-tertiary)}
 
 /* Sidebar "Projects" section (SidebarProjects.tsx), measured against DSH's own workspace list:
-   36px section header in tertiary 14px text, 32px rows with a 16px leading cell. */
+   36px section header in tertiary 14px text, 32px rows with a 16px leading cell.
+   DSH 0.2.2 narrowed the sidebar's inline padding from 12px to 8px and moved the difference into
+   its rows (--dsh-sidebar-row-padding 12px, --dsh-sidebar-label-gap 6px). The calc()s below follow
+   the host's variables, with the 0.2.1 values as fallbacks, so the icons, titles and the "+" line up
+   with the workspace list on both. */
 .dsht-panel-icon{display:inline-flex}
 .dsht-side{flex:none;display:flex;flex-direction:column;min-height:0;max-height:42%;margin-bottom:4px}
-.dsht-side-head{box-sizing:border-box;flex:none;display:flex;align-items:center;gap:4px;height:36px;margin:2px -4px 4px 0;padding-left:4px;color:var(--dsw-alias-label-tertiary)}
+.dsht-side-head{box-sizing:border-box;flex:none;display:flex;align-items:center;gap:4px;height:36px;margin:2px calc(8px - var(--dsh-sidebar-inline-padding,12px)) 4px 0;padding-left:calc(var(--dsh-sidebar-row-padding,5px) - 1px);color:var(--dsw-alias-label-tertiary)}
 .dsht-side-label{flex:1;min-width:0;display:inline-flex;align-items:center;gap:4px;height:28px;padding:0;border:0;background:none;color:inherit;font:inherit;font-size:14px;line-height:20px;text-align:left;cursor:pointer}
 .dsht-side-label svg{flex:none;opacity:0;transition:opacity .12s var(--dsht-ease),transform .15s var(--dsht-ease)}
 .dsht-side-head:hover .dsht-side-label svg,.dsht-side-label:focus-visible svg,.dsht-side-label svg.dsht-rotate{opacity:1}
@@ -267,17 +271,17 @@ body,[class*="dsht-"]{
 .dsht-side-icon{flex:none;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0;border:0;border-radius:var(--dsw-radius-sm,6px);background:none;color:var(--dsw-alias-label-secondary);cursor:pointer}
 .dsht-side-icon:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dsht-side-list{display:flex;flex-direction:column;min-height:0;overflow-y:auto}
-.dsht-side-row{box-sizing:border-box;flex:none;display:flex;align-items:center;height:32px;padding:0 8px;border-radius:var(--dsw-radius-md,10px);color:var(--dsw-alias-label-primary);cursor:pointer;user-select:none}
+.dsht-side-row{box-sizing:border-box;flex:none;display:flex;align-items:center;height:32px;padding:0 calc(20px - var(--dsh-sidebar-inline-padding,12px));border-radius:var(--dsw-radius-md,10px);color:var(--dsw-alias-label-primary);cursor:pointer;user-select:none}
 .dsht-side-row:hover,.dsht-side-row.is-selected,.dsht-side-row.is-menu-open{background:var(--dsw-alias-interactive-bg-hover)}
 .dsht-side-row:focus-visible{outline:2px solid var(--dsht-ring);outline-offset:-2px}
 .dsht-side-slot{flex:none;display:inline-flex;align-items:center;justify-content:center;width:16px;height:20px;color:var(--dsw-alias-label-tertiary)}
-.dsht-side-title{flex:1;min-width:0;margin:0 6px 0 4px;font-size:14px;line-height:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dsht-side-title{flex:1;min-width:0;margin:0 6px 0 var(--dsh-sidebar-label-gap,4px);font-size:14px;line-height:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dsht-side-meta{flex:none;display:inline-flex;align-items:center;gap:6px;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:16px;font-variant-numeric:tabular-nums}
 .dsht-side-actions{flex:none;display:none;margin-right:-4px}
 .dsht-side-actions .dsht-icon-button{width:24px;height:24px;border-radius:6px}
 .dsht-side-row:hover .dsht-side-meta,.dsht-side-row.is-menu-open .dsht-side-meta{display:none}
 .dsht-side-row:hover .dsht-side-actions,.dsht-side-row.is-menu-open .dsht-side-actions{display:inline-flex}
-.dsht-side-more{box-sizing:border-box;flex:none;display:flex;align-items:center;height:32px;padding:0 8px 0 28px;border:0;border-radius:var(--dsw-radius-md,10px);background:none;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:13px;text-align:left;cursor:pointer}
+.dsht-side-more{box-sizing:border-box;flex:none;display:flex;align-items:center;height:32px;padding:0 8px 0 calc(36px - var(--dsh-sidebar-inline-padding,12px) + var(--dsh-sidebar-label-gap,4px));border:0;border-radius:var(--dsw-radius-md,10px);background:none;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:13px;text-align:left;cursor:pointer}
 .dsht-side-more:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary)}
 
 /* Project settings */

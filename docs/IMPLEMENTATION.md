@@ -904,6 +904,15 @@ v0.1.0 阶段 1 合并后，在 test1 跑完整流程时，主对话没让合并
 - **DSH 或环境**：终端命令仍报 `SetNamedSecurityInfoW failed (Win32 5): grantWrite(...)`，讨论串提交要靠一次性提权。playground 文件夹上有 Low 完整性标签、`Everyone` 拒绝删除子项、一个 `S-1-4-…` 的写权限条目，父目录没有，说明是某个沙箱后加的。这些是 DSH Windows 沙箱的事，不是插件的。
 - **#42、#43 在 macOS 上实测**（2026-10-25）：新建项目 card-test，第一条就发 `/thread`，界面马上离开欢迎页，命令行下面出现 #1 的卡片（运行中，做完变成已完成），回报卡片和主对话的回复接在后面。同一个对话里，仓库装着必定失败的 pre-commit hook：用户说“这一次我同意你用 `--no-verify` 跳过它”，主对话只提交了那一个文件；接着再要一次提交、只说“提交不了你看着办”，它没有跳过，说明“上一次的 `--no-verify` 是你明确限定了这一次的”，并给出三个选择。
 
+#### `offerApproval`：`offer` 可以不弹确认卡（2026-11-10，分支 `feat/offer-approval`，issue #51）
+
+用户 fallout6099 提的：主对话像组长一样自己判断哪些活该开讨论串，但只要用户没明说“开讨论串”，`initiation: 'offer'` 就一定弹“开讨论串 / 在主对话里做 / 先不做”的卡片并等着；一条消息里有几个任务，就要点几次。
+
+- 配置项 `offerApproval: 'ask' | 'open'`，默认 `ask`（和以前一样）。`open` 时 `thread_open` 收到 `offer` 不再调 `userQuestions.ask`，直接走 `manager.open`，和 `user_asked` 一样；存下来的 `initiation` 还是 `offer`，卡片和历史的含义不变。没有 `userQuestions` 服务的宿主在 `open` 下也能开。
+- 提示词跟着配置走：`dispatcherPrompt(maxRunning, offerApproval)` 里 `offer` 那一条，`ask` 是原文（“The user is asked to choose first; respect the answer.”），`open` 换成“直接开，并在回复里说清开了哪些、为什么，方便用户停掉不想要的”；`thread_open` 的 `initiation` 参数说明也分两种。模型自己想到的活仍然走 `thread_propose`，两种模式都一样。
+- 默认没改成 `open`：确认卡是“用户没要求另开”时征得同意的那一步（照 Claude 的 `offer`），补丁版本里悄悄去掉不合适；提 issue 的人也说保留 `ask` 为默认可以，他要的是能关掉。
+- 测试：`tests/tools.test.ts`（`open` 不问就开、记录仍是 `offer`、没有 `userQuestions` 也能开；参数说明两种写法；默认值和非法值），`tests/prompts.test.ts`（`ask` 和不传完全相同，`open` 换了那一句、`thread_propose` 那条还在）。
+- **实测**（桌面版 0.2.2-rc.1，`cordis.patch.yml` 里临时加 `offerApproval: open`，在插件页把“讨论串”关掉再打开让它就地重载）：在 smoke-022 的主对话里发“帮我做两件事：整理一份文档；审查一个文件（只读）”，没提“讨论串”。主对话没有弹卡片，直接用 `offer` 开了 #5（带 worktree），回复里说明了开了什么；第二件事点名的文件在这个旧 clone 里不存在，它没有硬开，而是列了三个替代目标让用户选。讨论串还在跑的时候回“选 1，另外告诉我版本号”，它又用 `offer` 开了 #6（只读），没弹卡片。存储里两条记录的 `initiation` 都是 `offer`。
 #### DSH 0.2.2-rc.1 上的冒烟测试（2026-11-10，分支 `chore/dsh-0.2.2-rc.1`）
 
 本机桌面版已经是 0.2.2-rc.1（cordis 4.1.0、schemastery 3.19.0）。按 §七 的清单走了一遍，三个环境：全新的隔离原版 `dsh web`（`npx @deepseek-ai/dsh@0.2.2-rc.1`，装打出来的 `.tgz`，没有模型登录）、本机桌面版（有模型，宿主被 dsh-purge 改过）、两个版本的源码对照（npx 缓存里的原版包）。
@@ -942,7 +951,7 @@ v0.1.0 阶段 1 合并后，在 test1 跑完整流程时，主对话没让合并
    - 对主对话说："开个讨论串：列出 src 下的文件并各用一句话总结"。
    - 侧栏出现新会话，标签页里显示 running。
    - 结束后主会话出现一条 notice 并自动继续，摘要不超过 400 字。
-4. `offer` 路径：只说任务、不提"讨论串"。如果模型选了 `offer`，会弹出三个选项；选"在主对话做"，不应该新建会话。
+4. `offer` 路径：只说任务、不提"讨论串"。如果模型选了 `offer`，会弹出三个选项；选"在主对话做"，不应该新建会话。把 `offerApproval` 设成 `open` 再试一次：不弹选项，直接开，记录里的 `initiation` 仍是 `offer`。
 5. 点击标签页里的条目能跳到讨论串；在讨论串里直接发一条消息，主会话不应该被唤醒。
 6. 防循环：把 `maxAutoWakes` 设为 2，连续派 3 个短任务，第 3 条只进上下文、不唤醒。
 7. 重启 DSH：讨论串列表还在，对旧讨论串 `thread_reply` 成功。

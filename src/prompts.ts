@@ -2,6 +2,7 @@
 // (docs/IMPLEMENTATION.md §一). Model-facing, so written in English; models answer
 // in the user's language regardless.
 import type { OfferApproval } from './config.ts'
+import { mountedFolders } from './projects.ts'
 import { worktreeFolder } from './worktree.ts'
 
 /** After the built-in subagent section (2800), before the deployment persona suffix (10200). */
@@ -104,11 +105,17 @@ export function stoppedReminder(): string {
  * the coordinator works towards, as in Claude's project settings) goes to the main conversation only.
  */
 export function projectPrompt(
-  project: { title: string; folder: string; instructions: string; goal: string } | undefined,
+  project: { title: string; folder: string; instructions: string; goal: string; extraFolders?: string[] } | undefined,
   options: { goal: boolean },
 ): string {
   if (project === undefined) return ''
   const lines = [`# Project: ${project.title}`, `Folder: ${project.folder}`]
+  const mounts = mountedFolders({ folder: project.folder, extraFolders: project.extraFolders ?? [] })
+  if (mounts.length > 0) {
+    lines.push('', 'Folders the user mounted alongside the project folder (they are outside it; the file sandbox allows reads and writes there):')
+    for (const mount of mounts) lines.push(`- ${JSON.stringify(mount)}`)
+    lines.push('Use their absolute paths; a relative path still means the project folder.')
+  }
   if (options.goal && project.goal.length > 0) lines.push('', 'Goal set by the user for this project (what your coordination should achieve):', project.goal)
   if (project.instructions.length > 0) lines.push('', 'Project instructions from the user:', project.instructions)
   return lines.join('\n')

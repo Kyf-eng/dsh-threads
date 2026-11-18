@@ -17,6 +17,16 @@ describe('projectPrompt', () => {
   it('leaves out an empty goal', () => {
     expect(projectPrompt({ ...project, goal: '' }, { goal: true })).not.toContain('Goal')
   })
+
+  // The model has to know a mounted folder exists before it can use it.
+  it('lists the folders mounted alongside the project folder', () => {
+    const prompt = projectPrompt({ ...project, extraFolders: ['/data/refs', '/code/vetoarc'] }, { goal: false })
+    expect(prompt).toContain('Folders the user mounted alongside the project folder')
+    expect(prompt).toContain('- "/data/refs"')
+    // The project folder itself is not a mount, however a record was written.
+    expect(prompt).not.toContain('- "/code/vetoarc"')
+    expect(projectPrompt(project, { goal: false })).not.toContain('mounted alongside')
+  })
 })
 
 describe('threadPrompt', () => {

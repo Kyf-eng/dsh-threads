@@ -153,6 +153,11 @@ docs/Plan.md 定了方向：在 DeepSeek Harness（DSH）里做一个插件—�
   - **没有删除接口**，未提交的文件不会带过去。
   - **桌面版默认没装**：它来自 `@deepseek-ai/dsh-experimental-tool-worktree` 这个 bundle，desktop profile 的 bundles 里没有它。所以 M3b 不用它，自己跑 git。
   - 切工作目录用 `ctx.workingDirectory.set(agent, path)`（`dsh-working-directory`）：会记一条 `working-directory/change` 事件，并给会话塞一条"工作目录变了"的提示。
+- **项目文件夹的切换与辅助文件夹**（M2 之后加的）
+  - **没有"移动工作区"接口**：`ctx.workspaceRegistry` 只有 `create / delete / list / get / insertBefore / archiveSession / pinSession`，而工作区路径是它校验会话归属的 `fs.realpath` 唯一键（`dsh-workspace/src/spec.ts` 的 `workspaceRecord`）。
+  - 改路径只能写记录本身：`ctx.storageDomain.get('workspace')`（诊断用查询口，同一域名在一个进程里只能开一个句柄，注册表已经开着）→ `table('workspaces').update(id, rec => ({ ...rec, path }))`。写入是持久的，但注册表**启动时**才把记录读进内存实体，所以：新会话/新线程要等 DSH 重启才用新路径；当前会话用 `workingDirectory.set` 立刻跟过去。界面据此显示"重启后生效"，不假装已经生效。
+  - 这份记录的 zod schema 在**读取时**会丢掉未声明的键，所以别把插件自己的字段塞进工作区记录；辅助文件夹列表存在 `dsh_threads` 的项目记录里（`extraFolders`，带默认值），工作区记录里不存。
+  - 辅助文件夹要真能用：模型侧由 `projectPrompt` 列出；文件沙箱侧用 `ctx.sandboxPolicy.registerWritableRoot(session, directory)` 给这个会话加一个写授根（进 `resolve()` 的 `additionalWritableRoots`，文件工具和沙箱执行器读同一份策略）。注意：授权是运行时、按会话的，重启/恢复后要重新注册（`installPerAgent` 在每次 install 时重注册）；`read-only` 模式下不授予任何写权限；Windows 上进程隔离不认这些额外根目录，只有 harness 的文件工具认。
 
 **为什么不用官方子代理（`ctx.subagents.startActivation`）**
 - 它的好处：白送"标题栏子代理树"和自动回报。

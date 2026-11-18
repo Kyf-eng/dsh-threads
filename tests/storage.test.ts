@@ -42,7 +42,18 @@ describe('stored records from earlier versions', () => {
     }
     expect(table('projects').parse(m2a)).toEqual({
       ...m2a, icon: 'folder', goal: '', archived: false, notify: 'attention', mainModel: null, threadModel: null,
+      // Mounted folders arrived later: a project that never used them mounts none.
+      extraFolders: [],
     })
+  })
+
+  it('keeps the folders a project mounts', () => {
+    const project = {
+      id: 'project-1', title: 'P', workspaceId: 'ws', folder: '/code/p', mainSessionId: 'session-main',
+      pinned: false, instructions: '', icon: 'folder', goal: '', archived: false, notify: 'attention',
+      mainModel: null, threadModel: null, extraFolders: ['/data/refs'], createdAt: '', updatedAt: '',
+    }
+    expect(table('projects').parse(project)).toEqual(project)
   })
 
   it('reads an M2c proposal with today\'s defaults', () => {

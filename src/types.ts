@@ -133,6 +133,12 @@ export interface ProjectRecord {
   workspaceId: string
   /** The workspace folder, kept for display. */
   folder: string
+  /**
+   * Folders mounted alongside the project folder: absolute, canonical, deduplicated, and never the
+   * project folder itself. The model is told they exist and the file sandbox accepts reads and
+   * writes there (src/install.ts, src/prompts.ts).
+   */
+  extraFolders: string[]
   mainSessionId: string
   pinned: boolean
   /** Added to the system prompt of the main conversation and its threads ("记忆" in its settings). */

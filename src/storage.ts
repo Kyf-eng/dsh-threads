@@ -82,6 +82,8 @@ const projectSchema = z.object({
   title: z.string(),
   workspaceId: z.string(),
   folder: z.string(),
+  // Added with the folder settings: records from earlier versions read as "no extra folders".
+  extraFolders: z.array(z.string()).default([]),
   mainSessionId: z.string(),
   pinned: z.boolean(),
   instructions: z.string(),

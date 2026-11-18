@@ -52,7 +52,7 @@ export function ProjectsPage({ t, useWorkspaces, useSessionStatus, openSession, 
   const [newOpen, setNewOpen] = useState(false)
   const [creating, setCreating] = useState<{ folder: string | null } | null>(null)
   const [showArchived, setShowArchived] = useState(false)
-  const { actions, dialogs, error: actionError } = useProjectActions({ projects, t, pinSession, afterArchive: showProjects })
+  const { actions, dialogs, error: actionError } = useProjectActions({ projects, t, pinSession, pickFolder, afterArchive: showProjects })
   const workspaces = useWorkspaces((snapshot) => snapshot.items, sameList)
   // Any session starting or stopping may change thread counts: reload then.
   const runningKey = useSessionStatus((statuses) =>

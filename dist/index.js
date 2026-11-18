@@ -4,7 +4,7 @@ import { isAbsolute, join } from "node:path";
 import { CommandDefinitionId } from "@deepseek-ai/dsh-commands/brand";
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import z$1 from "@deepseek-ai/schemastery";
 import { boundContextSummary, createUserMessage } from "@deepseek-ai/dsh-llm";
@@ -94,6 +94,10 @@ const zh = {
 	notInWorkspace: "这个会话不在任何工作区里，没法设为项目。",
 	absoluteFolder: (example) => `文件夹要写完整路径，例如 ${example}。`,
 	badFolder: (reason) => `没法用这个文件夹：${reason}`,
+	emptyFolder: "文件夹不能为空。",
+	folderTaken: (path) => `这个目录已经是另一个工作区的文件夹了：${path}。`,
+	cannotMoveFolder: "这个 DeepSeek Harness 版本不允许插件改工作区记录，没法换文件夹。",
+	tooManyFolders: (max) => `辅助文件夹最多 ${max} 个。`,
 	pickFolder: "请选择项目的文件夹（工作区）。",
 	workspaceNotFound: "找不到这个工作区。",
 	projectNotFound: "找不到这个项目。",
@@ -211,6 +215,10 @@ const en = {
 	notInWorkspace: "This conversation is in no workspace, so it cannot become a project.",
 	absoluteFolder: (example) => `Write the folder's full path, for example ${example}.`,
 	badFolder: (reason) => `This folder cannot be used: ${reason}`,
+	emptyFolder: "The folder is empty.",
+	folderTaken: (path) => `Another workspace already uses this folder: ${path}.`,
+	cannotMoveFolder: "This DeepSeek Harness build does not let a plugin write its workspace records.",
+	tooManyFolders: (max) => `At most ${max} extra folders.`,
 	pickFolder: "Choose the project's folder (workspace).",
 	workspaceNotFound: "Workspace not found.",
 	projectNotFound: "Project not found.",
@@ -336,6 +344,8 @@ const TITLE_MAX$1 = 60;
 const INSTRUCTIONS_MAX = 4e3;
 const GOAL_MAX = 8e3;
 const ICON_MAX = 40;
+/** A project mounts a bounded number of extra folders: the prompt lists them and the settings show them. */
+const MAX_EXTRA_FOLDERS = 20;
 /** A full path in this system's own form, for the "write the full path" hint. */
 const FOLDER_EXAMPLE = process.platform === "win32" ? "C:\\Users\\me\\code\\app" : process.platform === "darwin" ? "/Users/me/code/app" : "/home/me/code/app";
 /** A refusal shown to the user as-is (not a bug). */
@@ -347,6 +357,20 @@ function cleanTitle(title) {
 }
 function cleanInstructions(instructions) {
 	return truncate((instructions ?? "").trim(), INSTRUCTIONS_MAX);
+}
+/**
+* The folders a project mounts, as the prompt and the sandbox see them: the stored list without
+* the project folder itself and without repeats. Stored entries are already canonical; this keeps
+* a hand-edited or older record honest.
+*/
+function mountedFolders(project) {
+	if (project === void 0) return [];
+	const folders = [];
+	for (const folder of project.extraFolders ?? []) {
+		if (folder === project.folder || folders.includes(folder)) continue;
+		folders.push(folder);
+	}
+	return folders;
 }
 const sameModel = (a, b) => a?.provider === b?.provider && a?.model === b?.model && a?.reasoningEffort === b?.reasoningEffort;
 var Projects = class {
@@ -378,11 +402,13 @@ var Projects = class {
 		return store.projects().map((project) => {
 			const threads = store.threadsOf(project.mainSessionId);
 			const lastActivity = threads.reduce((latest, t) => t.updatedAt > latest ? t.updatedAt : latest, project.updatedAt);
+			const workspace = this.deps.host.workspace(project.workspaceId);
 			return {
 				...project,
 				threads: threads.filter((t) => !t.archived).length,
 				running: threads.filter((t) => t.status === "starting" || t.status === "running").length,
-				lastActivity
+				lastActivity,
+				folderPendingRestart: workspace !== void 0 && workspace.path !== project.folder
 			};
 		});
 	}
@@ -420,6 +446,7 @@ var Projects = class {
 			title,
 			workspaceId: workspace.id,
 			folder: workspace.path,
+			extraFolders: [],
 			mainSessionId,
 			pinned: false,
 			instructions: cleanInstructions(input.instructions),
@@ -436,6 +463,25 @@ var Projects = class {
 		this.changed();
 		return project;
 	}
+	/** Canonical, existing, deduplicated mounts; the project folder is never one of them. */
+	async cleanFolders(folders, projectFolder) {
+		if (folders.length > MAX_EXTRA_FOLDERS) throw new ProjectError(msg().tooManyFolders(MAX_EXTRA_FOLDERS));
+		const accepted = [];
+		for (const entry of folders) {
+			const requested = entry.trim();
+			if (requested.length === 0) continue;
+			if (!isAbsolute(requested)) throw new ProjectError(msg().absoluteFolder(FOLDER_EXAMPLE));
+			let canonical;
+			try {
+				canonical = await this.deps.host.checkFolder(requested);
+			} catch (error) {
+				throw new ProjectError(msg().badFolder(error instanceof Error ? error.message : String(error)));
+			}
+			if (canonical === projectFolder || accepted.includes(canonical)) continue;
+			accepted.push(canonical);
+		}
+		return accepted;
+	}
 	require(id) {
 		const project = this.deps.store.project(id);
 		if (project === void 0) throw new ProjectError(msg().projectNotFound);
@@ -448,8 +494,30 @@ var Projects = class {
 		} catch (error) {
 			throw new ProjectError(msg().modelRefused(error instanceof Error ? error.message : String(error)));
 		}
+		let folder = project.folder;
+		if (patch.folder !== void 0) {
+			const requested = patch.folder.trim();
+			if (requested.length === 0) throw new ProjectError(msg().emptyFolder);
+			if (!isAbsolute(requested)) throw new ProjectError(msg().absoluteFolder(FOLDER_EXAMPLE));
+			if (requested !== project.folder) {
+				let canonical;
+				try {
+					canonical = await this.deps.host.checkFolder(requested);
+				} catch (error) {
+					throw new ProjectError(msg().badFolder(error instanceof Error ? error.message : String(error)));
+				}
+				if (canonical !== project.folder) try {
+					folder = await this.deps.host.switchFolder(project.workspaceId, canonical);
+				} catch (error) {
+					throw new ProjectError(error instanceof Error ? error.message : String(error));
+				}
+			}
+		}
+		const extraFolders = patch.extraFolders === void 0 ? void 0 : await this.cleanFolders(patch.extraFolders, folder);
 		const next = {
 			...project,
+			...folder === project.folder ? {} : { folder },
+			...extraFolders === void 0 ? {} : { extraFolders },
 			...patch.title === void 0 ? {} : { title: cleanTitle(patch.title) },
 			...patch.instructions === void 0 ? {} : { instructions: cleanInstructions(patch.instructions) },
 			...patch.icon === void 0 ? {} : { icon: truncate(patch.icon.trim(), ICON_MAX) || "folder" },
@@ -460,6 +528,7 @@ var Projects = class {
 			updatedAt: this.deps.now()
 		};
 		await this.deps.store.putProject(next);
+		if (folder !== project.folder) await this.deps.host.enterFolder(next.mainSessionId, folder);
 		if (patch.title !== void 0 && next.title !== project.title) try {
 			this.deps.host.rename(next.mainSessionId, next.title);
 		} catch {}
@@ -572,6 +641,8 @@ const modelInput = z.object({
 const updateInput = z.object({
 	id: z.string(),
 	title: z.string().optional(),
+	folder: z.string().optional(),
+	extraFolders: z.array(z.string()).optional(),
 	instructions: z.string().optional(),
 	icon: z.string().optional(),
 	goal: z.string().optional(),
@@ -1938,6 +2009,37 @@ function createHost(ctx) {
 				path: workspace.path
 			};
 		},
+		async checkFolder(folder) {
+			const canonical = await realpath(folder);
+			if (!(await stat(canonical)).isDirectory()) throw new Error("not a directory");
+			return canonical;
+		},
+		/**
+		* DSH has no API to move a workspace: its path is the realpath key that session membership is
+		* checked against, so moving one means rewriting the record. The registry keeps its records
+		* in memory for the life of the process, which is also why the switch lands at its next start.
+		*/
+		async switchFolder(workspaceId, folder) {
+			const canonical = await this.checkFolder(folder);
+			const table = ctx.storageDomain.get("workspace")?.table("workspaces");
+			if (table === void 0) throw new Error(msg().cannotMoveFolder);
+			for (const [id, record] of table.entries()) if (id !== workspaceId && record.path === canonical) throw new Error(msg().folderTaken(canonical));
+			await table.update(workspaceId, (record) => ({
+				...record,
+				path: canonical
+			}));
+			return canonical;
+		},
+		async enterFolder(sessionId, folder) {
+			const agent = live(sessionId);
+			const directories = optional(ctx, "workingDirectory");
+			if (agent === void 0 || directories === void 0) return;
+			try {
+				await directories.set(agent, folder);
+			} catch (error) {
+				ctx.logger.warn("dsh-threads: could not move the main conversation to " + JSON.stringify(folder) + ": " + String(error));
+			}
+		},
 		workspaceOf(sessionId) {
 			return workspaceInfo(ctx.workspaceRegistry.list().find((candidate) => candidate.sessionIds.includes(sessionId)));
 		},
@@ -2095,6 +2197,15 @@ function stoppedReminder() {
 function projectPrompt(project, options) {
 	if (project === void 0) return "";
 	const lines = [`# Project: ${project.title}`, `Folder: ${project.folder}`];
+	const mounts = mountedFolders({
+		folder: project.folder,
+		extraFolders: project.extraFolders ?? []
+	});
+	if (mounts.length > 0) {
+		lines.push("", "Folders the user mounted alongside the project folder (they are outside it; the file sandbox allows reads and writes there):");
+		for (const mount of mounts) lines.push(`- ${JSON.stringify(mount)}`);
+		lines.push("Use their absolute paths; a relative path still means the project folder.");
+	}
 	if (options.goal && project.goal.length > 0) lines.push("", "Goal set by the user for this project (what your coordination should achieve):", project.goal);
 	if (project.instructions.length > 0) lines.push("", "Project instructions from the user:", project.instructions);
 	return lines.join("\n");
@@ -2417,17 +2528,20 @@ const STOPPED_CONTEXT_NAME = "dsh-threads-stopped";
 function installPerAgent(ctx, manager, projects, config) {
 	const installed = /* @__PURE__ */ new Map();
 	const install = (agent) => {
+		const folders = mountedFolders(projects.ofSession(agent.id));
+		const folderKey = folders.join("\n");
 		const role = roleOf({
 			id: agent.id,
 			origin: agent.session.header.origin
 		}, manager);
 		const current = installed.get(agent);
-		if (current?.role === role) return;
+		if (current?.role === role && current.folders === folderKey) return;
 		current?.dispose();
 		installed.delete(agent);
 		if (role === "none") {
 			installed.set(agent, {
 				role,
+				folders: folderKey,
 				dispose: () => {}
 			});
 			return;
@@ -2440,6 +2554,8 @@ function installPerAgent(ctx, manager, projects, config) {
 				order: 2849,
 				text: () => projectPrompt(projects.ofSession(agent.id), { goal: role === "dispatcher" })
 			}));
+			const policy = optional(scope, "sandboxPolicy");
+			if (policy !== void 0) for (const folder of folders) disposers.push(policy.registerWritableRoot(agent.session, folder));
 			if (role === "thread") {
 				disposers.push(scope.tools.register(threadReportTool(manager, config.summaryMaxChars)));
 				disposers.push(scope.systemPrompt.section({
@@ -2475,6 +2591,7 @@ function installPerAgent(ctx, manager, projects, config) {
 		}
 		installed.set(agent, {
 			role,
+			folders: folderKey,
 			dispose: () => {
 				for (const dispose of disposers) dispose();
 			}
@@ -2645,6 +2762,7 @@ const projectSchema = z.object({
 	title: z.string(),
 	workspaceId: z.string(),
 	folder: z.string(),
+	extraFolders: z.array(z.string()).default([]),
 	mainSessionId: z.string(),
 	pinned: z.boolean(),
 	instructions: z.string(),

@@ -18,6 +18,8 @@ const modelInput = z.object({ provider: z.string(), model: z.string(), reasoning
 const updateInput = z.object({
   id: z.string(),
   title: z.string().optional(),
+  folder: z.string().optional(),
+  extraFolders: z.array(z.string()).optional(),
   instructions: z.string().optional(),
   icon: z.string().optional(),
   goal: z.string().optional(),

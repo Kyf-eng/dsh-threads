@@ -19,6 +19,7 @@ import { type ReactNode, useEffect, useState } from 'react'
 import { callHost, type NotifyLevel, refreshProjects, type ProjectView } from './api.ts'
 import { BellIcon } from './icons.tsx'
 import type { Translate } from './locale.ts'
+import type { PickFolder } from './NewProjectDialog.tsx'
 import { ProjectSettings } from './ProjectSettings.tsx'
 import { threadsRevision } from './threads.ts'
 
@@ -33,10 +34,12 @@ export interface ProjectActions {
 }
 
 /** The actions, plus the dialogs they open (render `dialogs` once next to the menus). */
-export function useProjectActions({ projects, t, pinSession, afterArchive }: {
+export function useProjectActions({ projects, t, pinSession, pickFolder, afterArchive }: {
   projects: readonly ProjectView[]
   t: Translate
   pinSession: (sessionId: string, pinned: boolean) => Promise<void>
+  /** The host's folder chooser, for the settings dialog's folder rows. */
+  pickFolder: PickFolder
   /** Runs after an archive or unarchive (the projects page brings itself back). */
   afterArchive?: () => void
 }): { actions: ProjectActions; dialogs: ReactNode; error: string | null } {
@@ -78,7 +81,7 @@ export function useProjectActions({ projects, t, pinSession, afterArchive }: {
 
   const dialogs = (
     <>
-      <ProjectSettings project={projects.find((p) => p.id === settingsId) ?? null} open={settingsId !== null} onClose={() => setSettingsId(null)} t={t} />
+      <ProjectSettings project={projects.find((p) => p.id === settingsId) ?? null} open={settingsId !== null} onClose={() => setSettingsId(null)} pickFolder={pickFolder} t={t} />
       <Modal
         open={deleting !== null}
         onClose={() => setDeleting(null)}

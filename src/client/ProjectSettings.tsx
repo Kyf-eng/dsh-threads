@@ -8,6 +8,7 @@ import { createCloseGate } from './closeGate.ts'
 import { PROJECT_ICON_IDS, ProjectIcon } from './icons.tsx'
 import type { MessageKey, Translate } from './locale.ts'
 import { ModelSettings, UsageSection } from './ProjectModels.tsx'
+import type { PickFolder } from './NewProjectDialog.tsx'
 import { CloseIcon } from './ui.tsx'
 
 const GOAL_MAX = 8000
@@ -21,12 +22,14 @@ const SECTIONS: readonly { id: Section; label: MessageKey; icon: ReactNode }[] =
   { id: 'usage', label: 'settings.usage', icon: <ProjectIcon id="chart" size={16} /> },
 ]
 
-type Patch = Partial<Pick<ProjectView, 'title' | 'icon' | 'goal' | 'instructions' | 'mainModel' | 'threadModel'>>
+type Patch = Partial<Pick<ProjectView, 'title' | 'icon' | 'goal' | 'instructions' | 'mainModel' | 'threadModel' | 'folder' | 'extraFolders'>>
 
-export function ProjectSettings({ project, open, onClose, t }: {
+export function ProjectSettings({ project, open, onClose, pickFolder, t }: {
   project: ProjectView | null
   open: boolean
   onClose: () => void
+  /** The host's folder chooser (index.tsx): null when the user cancelled, 'unavailable' without one. */
+  pickFolder: PickFolder
   t: Translate
 }) {
   const [section, setSection] = useState<Section>('general')
@@ -34,6 +37,8 @@ export function ProjectSettings({ project, open, onClose, t }: {
   const [goal, setGoal] = useState('')
   const [memory, setMemory] = useState('')
   const [picking, setPicking] = useState(false)
+  const [folderBusy, setFolderBusy] = useState(false)
+  const [folderHint, setFolderHint] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   /** Decides which close attempt's save may still close the dialog (closeGate.ts). */
@@ -69,6 +74,57 @@ export function ProjectSettings({ project, open, onClose, t }: {
     } catch (failure) {
       setError(t('settings.saveFailed', { error: failure instanceof Error ? failure.message : String(failure) }))
       return false
+    }
+  }
+
+  /** The chosen folder, or undefined after a cancel or with no picker (the reason is on screen). */
+  const pick = async (): Promise<string | undefined> => {
+    setFolderHint(null)
+    try {
+      const picked = await pickFolder()
+      if (picked === 'unavailable') {
+        setFolderHint(t('settings.pickUnavailable'))
+        return undefined
+      }
+      return picked ?? undefined
+    } catch (failure) {
+      setFolderHint(t('settings.pickFailed', { error: failure instanceof Error ? failure.message : String(failure) }))
+      return undefined
+    }
+  }
+
+  /** Saved at once: a folder is not something the dialog can hold unsaved. */
+  const saveFolders = async (folders: string[]) => {
+    if (folderBusy) return
+    setFolderBusy(true)
+    try {
+      await save({ extraFolders: folders })
+    } finally {
+      setFolderBusy(false)
+    }
+  }
+
+  const changeFolder = async () => {
+    if (folderBusy) return
+    setFolderBusy(true)
+    try {
+      const picked = await pick()
+      if (picked !== undefined) await save({ folder: picked })
+    } finally {
+      setFolderBusy(false)
+    }
+  }
+
+  const addFolder = async () => {
+    if (folderBusy) return
+    setFolderBusy(true)
+    try {
+      const picked = await pick()
+      if (picked !== undefined && !project.extraFolders.includes(picked)) {
+        await save({ extraFolders: [...project.extraFolders, picked] })
+      }
+    } finally {
+      setFolderBusy(false)
     }
   }
 
@@ -154,7 +210,37 @@ export function ProjectSettings({ project, open, onClose, t }: {
                 <div className="dsht-setting-block">
                   <div className="dsht-setting-title">{t('settings.folder')}</div>
                   <div className="dsht-setting-hint">{t('settings.folderHint')}</div>
-                  <div className="dsht-setting-path dsht-mono" title={project.folder}>{project.folder}</div>
+                  <div className="dsht-folder-line">
+                    <div className="dsht-setting-path dsht-mono dsht-folder-path" title={project.folder}>{project.folder}</div>
+                    <button type="button" className="dsht-folder-button" disabled={folderBusy} onClick={() => { void changeFolder() }}>
+                      {folderBusy ? t('settings.folderChoosing') : t('settings.folderChange')}
+                    </button>
+                  </div>
+                  {folderHint === null ? null : <div className="dsht-setting-note">{folderHint}</div>}
+                  {project.folderPendingRestart ? <div className="dsht-setting-note">{t('settings.folderRestart')}</div> : null}
+
+                  <div className="dsht-setting-extra">
+                    <div className="dsht-setting-title">{t('settings.extraFolders')}</div>
+                    <div className="dsht-setting-hint">{t('settings.extraFoldersHint')}</div>
+                    {project.extraFolders.length === 0 ? (
+                      <div className="dsht-folder-empty">{t('settings.extraFoldersEmpty')}</div>
+                    ) : (
+                      <div className="dsht-folder-list">
+                        {project.extraFolders.map((folder) => (
+                          <div key={folder} className="dsht-folder-row">
+                            <div className="dsht-setting-path dsht-mono" title={folder}>{folder}</div>
+                            <button type="button" className="dsht-folder-remove" disabled={folderBusy}
+                              onClick={() => { void saveFolders(project.extraFolders.filter((entry) => entry !== folder)) }}>
+                              {t('settings.folderRemove')}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <button type="button" className="dsht-folder-button dsht-folder-add" disabled={folderBusy} onClick={() => { void addFolder() }}>
+                      {t('settings.folderAdd')}
+                    </button>
+                  </div>
                 </div>
               </>
             ) : section === 'usage' ? (

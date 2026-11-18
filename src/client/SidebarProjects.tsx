@@ -145,6 +145,7 @@ function SidebarProjects({ t, useWorkspaces, useSessions, useSessionStatus, useP
     projects,
     t,
     pinSession,
+    pickFolder,
     afterArchive: openPanelId === null ? undefined : () => selectPanel(openPanelId),
   })
   const workspaces = useWorkspaces((snapshot) => snapshot.items, sameList)

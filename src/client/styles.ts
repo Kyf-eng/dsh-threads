@@ -322,6 +322,22 @@ body,[class*="dsht-"]{
 .dsht-usage-table th:first-child,.dsht-usage-table td:first-child{text-align:left;color:var(--dsw-alias-label-primary)}
 .dsht-usage-table td:first-child .dsht-item-n{margin-right:6px}
 .dsht-setting-path{box-sizing:border-box;margin-top:8px;padding:9px 12px;border:1px solid var(--dsht-line);border-radius:10px;background:var(--dsht-field);font-size:12.5px;color:var(--dsw-alias-label-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* The project folder row: the folder, a button that changes it, and the mounted folders below. */
+.dsht-folder-line{display:flex;align-items:center;gap:8px;margin-top:8px}
+.dsht-folder-line .dsht-folder-path{flex:1;min-width:0;margin-top:0}
+.dsht-setting-extra{display:flex;flex-direction:column;gap:4px;margin-top:14px;padding-top:14px;border-top:1px solid var(--dsht-line)}
+.dsht-setting-note{margin-top:8px;padding:8px 10px;border-radius:9px;background:var(--dsht-press);font-size:12.5px;line-height:18px;color:var(--dsw-alias-label-secondary)}
+.dsht-folder-list{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.dsht-folder-row{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--dsht-line);border-radius:10px;background:var(--dsht-field)}
+.dsht-folder-row .dsht-setting-path{flex:1;min-width:0;margin-top:0;padding:0;border:0;background:transparent}
+.dsht-folder-empty{margin-top:8px;font-size:12.5px;color:var(--dsw-alias-label-tertiary)}
+.dsht-folder-button{box-sizing:border-box;flex:none;display:inline-flex;align-items:center;justify-content:center;height:34px;padding:0 12px;border:1px solid var(--dsht-line-strong);border-radius:9px;background:var(--dsht-field);color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;cursor:pointer;transition:background .15s var(--dsht-ease),border-color .15s var(--dsht-ease)}
+.dsht-folder-button:hover:enabled{background:var(--dsht-hover);border-color:var(--dsht-line-hover)}
+.dsht-folder-button:disabled{color:var(--dsw-alias-label-tertiary);cursor:default}
+.dsht-folder-add{align-self:flex-start;margin-top:8px}
+.dsht-folder-remove{flex:none;height:28px;padding:0 10px;border:0;border-radius:8px;background:transparent;color:var(--dsw-alias-state-error-primary,#e5484d);font:inherit;font-size:12.5px;cursor:pointer}
+.dsht-folder-remove:hover:enabled{background:var(--dsht-hover)}
+.dsht-folder-remove:disabled{cursor:default;color:var(--dsw-alias-label-tertiary)}
 .dsht-name-field{display:flex;align-items:center;flex:none;width:min(340px,100%);height:40px;border:1px solid var(--dsht-line-strong);border-radius:10px;background:var(--dsht-field);overflow:hidden;transition:border-color .15s var(--dsht-ease),box-shadow .15s var(--dsht-ease)}
 .dsht-name-field:focus-within{border-color:var(--dsht-ring);box-shadow:0 0 0 3px var(--dsht-ring-soft)}
 .dsht-icon-pick{flex:none;display:inline-flex;align-items:center;justify-content:center;width:40px;height:100%;border:0;border-right:1px solid var(--dsht-line);background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer}

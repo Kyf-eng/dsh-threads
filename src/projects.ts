@@ -10,6 +10,8 @@ const TITLE_MAX = 60
 const INSTRUCTIONS_MAX = 4000
 const GOAL_MAX = 8000
 const ICON_MAX = 40
+/** A project mounts a bounded number of extra folders: the prompt lists them and the settings show them. */
+const MAX_EXTRA_FOLDERS = 20
 /** A full path in this system's own form, for the "write the full path" hint. */
 const FOLDER_EXAMPLE = process.platform === 'win32' ? 'C:\\Users\\me\\code\\app' : process.platform === 'darwin' ? '/Users/me/code/app' : '/home/me/code/app'
 
@@ -29,6 +31,17 @@ export interface ProjectHost {
   workspaceOf(sessionId: string): WorkspaceInfo | undefined
   /** The DSH workspace for a folder, adding it when the folder has none yet (throws when it is not a directory). */
   ensureWorkspace(folder: string, title: string): Promise<WorkspaceInfo>
+  /** The canonical path of an existing directory; throws when it is missing or not a directory. */
+  checkFolder(folder: string): Promise<string>
+  /**
+   * Move this project's DSH workspace to another directory and return its canonical path.
+   * DSH keeps its workspace records in memory for the life of the process, so the sessions it
+   * creates still use the old directory until it restarts; the project's own folder is what the
+   * user sees, and the settings say the sessions follow after a restart.
+   */
+  switchFolder(workspaceId: string, folder: string): Promise<string>
+  /** Put a live session into this directory now (DSH's own "change working directory" operation). */
+  enterFolder(sessionId: string, folder: string): Promise<void>
   rename(sessionId: string, title: string): void
   /** Archive a session in DSH (it leaves the sidebar and cannot run); throws when it is busy. */
   archiveSession(sessionId: string): Promise<void>
@@ -68,6 +81,12 @@ export interface ProjectSummary extends ProjectRecord {
   running: number
   /** Latest change to the project or any of its threads. */
   lastActivity: string
+  /**
+   * The folder was switched, but DSH still has the old directory for this workspace: sessions it
+   * creates use the old one until it restarts. The settings say so instead of pretending the
+   * switch is live.
+   */
+  folderPendingRestart: boolean
 }
 
 export interface ProjectsDeps {
@@ -88,8 +107,27 @@ function cleanInstructions(instructions: string | undefined): string {
   return truncate((instructions ?? '').trim(), INSTRUCTIONS_MAX)
 }
 
+/**
+ * The folders a project mounts, as the prompt and the sandbox see them: the stored list without
+ * the project folder itself and without repeats. Stored entries are already canonical; this keeps
+ * a hand-edited or older record honest.
+ */
+export function mountedFolders(project: Pick<ProjectRecord, 'folder' | 'extraFolders'> | undefined): string[] {
+  if (project === undefined) return []
+  const folders: string[] = []
+  for (const folder of project.extraFolders ?? []) {
+    if (folder === project.folder || folders.includes(folder)) continue
+    folders.push(folder)
+  }
+  return folders
+}
+
 export interface ProjectPatch {
   title?: string
+  /** The project's folder: moves the DSH workspace (see {@link ProjectHost.switchFolder}). */
+  folder?: string
+  /** The complete new list of mounted folders; every entry is canonicalized and checked. */
+  extraFolders?: string[]
   instructions?: string
   icon?: string
   goal?: string
@@ -131,12 +169,15 @@ export class Projects {
     return store.projects().map((project) => {
       const threads = store.threadsOf(project.mainSessionId)
       const lastActivity = threads.reduce((latest, t) => (t.updatedAt > latest ? t.updatedAt : latest), project.updatedAt)
+      const workspace = this.deps.host.workspace(project.workspaceId)
       return {
         ...project,
         // Threads the user archived one by one no longer count.
         threads: threads.filter((t) => !t.archived).length,
         running: threads.filter((t) => t.status === 'starting' || t.status === 'running').length,
         lastActivity,
+        // DSH still has the workspace's old folder until it restarts after a switch.
+        folderPendingRestart: workspace !== undefined && workspace.path !== project.folder,
       }
     })
   }
@@ -175,6 +216,7 @@ export class Projects {
       title,
       workspaceId: workspace.id,
       folder: workspace.path,
+      extraFolders: [],
       mainSessionId,
       pinned: false,
       instructions: cleanInstructions(input.instructions),
@@ -190,6 +232,26 @@ export class Projects {
     await store.putProject(project)
     this.changed()
     return project
+  }
+
+  /** Canonical, existing, deduplicated mounts; the project folder is never one of them. */
+  private async cleanFolders(folders: readonly string[], projectFolder: string): Promise<string[]> {
+    if (folders.length > MAX_EXTRA_FOLDERS) throw new ProjectError(msg().tooManyFolders(MAX_EXTRA_FOLDERS))
+    const accepted: string[] = []
+    for (const entry of folders) {
+      const requested = entry.trim()
+      if (requested.length === 0) continue
+      if (!isAbsolute(requested)) throw new ProjectError(msg().absoluteFolder(FOLDER_EXAMPLE))
+      let canonical: string
+      try {
+        canonical = await this.deps.host.checkFolder(requested)
+      } catch (error) {
+        throw new ProjectError(msg().badFolder(error instanceof Error ? error.message : String(error)))
+      }
+      if (canonical === projectFolder || accepted.includes(canonical)) continue
+      accepted.push(canonical)
+    }
+    return accepted
   }
 
   private require(id: string): ProjectRecord {
@@ -208,8 +270,34 @@ export class Projects {
         throw new ProjectError(msg().modelRefused(error instanceof Error ? error.message : String(error)))
       }
     }
+    // A folder switch writes the DSH workspace too, so it goes first: a refusal leaves this record
+    // exactly as it was.
+    let folder = project.folder
+    if (patch.folder !== undefined) {
+      const requested = patch.folder.trim()
+      if (requested.length === 0) throw new ProjectError(msg().emptyFolder)
+      if (!isAbsolute(requested)) throw new ProjectError(msg().absoluteFolder(FOLDER_EXAMPLE))
+      if (requested !== project.folder) {
+        let canonical: string
+        try {
+          canonical = await this.deps.host.checkFolder(requested)
+        } catch (error) {
+          throw new ProjectError(msg().badFolder(error instanceof Error ? error.message : String(error)))
+        }
+        if (canonical !== project.folder) {
+          try {
+            folder = await this.deps.host.switchFolder(project.workspaceId, canonical)
+          } catch (error) {
+            throw new ProjectError(error instanceof Error ? error.message : String(error))
+          }
+        }
+      }
+    }
+    const extraFolders = patch.extraFolders === undefined ? undefined : await this.cleanFolders(patch.extraFolders, folder)
     const next: ProjectRecord = {
       ...project,
+      ...(folder === project.folder ? {} : { folder }),
+      ...(extraFolders === undefined ? {} : { extraFolders }),
       ...(patch.title === undefined ? {} : { title: cleanTitle(patch.title) }),
       ...(patch.instructions === undefined ? {} : { instructions: cleanInstructions(patch.instructions) }),
       ...(patch.icon === undefined ? {} : { icon: truncate(patch.icon.trim(), ICON_MAX) || 'folder' }),
@@ -220,6 +308,9 @@ export class Projects {
       updatedAt: this.deps.now(),
     }
     await this.deps.store.putProject(next)
+    // The open main conversation follows the switch at once; the sessions DSH creates follow at
+    // its next start (switchFolder explains why).
+    if (folder !== project.folder) await this.deps.host.enterFolder(next.mainSessionId, folder)
     if (patch.title !== undefined && next.title !== project.title) {
       try {
         this.deps.host.rename(next.mainSessionId, next.title)

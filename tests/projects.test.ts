@@ -15,6 +15,8 @@ function setup() {
   const applied: string[] = []
   const usage = new Map<string, { uncachedInputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number }>()
   const workspaces = new Map([['ws-1', { id: 'ws-1', path: '/code/app', sessions: ['existing'] }]])
+  const switched: string[] = []
+  const entered: string[] = []
   const host: ProjectHost = {
     async createMainSession(workspaceId, title) {
       const id = `session-main-${created.length + 1}`
@@ -49,6 +51,19 @@ function setup() {
       workspaces.set(id, { id, path: folder, sessions: [] })
       return { id, path: folder }
     },
+    async checkFolder(folder) {
+      if (folder === '/missing') throw new Error('ENOENT: no such file or directory')
+      // A real host canonicalizes; the fake keeps the path it was given.
+      return folder.endsWith('/') ? folder.slice(0, -1) : folder
+    },
+    async switchFolder(workspaceId, folder) {
+      // DSH's registry keeps the workspace it loaded for the life of the process, so the old path
+      // stays until a restart: the tests move it themselves to simulate one.
+      if (workspaces.get(workspaceId) === undefined) throw new Error('workspace not found')
+      switched.push(`${workspaceId}:${folder}`)
+      return folder
+    },
+    async enterFolder(sessionId, folder) { entered.push(`${sessionId}:${folder}`) },
   }
   let clock = 0
   let ids = 0
@@ -61,7 +76,7 @@ function setup() {
   })
   let changes = 0
   projects.onChange(() => { changes += 1 })
-  return { store, projects, created, renamed, threads, archived, busy, applied, usage, changes: () => changes }
+  return { store, projects, created, renamed, threads, archived, busy, applied, usage, workspaces, switched, entered, changes: () => changes }
 }
 
 function threadOf(mainSessionId: string, id: string, status: 'idle' | 'running') {
@@ -229,6 +244,48 @@ describe('Projects', () => {
     })
     expect(t.projects.list()[0]).toMatchObject({ threads: 1, running: 1, lastActivity: '2030-01-01T00:00:00.000Z' })
     expect(t.projects.ofSession('session-t1')?.id).toBe(project.id)
+  })
+
+  // The folder used to be read-only: a project was stuck in the directory it was created in.
+  it('moves the project and its DSH workspace to another folder', async () => {
+    const project = await t.projects.create({ title: 'A', workspaceId: 'ws-1' })
+    expect(t.projects.list()[0]?.folderPendingRestart).toBe(false)
+    const next = await t.projects.update(project.id, { folder: '/code/new' })
+    expect(next.folder).toBe('/code/new')
+    expect(t.switched).toEqual(['ws-1:/code/new'])
+    // The open main conversation follows at once; DSH's own sessions follow after a restart.
+    expect(t.entered).toEqual(['session-main-1:/code/new'])
+    expect(t.projects.list()[0]?.folderPendingRestart).toBe(true)
+
+    // A restart: DSH loads the record it was given and the two agree again.
+    t.workspaces.get('ws-1')!.path = '/code/new'
+    expect(t.projects.list()[0]).toMatchObject({ folder: '/code/new', folderPendingRestart: false })
+  })
+
+  it('refuses a folder that is empty, relative or missing, and keeps the record', async () => {
+    const project = await t.projects.create({ title: 'A', workspaceId: 'ws-1' })
+    for (const folder of ['   ', 'relative/dir', '/missing']) {
+      await expect(t.projects.update(project.id, { folder })).rejects.toBeInstanceOf(ProjectError)
+    }
+    expect(t.store.project(project.id)?.folder).toBe('/code/app')
+    expect(t.switched).toEqual([])
+    expect(t.entered).toEqual([])
+  })
+
+  it('mounts extra folders, canonical and deduplicated, never the project folder itself', async () => {
+    const project = await t.projects.create({ title: 'A', workspaceId: 'ws-1' })
+    const next = await t.projects.update(project.id, { extraFolders: [' /data/refs/', '/data/refs', '/code/app', '  ', '/data/docs'] })
+    expect(next.extraFolders).toEqual(['/data/refs', '/data/docs'])
+    expect((await t.projects.update(project.id, { extraFolders: [] })).extraFolders).toEqual([])
+  })
+
+  it('refuses a mounted folder that does not exist, a relative one, and more than the cap', async () => {
+    const project = await t.projects.create({ title: 'A', workspaceId: 'ws-1' })
+    await expect(t.projects.update(project.id, { extraFolders: ['/missing'] })).rejects.toBeInstanceOf(ProjectError)
+    await expect(t.projects.update(project.id, { extraFolders: ['data/refs'] })).rejects.toBeInstanceOf(ProjectError)
+    const many = Array.from({ length: 21 }, (_, index) => `/data/${index}`)
+    await expect(t.projects.update(project.id, { extraFolders: many })).rejects.toBeInstanceOf(ProjectError)
+    expect(t.store.project(project.id)?.extraFolders).toEqual([])
   })
 })
 

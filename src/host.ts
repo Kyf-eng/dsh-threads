@@ -6,6 +6,7 @@ import { boundContextSummary, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { finalAssistantOutput } from '@deepseek-ai/dsh-subagent'
 import { randomUUID } from 'node:crypto'
+import { realpath, stat } from 'node:fs/promises'
 import type { ThreadAgent, ThreadHost } from './manager.ts'
 import type { ProjectHost, TokenBuckets, WorkspaceInfo } from './projects.ts'
 import { msg } from './messages.ts'
@@ -31,6 +32,25 @@ interface DefaultModelLike {
 interface PermissionPresetsLike {
   current(session: Agent['session']): string
   set(session: Agent['session'], name: string): void
+}
+
+/** One record of DSH's workspace storage domain (storages/workspace.json). */
+interface WorkspaceRecordLike {
+  path: string
+}
+
+/**
+ * The workspaces table of DSH's workspace domain, as far as this plugin reads it. That domain's
+ * handle belongs to workspaceRegistry and only one handle per domain name may be open, so the
+ * registry's own handle is used instead of opening it again.
+ */
+interface WorkspaceTableLike {
+  entries(): IterableIterator<[string, WorkspaceRecordLike]>
+  update(key: string, update: (record: WorkspaceRecordLike) => WorkspaceRecordLike): Promise<unknown>
+}
+
+interface WorkspaceDomainLike {
+  table(name: string): WorkspaceTableLike
 }
 
 /**
@@ -154,6 +174,44 @@ export function createHost(ctx: Context): ThreadHost & ProjectHost & ReplyHost {
     async ensureWorkspace(folder, title) {
       const workspace = await ctx.workspaceRegistry.create(folder, title)
       return { id: workspace.id, path: workspace.path }
+    },
+
+    async checkFolder(folder) {
+      const canonical = await realpath(folder)
+      if (!(await stat(canonical)).isDirectory()) throw new Error('not a directory')
+      return canonical
+    },
+
+    /**
+     * DSH has no API to move a workspace: its path is the realpath key that session membership is
+     * checked against, so moving one means rewriting the record. The registry keeps its records
+     * in memory for the life of the process, which is also why the switch lands at its next start.
+     */
+    async switchFolder(workspaceId, folder) {
+      const canonical = await this.checkFolder(folder)
+      const domain = ctx.storageDomain.get('workspace') as unknown as WorkspaceDomainLike | undefined
+      const table = domain?.table('workspaces')
+      if (table === undefined) throw new Error(msg().cannotMoveFolder)
+      // One record per canonical path: two workspaces claiming one directory would fail DSH's own
+      // consistency check at its next start.
+      for (const [id, record] of table.entries()) {
+        if (id !== workspaceId && record.path === canonical) throw new Error(msg().folderTaken(canonical))
+      }
+      await table.update(workspaceId, (record) => ({ ...record, path: canonical }))
+      return canonical
+    },
+
+    async enterFolder(sessionId, folder) {
+      const agent = live(sessionId)
+      const directories = optional<WorkingDirectoryLike>(ctx, 'workingDirectory')
+      if (agent === undefined || directories === undefined) return
+      try {
+        await directories.set(agent, folder)
+      } catch (error) {
+        // The project already points at the new folder; a session that will not move is reported
+        // here and the next start puts it there.
+        ctx.logger.warn('dsh-threads: could not move the main conversation to ' + JSON.stringify(folder) + ': ' + String(error))
+      }
     },
 
     workspaceOf(sessionId) {

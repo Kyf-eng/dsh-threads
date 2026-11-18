@@ -13,14 +13,29 @@ interface FakeSession {
   sections: { name: string; text: string | (() => string) }[]
   contexts: { name: string; text: string | (() => string) }[]
   disposed: string[]
+  /** Directories the file sandbox currently accepts writes under, for this session. */
+  roots: string[]
+  /** Grants that were taken back. */
+  released: string[]
 }
 
 function fakeAgent(id: string, origin?: string) {
-  const session: FakeSession = { id, tools: [], sections: [], contexts: [], disposed: [] }
+  const session: FakeSession = { id, tools: [], sections: [], contexts: [], disposed: [], roots: [], released: [] }
+  const policy = {
+    registerWritableRoot: (_session: unknown, directory: string) => {
+      session.roots.push(directory)
+      return () => {
+        const at = session.roots.indexOf(directory)
+        if (at >= 0) session.roots.splice(at, 1)
+        session.released.push(directory)
+      }
+    },
+  }
   const agent = {
     id,
     session: { header: { origin } },
     ctx: {
+      get: (name: string) => (name === 'sandboxPolicy' ? policy : undefined),
       tools: { register: (tool: { name: string }) => { session.tools.push(tool.name); return () => session.disposed.push(tool.name) } },
       systemPrompt: {
         section: (section: { name: string; text: string | (() => string) }) => {
@@ -48,7 +63,19 @@ function harness() {
     effect: (start: () => () => void) => { effects.push(start()) },
     logger: { warn: () => {} },
   }
-  const projects = new Projects({ store: t.store, host: { workspaceOf: () => ({ id: 'ws', path: '/tmp/p' }) } as unknown as ProjectHost, isThread: (id) => t.manager.isThread(id), now: () => '', newProjectId: () => 'p' })
+  const projects = new Projects({
+    store: t.store,
+    host: {
+      workspaceOf: () => ({ id: 'ws', path: '/tmp/p' }),
+      workspace: () => ({ id: 'ws', path: '/tmp/p' }),
+      checkFolder: async (folder: string) => folder,
+      switchFolder: async (_workspaceId: string, folder: string) => folder,
+      enterFolder: async () => {},
+    } as unknown as ProjectHost,
+    isThread: (id) => t.manager.isThread(id),
+    now: () => '',
+    newProjectId: () => 'p',
+  })
   const add = (id: string, origin?: string) => {
     const created = fakeAgent(id, origin)
     agents.push(created.agent)
@@ -122,6 +149,23 @@ describe('installPerAgent', () => {
     await h.projects.create({ title: 'P', fromSessionId: 'main' })
     expect(h.main.tools.filter((name) => name === 'thread_open')).toHaveLength(2)
     expect(thread.tools.filter((name) => name === 'thread_report')).toHaveLength(2)
+  })
+
+  // A mounted folder is only usable if the sandbox accepts writes there: the grant is per session.
+  it('grants a project\'s mounted folders to its main conversation and its threads', async () => {
+    const h = harness()
+    expect(h.main.roots).toEqual([])
+    await h.projects.update('project-1', { extraFolders: ['/data/refs'] })
+    expect(h.main.roots).toEqual(['/data/refs'])
+
+    await h.t.manager.open('main', { title: 'a', task: 'x', initiation: 'user_asked' })
+    const thread = h.create('session-1')
+    expect(thread.roots).toEqual(['/data/refs'])
+
+    // Taking the mount away takes the grant back, and the next install grants nothing.
+    await h.projects.update('project-1', { extraFolders: [] })
+    expect(h.main.released).toEqual(['/data/refs'])
+    expect(h.main.roots).toEqual([])
   })
 
   it('cleans up when a session goes away and when the plugin unloads', () => {

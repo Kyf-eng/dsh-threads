@@ -1395,6 +1395,16 @@ const zh = {
 	"settings.goalPlaceholder": "例如：把整个 API 的 p95 延迟降到 200 毫秒以内",
 	"settings.folder": "文件夹",
 	"settings.folderHint": "主对话和讨论串都在这个文件夹里工作。",
+	"settings.folderChange": "切换文件夹",
+	"settings.folderChoosing": "选择中…",
+	"settings.folderRestart": "已切换。新会话和新讨论串要等 DeepSeek Harness 重启之后才用新文件夹；当前这个对话已经在新文件夹里工作。",
+	"settings.extraFolders": "辅助文件夹",
+	"settings.extraFoldersHint": "在主文件夹之外再挂几个目录：模型会在系统提示里看到它们，文件沙箱也允许读写。",
+	"settings.extraFoldersEmpty": "还没有辅助文件夹。",
+	"settings.folderAdd": "添加文件夹",
+	"settings.folderRemove": "移除",
+	"settings.pickFailed": "没能打开文件夹选择器：{error}",
+	"settings.pickUnavailable": "这个环境没有系统的文件夹选择器，没法在这里选目录。",
 	"settings.instructions": "项目说明",
 	"settings.instructionsHint": "会加进主对话和所有讨论串的系统提示，例如代码规范、回复语言、要避开的目录。",
 	"settings.instructionsPlaceholder": "例如：用中文回复；不要改 vendor/ 下的文件；提交信息用 Conventional Commits。",
@@ -1553,6 +1563,16 @@ const en = {
 	"settings.goalPlaceholder": "e.g. Bring the whole API's p95 latency under 200 ms",
 	"settings.folder": "Folder",
 	"settings.folderHint": "The main conversation and its threads work in this folder.",
+	"settings.folderChange": "Change folder",
+	"settings.folderChoosing": "Choosing…",
+	"settings.folderRestart": "Switched. New sessions and threads use the new folder once DeepSeek Harness restarts; this conversation already works there.",
+	"settings.extraFolders": "Extra folders",
+	"settings.extraFoldersHint": "Mount more directories alongside the project folder: the model sees them in its system prompt, and the file sandbox allows reads and writes there.",
+	"settings.extraFoldersEmpty": "No extra folders yet.",
+	"settings.folderAdd": "Add folder",
+	"settings.folderRemove": "Remove",
+	"settings.pickFailed": "Could not open the folder picker: {error}",
+	"settings.pickUnavailable": "This deployment has no folder picker, so a folder cannot be chosen here.",
 	"settings.instructions": "Project instructions",
 	"settings.instructionsHint": "Added to the system prompt of the main conversation and every thread: code style, reply language, folders to leave alone.",
 	"settings.instructionsPlaceholder": "e.g. Reply in English; do not touch vendor/; use Conventional Commits.",
@@ -2218,12 +2238,14 @@ const SECTIONS = [
 		})
 	}
 ];
-function ProjectSettings({ project, open, onClose, t }) {
+function ProjectSettings({ project, open, onClose, pickFolder, t }) {
 	const [section, setSection] = (0, react.useState)("general");
 	const [title, setTitle] = (0, react.useState)("");
 	const [goal, setGoal] = (0, react.useState)("");
 	const [memory, setMemory] = (0, react.useState)("");
 	const [picking, setPicking] = (0, react.useState)(false);
+	const [folderBusy, setFolderBusy] = (0, react.useState)(false);
+	const [folderHint, setFolderHint] = (0, react.useState)(null);
 	const [error, setError] = (0, react.useState)(null);
 	/** Decides which close attempt's save may still close the dialog (closeGate.ts). */
 	const [gate] = (0, react.useState)(createCloseGate);
@@ -2259,6 +2281,51 @@ function ProjectSettings({ project, open, onClose, t }) {
 		} catch (failure) {
 			setError(t("settings.saveFailed", { error: failure instanceof Error ? failure.message : String(failure) }));
 			return false;
+		}
+	};
+	/** The chosen folder, or undefined after a cancel or with no picker (the reason is on screen). */
+	const pick = async () => {
+		setFolderHint(null);
+		try {
+			const picked = await pickFolder();
+			if (picked === "unavailable") {
+				setFolderHint(t("settings.pickUnavailable"));
+				return;
+			}
+			return picked ?? void 0;
+		} catch (failure) {
+			setFolderHint(t("settings.pickFailed", { error: failure instanceof Error ? failure.message : String(failure) }));
+			return;
+		}
+	};
+	/** Saved at once: a folder is not something the dialog can hold unsaved. */
+	const saveFolders = async (folders) => {
+		if (folderBusy) return;
+		setFolderBusy(true);
+		try {
+			await save({ extraFolders: folders });
+		} finally {
+			setFolderBusy(false);
+		}
+	};
+	const changeFolder = async () => {
+		if (folderBusy) return;
+		setFolderBusy(true);
+		try {
+			const picked = await pick();
+			if (picked !== void 0) await save({ folder: picked });
+		} finally {
+			setFolderBusy(false);
+		}
+	};
+	const addFolder = async () => {
+		if (folderBusy) return;
+		setFolderBusy(true);
+		try {
+			const picked = await pick();
+			if (picked !== void 0 && !project.extraFolders.includes(picked)) await save({ extraFolders: [...project.extraFolders, picked] });
+		} finally {
+			setFolderBusy(false);
 		}
 	};
 	const close = () => {
@@ -2420,10 +2487,73 @@ function ProjectSettings({ project, open, onClose, t }) {
 									className: "dsht-setting-hint",
 									children: t("settings.folderHint")
 								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-									className: "dsht-setting-path dsht-mono",
-									title: project.folder,
-									children: project.folder
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									className: "dsht-folder-line",
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+										className: "dsht-setting-path dsht-mono dsht-folder-path",
+										title: project.folder,
+										children: project.folder
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+										type: "button",
+										className: "dsht-folder-button",
+										disabled: folderBusy,
+										onClick: () => {
+											changeFolder();
+										},
+										children: folderBusy ? t("settings.folderChoosing") : t("settings.folderChange")
+									})]
+								}),
+								folderHint === null ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									className: "dsht-setting-note",
+									children: folderHint
+								}),
+								project.folderPendingRestart ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									className: "dsht-setting-note",
+									children: t("settings.folderRestart")
+								}) : null,
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									className: "dsht-setting-extra",
+									children: [
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+											className: "dsht-setting-title",
+											children: t("settings.extraFolders")
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+											className: "dsht-setting-hint",
+											children: t("settings.extraFoldersHint")
+										}),
+										project.extraFolders.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+											className: "dsht-folder-empty",
+											children: t("settings.extraFoldersEmpty")
+										}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+											className: "dsht-folder-list",
+											children: project.extraFolders.map((folder) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+												className: "dsht-folder-row",
+												children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+													className: "dsht-setting-path dsht-mono",
+													title: folder,
+													children: folder
+												}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+													type: "button",
+													className: "dsht-folder-remove",
+													disabled: folderBusy,
+													onClick: () => {
+														saveFolders(project.extraFolders.filter((entry) => entry !== folder));
+													},
+													children: t("settings.folderRemove")
+												})]
+											}, folder))
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+											type: "button",
+											className: "dsht-folder-button dsht-folder-add",
+											disabled: folderBusy,
+											onClick: () => {
+												addFolder();
+											},
+											children: t("settings.folderAdd")
+										})
+									]
 								})
 							]
 						})
@@ -2474,7 +2604,7 @@ const NOTIFY_LEVELS = [
 	"none"
 ];
 /** The actions, plus the dialogs they open (render `dialogs` once next to the menus). */
-function useProjectActions({ projects, t, pinSession, afterArchive }) {
+function useProjectActions({ projects, t, pinSession, pickFolder, afterArchive }) {
 	const [settingsId, setSettingsId] = (0, react.useState)(null);
 	const [deleting, setDeleting] = (0, react.useState)(null);
 	const [error, setError] = (0, react.useState)(null);
@@ -2519,6 +2649,7 @@ function useProjectActions({ projects, t, pinSession, afterArchive }) {
 			project: projects.find((p) => p.id === settingsId) ?? null,
 			open: settingsId !== null,
 			onClose: () => setSettingsId(null),
+			pickFolder,
 			t
 		}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Modal, {
 			open: deleting !== null,
@@ -2691,6 +2822,7 @@ function ProjectsPage({ t, useWorkspaces, useSessionStatus, openSession, pinSess
 		projects,
 		t,
 		pinSession,
+		pickFolder,
 		afterArchive: showProjects
 	});
 	const workspaces = useWorkspaces((snapshot) => snapshot.items, sameList);
@@ -3088,6 +3220,7 @@ function SidebarProjects({ t, useWorkspaces, useSessions, useSessionStatus, useP
 		projects,
 		t,
 		pinSession,
+		pickFolder,
 		afterArchive: openPanelId === null ? void 0 : () => selectPanel(openPanelId)
 	});
 	const workspaces = useWorkspaces((snapshot) => snapshot.items, sameList);
@@ -3564,6 +3697,22 @@ body,[class*="dsht-"]{
 .dsht-usage-table th:first-child,.dsht-usage-table td:first-child{text-align:left;color:var(--dsw-alias-label-primary)}
 .dsht-usage-table td:first-child .dsht-item-n{margin-right:6px}
 .dsht-setting-path{box-sizing:border-box;margin-top:8px;padding:9px 12px;border:1px solid var(--dsht-line);border-radius:10px;background:var(--dsht-field);font-size:12.5px;color:var(--dsw-alias-label-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* The project folder row: the folder, a button that changes it, and the mounted folders below. */
+.dsht-folder-line{display:flex;align-items:center;gap:8px;margin-top:8px}
+.dsht-folder-line .dsht-folder-path{flex:1;min-width:0;margin-top:0}
+.dsht-setting-extra{display:flex;flex-direction:column;gap:4px;margin-top:14px;padding-top:14px;border-top:1px solid var(--dsht-line)}
+.dsht-setting-note{margin-top:8px;padding:8px 10px;border-radius:9px;background:var(--dsht-press);font-size:12.5px;line-height:18px;color:var(--dsw-alias-label-secondary)}
+.dsht-folder-list{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.dsht-folder-row{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--dsht-line);border-radius:10px;background:var(--dsht-field)}
+.dsht-folder-row .dsht-setting-path{flex:1;min-width:0;margin-top:0;padding:0;border:0;background:transparent}
+.dsht-folder-empty{margin-top:8px;font-size:12.5px;color:var(--dsw-alias-label-tertiary)}
+.dsht-folder-button{box-sizing:border-box;flex:none;display:inline-flex;align-items:center;justify-content:center;height:34px;padding:0 12px;border:1px solid var(--dsht-line-strong);border-radius:9px;background:var(--dsht-field);color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;cursor:pointer;transition:background .15s var(--dsht-ease),border-color .15s var(--dsht-ease)}
+.dsht-folder-button:hover:enabled{background:var(--dsht-hover);border-color:var(--dsht-line-hover)}
+.dsht-folder-button:disabled{color:var(--dsw-alias-label-tertiary);cursor:default}
+.dsht-folder-add{align-self:flex-start;margin-top:8px}
+.dsht-folder-remove{flex:none;height:28px;padding:0 10px;border:0;border-radius:8px;background:transparent;color:var(--dsw-alias-state-error-primary,#e5484d);font:inherit;font-size:12.5px;cursor:pointer}
+.dsht-folder-remove:hover:enabled{background:var(--dsht-hover)}
+.dsht-folder-remove:disabled{cursor:default;color:var(--dsw-alias-label-tertiary)}
 .dsht-name-field{display:flex;align-items:center;flex:none;width:min(340px,100%);height:40px;border:1px solid var(--dsht-line-strong);border-radius:10px;background:var(--dsht-field);overflow:hidden;transition:border-color .15s var(--dsht-ease),box-shadow .15s var(--dsht-ease)}
 .dsht-name-field:focus-within{border-color:var(--dsht-ring);box-shadow:0 0 0 3px var(--dsht-ring-soft)}
 .dsht-icon-pick{flex:none;display:inline-flex;align-items:center;justify-content:center;width:40px;height:100%;border:0;border-right:1px solid var(--dsht-line);background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer}

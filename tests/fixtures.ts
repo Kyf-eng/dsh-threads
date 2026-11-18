@@ -97,7 +97,7 @@ export function setup(overrides: Partial<Config> = {}, options: { slowWrites?: b
   void store.putProject({
     id: 'project-1', title: 'P', workspaceId: 'ws', folder: '/tmp/p', mainSessionId: 'main',
     pinned: false, instructions: '', icon: 'folder', goal: '', archived: false, notify: 'attention',
-    mainModel: null, threadModel: null, createdAt: '', updatedAt: '',
+    mainModel: null, threadModel: null, extraFolders: [], createdAt: '', updatedAt: '',
   })
   return { manager, store, main, agents, outputs, renamed, inherited, entered, removals, models, stopped, archived, failCreate: () => { failCreate = true }, notARepo: () => { notARepo = true }, unreachableMain: () => { unreachableMain = true }, subdir: (value: string) => { subdir = value } }
 }

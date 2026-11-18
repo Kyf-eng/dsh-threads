@@ -52,6 +52,8 @@ export interface ProjectView {
   title: string
   workspaceId: string
   folder: string
+  /** Folders mounted alongside the project folder (canonical, deduplicated). */
+  extraFolders: string[]
   mainSessionId: string
   pinned: boolean
   instructions: string
@@ -66,6 +68,8 @@ export interface ProjectView {
   threads: number
   running: number
   lastActivity: string
+  /** The folder was switched but DSH itself still uses the old one until it restarts. */
+  folderPendingRestart: boolean
 }
 
 interface ProjectsState {
